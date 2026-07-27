@@ -57,9 +57,6 @@
     <!-- 新增/编辑弹窗 -->
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增材料' : '编辑材料'" width="500px" @close="dialogVisible = false">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
-        <el-form-item label="编码" prop="code">
-          <el-input v-model="form.code" :disabled="dialogMode === 'edit'" />
-        </el-form-item>
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
@@ -106,10 +103,9 @@ const dialogVisible = ref(false)
 const dialogLoading = ref(false)
 const dialogMode = ref('create')
 const formRef = ref(null)
-const form = reactive({ id: null, code: '', name: '', spec: '', model: '', unit: '', category: '', purchase_price: 0 })
+const form = reactive({ id: null, name: '', spec: '', model: '', unit: '', category: '', purchase_price: 0 })
 
 const formRules = {
-  code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
   spec: [{ required: true, message: '请输入规格', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
@@ -146,9 +142,9 @@ function resetSearch() {
 function openDialog(mode, row = {}) {
   dialogMode.value = mode
   if (mode === 'edit') {
-    Object.assign(form, { id: row.id, code: row.code, name: row.name, spec: row.spec || '', model: row.model || '', unit: row.unit || '', category: row.category || '', purchase_price: row.purchase_price || 0 })
+    Object.assign(form, { id: row.id, name: row.name, spec: row.spec || '', model: row.model || '', unit: row.unit || '', category: row.category || '', purchase_price: row.purchase_price || 0 })
   } else {
-    Object.assign(form, { id: null, code: '', name: '', spec: '', model: '', unit: '', category: '', purchase_price: 0 })
+    Object.assign(form, { id: null, name: '', spec: '', model: '', unit: '', category: '', purchase_price: 0 })
   }
   dialogVisible.value = true
 }

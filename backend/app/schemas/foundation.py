@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 # ==================== 材料 ====================
 
 class MaterialCreate(BaseModel):
-    code: str
+    code: str = ""
     name: str
     spec: str
     model: str = ""
@@ -50,7 +50,7 @@ class MaterialOut(BaseModel):
 # ==================== 产品 ====================
 
 class ProductCreate(BaseModel):
-    code: str
+    code: str = ""
     name_cn: str
     name_en: str = ""
     spec: str

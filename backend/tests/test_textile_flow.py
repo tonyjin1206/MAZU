@@ -30,7 +30,7 @@ class TestTextileFullFlow:
         mat = {}
         for name, code, unit, price, spec in _realistic["materials"]:
             mat[name] = api(client, "POST", "/api/foundation/materials",
-                            {"code": code, "name": name, "spec": spec, "unit": unit,
+                            {"name": name, "spec": spec, "unit": unit,
                              "category": "原材料", "purchase_price": price}, h)["id"]
 
         # 6个工序
@@ -69,7 +69,7 @@ class TestTextileFullFlow:
         for name, code, price, spec, hsc in _realistic["products"]:
             hs_info = _realistic["hs_codes"][hsc]
             p = api(client, "POST", "/api/foundation/products",
-                    {"code": code, "name_cn": name, "spec": spec, "unit": "米",
+                    {"name_cn": name, "spec": spec, "unit": "米",
                      "sale_price": price, "hs_code": hsc,
                      "refund_rate": hs_info[3], "tax_rate": hs_info[2]}, h)
             prod[name] = {"id": p["id"], "price": price}

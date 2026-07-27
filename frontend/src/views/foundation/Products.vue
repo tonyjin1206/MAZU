@@ -33,9 +33,6 @@
     </el-card>
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="500px">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
-        <el-form-item label="编码" prop="code">
-          <el-input v-model="form.code" :disabled="dialogMode === 'edit'" />
-        </el-form-item>
         <el-form-item label="中文名" prop="name_cn">
           <el-input v-model="form.name_cn" />
         </el-form-item>
@@ -88,7 +85,7 @@ const dialogLoading = ref(false)
 const dialogMode = ref('create')
 const formRef = ref(null)
 const hsCodeOptions = ref([])
-const form = reactive({ id: null, code: '', name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code: '', refund_rate: 13, tax_rate: 13, hs_code_id: null })
+const form = reactive({ id: null, name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code: '', refund_rate: 13, tax_rate: 13, hs_code_id: null })
 
 onMounted(() => {
   fetchData()
@@ -113,7 +110,6 @@ function onHsCodeSelect(id) {
 }
 
 const formRules = {
-  code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name_cn: [{ required: true, message: '请输入中文名', trigger: 'blur' }],
   spec: [{ required: true, message: '请输入规格', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
@@ -147,7 +143,6 @@ function openDialog(mode, row = {}) {
   dialogMode.value = mode
   if (mode === 'edit') {
     form.id = row.id
-    form.code = row.code
     form.name_cn = row.name_cn || ''
     form.name_en = row.name_en || ''
     form.spec = row.spec || ''
@@ -159,7 +154,6 @@ function openDialog(mode, row = {}) {
     form.hs_code_id = row.hs_code_id || null
   } else {
     form.id = null
-    form.code = ''
     form.name_cn = ''
     form.name_en = ''
     form.spec = ''

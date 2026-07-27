@@ -38,7 +38,6 @@ router = APIRouter()
 
 # ==================== 注册所有基础档案 CRUD ====================
 
-register_crud(router, Material,       MaterialCreate,   MaterialUpdate,   MaterialOut,   "materials",   "基础档案-材料",   search_fields=["code", "name"])
 register_crud(router, Process,        ProcessCreate,    ProcessUpdate,    ProcessOut,    "processes",   "基础档案-工序",   search_fields=["code", "name"])
 register_crud(router, Department,     DepartmentCreate, None,             DepartmentOut, "departments", "基础档案-部门",   search_fields=["code", "name"])
 register_crud(router, Employee,       EmployeeCreate,   None,             EmployeeOut,   "employees",   "基础档案-人员",   search_fields=["code", "name"])
@@ -48,7 +47,63 @@ register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCode
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])
 
 
-# ==================== 产品自定义创建（HS编码自动关联）====================
+# ==================== 材料自定义创建（自动编码 RM+6位流水）====================
+
+@router.post("/materials", tags=["基础档案-材料"])
+def create_material(data: MaterialCreate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    code = data.code or _next_code(db, Material, "RM")
+    m = Material(code=code, name=data.name, spec=data.spec, model=data.model or "",
+                 unit=data.unit, category=data.category or "原材料",
+                 purchase_price=data.purchase_price or 0,
+                 default_supplier_id=data.default_supplier_id, remark=data.remark or "")
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return MaterialOut.model_validate(m)
+
+
+@router.get("/materials", tags=["基础档案-材料"])
+def list_materials(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                   keyword: str = Query(""), db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user)):
+    query = db.query(Material)
+    if keyword:
+        from sqlalchemy import or_
+        query = query.filter(or_(Material.code.like(f"%{keyword}%"),
+                                 Material.name.like(f"%{keyword}%")))
+    total = query.count()
+    items = query.order_by(Material.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size,
+            "items": [MaterialOut.model_validate(m) for m in items]}
+
+
+@router.put("/materials/{item_id}", response_model=MaterialOut, tags=["基础档案-材料"])
+def update_material(item_id: int, data: MaterialUpdate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    item = db.query(Material).filter(Material.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "材料不存在")
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(item, k, v)
+    db.commit()
+    db.refresh(item)
+    return MaterialOut.model_validate(item)
+
+
+@router.delete("/materials/{item_id}", tags=["基础档案-材料"])
+def delete_material(item_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    item = db.query(Material).filter(Material.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "材料不存在")
+    item.is_active = 0
+    db.commit()
+    return {"message": "材料已删除"}
+
+
+# ==================== 产品自定义创建（HS编码自动关联 + 自动编码 P+6位流水）====================
 
 @router.post("/products", tags=["基础档案-产品"])
 def create_product_with_hs(
@@ -56,7 +111,8 @@ def create_product_with_hs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建产品，自动创建/关联 HS 编码"""
+    """创建产品，自动创建/关联 HS 编码，自动编码 P+6位流水"""
+    code = data.code or _next_code(db, Product, "P")
     hs_code_id = data.hs_code_id
     if data.hs_code and not hs_code_id:
         existing = db.query(HsCode).filter(HsCode.hs_code == data.hs_code).first()
@@ -74,7 +130,7 @@ def create_product_with_hs(
             db.flush()
             hs_code_id = hs.id
     product = Product(
-        code=data.code, name_cn=data.name_cn, name_en=data.name_en or "",
+        code=code, name_cn=data.name_cn, name_en=data.name_en or "",
         spec=data.spec, model=data.model or "", unit=data.unit,
         estimated_cost=data.estimated_cost or 0, sale_price=data.sale_price or 0,
         hs_code_id=hs_code_id, remark=data.remark or "",
