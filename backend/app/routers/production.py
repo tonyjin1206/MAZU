@@ -1138,11 +1138,11 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
         remark=data.get("remark", ""),
         supplier_name=data.get("supplier_name", ""),
         supplier_tax_id=data.get("supplier_tax_id", ""),
-        service_type=data.get("service_type", "加工费"),
-        service_qty=float(data.get("service_qty", 0)),
-        unit_price=float(data.get("unit_price", 0)),
-        tax_rate=float(data.get("tax_rate", 0)),
-        amount_excl_tax=float(data.get("amount_excl_tax", 0)),
+        service_type="加工费",
+        service_qty=sum(p.completed_qty or 0 for p in processes),
+        unit_price=round(total_amount / max(sum(p.completed_qty or 0 for p in processes), 1), 4),
+        tax_rate=13,
+        amount_excl_tax=round(total_amount / 1.13, 2),
         created_by=current_user.display_name or current_user.username,
     )
     db.add(inv)
