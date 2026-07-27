@@ -1,6 +1,6 @@
 """采购模块 API 路由 — 订单→入库(批次)→发票→应付→付款"""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -624,8 +624,11 @@ def create_invoice(
         except:
             pass
 
-    # 自动生成应付账款（含税金额）
+    # 自动生成应付账款（到期日 = 发票日期 + 供应商账期）
     total = (data.amount or 0) + (data.tax_amount or 0)
+    supplier = db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
+    due_days = supplier.account_period if supplier else 30
+    due_date = (data.invoice_date or date.today()) + timedelta(days=due_days)
     today_str = date.today().strftime("%Y%m%d")
     ap_count = db.query(sa_func.count(AccountsPayable.id)).filter(
         AccountsPayable.ap_no.like(f"AP-{today_str}%")
@@ -641,7 +644,7 @@ def create_invoice(
         currency_id=order.currency_id,
         paid_amount=0,
         balance=total,
-        due_date=order.expected_date,
+        due_date=due_date,
         status="未付款",
     )
     db.add(ap)

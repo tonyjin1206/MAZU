@@ -1,6 +1,6 @@
 """销售模块 API 路由 — 报价→订单→生产驱动→发货(批次)→报关→发票→应收→收款"""
 
-from datetime import date
+from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
@@ -75,8 +75,7 @@ def list_quotes(
 @router.post("/orders", tags=["销售管理"])
 def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """创建销售订单（定制产品触发生产）"""
-    from datetime import date
-    # 汇率换算
+    from datetime import date, timedelta    # 汇率换算
     currency_id = data.get("currency_id") or 1
 
     today_str = date.today().strftime("%Y%m%d")
@@ -283,7 +282,7 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db), current_us
 
     # 遍历明细行，每个产品生成一个生产订单
     from app.models.production import ProductionOrder
-    from datetime import date
+    from datetime import date, timedelta
     today_str = date.today().strftime("%Y%m%d")
     count = db.query(ProductionOrder).filter(
         ProductionOrder.order_no.like(f"MO-{today_str}%")).count()
@@ -331,7 +330,7 @@ def create_delivery(data: dict, db: Session = Depends(get_db), current_user: Use
     if qty_to_ship > remaining:
         raise HTTPException(400, f"发货数量{qty_to_ship}超过未发数量{remaining}")
 
-    from datetime import date
+    from datetime import date, timedelta
     today_str = date.today().strftime("%Y%m%d")
     count = db.query(SalesDelivery).filter(SalesDelivery.delivery_no.like(f"SD-{today_str}%")).count()
     delivery_no = f"SD-{today_str}-{count+1:03d}"
@@ -569,7 +568,10 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     db.add(invoice)
     db.flush()
 
-    # 生成应收
+    # 生成应收（计算到期日 = 发票日期 + 客户账期）
+    customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
+    due_days = customer.account_period if customer else 30
+    due_date = (invoice.invoice_date or date.today()) + timedelta(days=due_days)
     today_str = date.today().strftime("%Y%m%d")
     ar_count = db.query(sa_func.count(AccountsReceivable.id)).filter(
         AccountsReceivable.ar_no.like(f"AR-{today_str}%")
@@ -585,7 +587,7 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
         currency_id=order.currency_id,
         collected_amount=0,
         balance=data.get("total_amount") or data["amount"],
-        due_date=order.delivery_date,
+        due_date=due_date,
         status="未收款",
     )
     db.add(ar)
@@ -774,7 +776,7 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
     for k in ["amount", "amount_fc"]:
         if k in data and data[k] is not None:
             data[k] = float(data[k])
-    from datetime import date
+    from datetime import date, timedelta
     today_str = date.today().strftime("%Y%m%d")
     count = db.query(Collection).filter(Collection.collection_no.like(f"CR-{today_str}%")).count()
     coll_no = f"CR-{today_str}-{count+1:03d}"
