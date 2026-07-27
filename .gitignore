@@ -1,0 +1,56 @@
+# 外贸ERP系统 — .gitignore
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+*.spec
+
+# === Node ===
+node_modules/
+frontend/dist/
+
+# === 数据库 (不提交实际数据) ===
+backend/data/erp.db
+backend/data/erp.db-wal
+backend/data/erp.db-shm
+backend/data/journal/
+
+# === 构建产物 ===
+backend/run_dist/
+backend/frontend_dist/
+backend/build/
+backend/server.spec
+backend/build/
+
+# === 环境变量 ===
+.env
+.env.local
+.env.production
+
+# === 安装包 ===
+erp-system.zip
+*.zip
+
+# === IDE ===
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === 日志 ===
+*.log
+tmp/
+
+# === 文档草稿 ===
+AI_HANDOVER.md

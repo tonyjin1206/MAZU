@@ -1,0 +1,52 @@
+{
+  "name": "erp-app",
+  "version": "1.0.0",
+  "description": "LTMP (Lightweight Trade Management Platform)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac",
+    "build:dir": "electron-builder --mac dir"
+  },
+  "build": {
+    "appId": "com.erp.foreigntrade",
+    "productName": "LTMP",
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "icon.icns",
+      "target": ["dmg", "zip"],
+      "hardenedRuntime": false
+    },
+    "dmg": {
+      "title": "LTMP安装器",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "!backend/**",
+      "!node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/run_dist",
+        "to": "backend",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "../backend/frontend_dist",
+        "to": "backend/frontend_dist",
+        "filter": ["**/*"]
+      }
+    ],
+    "asar": true,
+    "asarUnpack": ["backend/**"]
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
