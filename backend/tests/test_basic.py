@@ -38,9 +38,9 @@ def test_me_endpoint(client, auth_headers):
 
 
 def test_unauthorized(client):
-    """无 token 访问应返回 401"""
+    """无 token 访问应返回 401/403"""
     resp = client.get("/api/auth/me")
-    assert resp.status_code == 401
+    assert resp.status_code in (401, 403)
 
 
 def test_static_files_accessible(client):

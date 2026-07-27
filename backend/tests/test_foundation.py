@@ -62,9 +62,8 @@ class TestCustomer:
 class TestProduct:
     def test_create_product(self, client, auth_headers):
         resp = client.post("/api/foundation/products", json={
-            "code": "PROD-001", "name": "测试产品",
+            "code": "PROD-001", "name_cn": "测试产品",
             "spec": "X1", "unit": "件",
-            "product_type": "成品",
         }, headers=auth_headers)
         assert resp.status_code == 200
         return resp.json()["id"]
