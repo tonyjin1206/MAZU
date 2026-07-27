@@ -1,10 +1,13 @@
 """LTMP 后端 — 共享 fixtures"""
 
+import shutil
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
-from app.database import init_db, SessionLocal
+from app.database import init_db, SessionLocal, engine, Base
 from app.utils.auth import get_password_hash
 from app.models.auth import User
 
@@ -24,10 +27,21 @@ def client(app):
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
-    """初始化测试数据库表 + 默认管理员"""
+    """清空所有表数据，重建表 + 默认管理员"""
+    # 先初始化所有表
     init_db()
+    # 清空所有表（保留表结构）
+    from sqlalchemy import text
+    meta = Base.metadata
+    with engine.connect() as conn:
+        conn.execute(text("PRAGMA foreign_keys=OFF"))
+        for table in reversed(meta.sorted_tables):
+            conn.execute(text(f"DELETE FROM {table.name}"))
+        conn.execute(text("PRAGMA foreign_keys=ON"))
+        conn.commit()
     db = SessionLocal()
     try:
+        # 创建默认管理员
         admin = db.query(User).filter(User.username == "admin").first()
         if not admin:
             db.add(User(
@@ -40,17 +54,7 @@ def setup_db():
     finally:
         db.close()
     yield
-    # 测试完成后清理测试数据库
-    import shutil
-    from pathlib import Path
-    from app.config import settings
-    db_path = settings.DATA_DIR / "erp.db"
-    if db_path.exists():
-        db_path.unlink()
-    for suffix in ["-wal", "-shm"]:
-        p = Path(str(db_path) + suffix)
-        if p.exists():
-            p.unlink()
+    # 不清理 — 保留数据供用户查看
 
 
 @pytest.fixture(scope="session")
