@@ -14,6 +14,7 @@ class TestTextileFullFlow:
     def test_full_flow(self, client, auth_headers):
         api = self._api
         h = auth_headers
+        from tests.test_data import _realistic
 
         # ======================== 基础数据 ========================
         cny = api(client, "POST", "/api/foundation/currencies",
@@ -27,62 +28,59 @@ class TestTextileFullFlow:
 
         # 8种原材料
         mat = {}
-        for name, code, unit, price in [
-            ("棉纱32S", "RM001", "kg", 32.0), ("棉纱40S", "RM002", "kg", 38.0),
-            ("涤纶丝75D", "RM003", "kg", 18.0), ("经纱", "RM004", "kg", 28.0),
-            ("纬纱", "RM005", "kg", 26.0), ("染色助剂", "RM006", "kg", 15.0),
-            ("包装材料", "RM007", "套", 5.0), ("浆料", "RM008", "kg", 12.0),
-        ]:
+        for name, code, unit, price, spec in _realistic["materials"]:
             mat[name] = api(client, "POST", "/api/foundation/materials",
-                            {"code": code, "name": name, "unit": unit,
-                             "material_type": "原材料", "purchase_price": price}, h)["id"]
+                            {"code": code, "name": name, "spec": spec, "unit": unit,
+                             "category": "原材料", "purchase_price": price}, h)["id"]
 
         # 6个工序
         proc = {}
-        for name, code, price in [
-            ("整经", "PROC01", 0.50), ("浆纱", "PROC02", 0.80),
-            ("织造", "PROC03", 1.20), ("染色", "PROC04", 2.00),
-            ("整理", "PROC05", 0.60), ("后整理", "PROC06", 1.00),
-        ]:
+        for name, code, price in _realistic["processes"]:
             proc[name] = api(client, "POST", "/api/foundation/processes",
                              {"code": code, "name": name, "unit_price": price}, h)["id"]
 
-        # 4供应商
+        # 4供应商（含税号、电话、地址）
         sup = {}
-        for name in ["山东华润纺织", "河南新野纺织", "江苏阳光纺织", "杭州宏丰化工"]:
+        for name, code, cp, phone, tax_id, addr, stype in _realistic["suppliers"]:
             sup[name] = api(client, "POST", "/api/foundation/suppliers",
-                            {"code": name[:6], "name": name}, h)["id"]
+                            {"code": code, "name": name,
+                             "contact_person": cp, "phone": phone,
+                             "tax_id": tax_id, "address": addr,
+                             "supplier_type": stype}, h)["id"]
 
         # 2委外商
         os_sun = api(client, "POST", "/api/foundation/outsourcers",
-                     {"supplier_id": sup["江苏阳光纺织"], "lead_time": 3}, h)["id"]
+                     {"supplier_id": sup["江苏阳光纺织科技有限公司"], "lead_time": 3}, h)["id"]
         os_hong = api(client, "POST", "/api/foundation/outsourcers",
-                      {"supplier_id": sup["杭州宏丰化工"], "lead_time": 5}, h)["id"]
+                      {"supplier_id": sup["杭州宏丰化工有限公司"], "lead_time": 5}, h)["id"]
         outsrc = {"江苏": os_sun, "宏丰": os_hong}
 
-        # 3客户
+        # 3客户（含联系人、税号、电话、地址）
         cust = {}
-        for name in ["上海进出口", "广州华衣", "浙江天诚"]:
+        for name, code, phone, tax_id, addr in _realistic["customers"]:
             cust[name] = api(client, "POST", "/api/foundation/customers",
-                             {"code": name[:4], "name_cn": name}, h)["id"]
+                             {"code": code, "name_cn": name,
+                              "country": "中国", "contact_person": "联系人",
+                              "phone": phone, "tax_id": tax_id,
+                              "address": addr}, h)["id"]
 
-        # 3产品
+        # 3产品（含真实HS编码、退税率）
         prod = {}
-        for name, code, price in [
-            ("纯棉坯布", "P001", 9.32), ("T/C涤棉布", "P002", 13.50),
-            ("全棉色织布", "P003", 18.00),
-        ]:
+        for name, code, price, spec, hsc in _realistic["products"]:
+            hs_info = _realistic["hs_codes"][hsc]
             p = api(client, "POST", "/api/foundation/products",
-                    {"code": code, "name_cn": name, "unit": "米", "sale_price": price}, h)
+                    {"code": code, "name_cn": name, "spec": spec, "unit": "米",
+                     "sale_price": price, "hs_code": hsc,
+                     "refund_rate": hs_info[3], "tax_rate": hs_info[2]}, h)
             prod[name] = {"id": p["id"], "price": price}
 
         # BOM（3产品 × 材料清单）
         boms = {
-            "纯棉坯布":  [(mat["棉纱32S"], 0.12), (mat["经纱"], 0.05), (mat["浆料"], 0.015)],
-            "T/C涤棉布": [(mat["棉纱40S"], 0.08), (mat["涤纶丝75D"], 0.06), (mat["经纱"], 0.04),
-                        (mat["浆料"], 0.01), (mat["包装材料"], 0.01)],
-            "全棉色织布": [(mat["棉纱40S"], 0.10), (mat["棉纱32S"], 0.04), (mat["经纱"], 0.03),
-                         (mat["纬纱"], 0.04), (mat["染色助剂"], 0.02), (mat["包装材料"], 0.01)],
+            "纯棉坯布":  [(mat["精梳棉纱32S"], 0.12), (mat["纯棉经纱"], 0.05), (mat["变性淀粉浆料"], 0.015)],
+            "T/C涤棉布": [(mat["精梳棉纱40S"], 0.08), (mat["涤纶低弹丝75D"], 0.06), (mat["纯棉经纱"], 0.04),
+                        (mat["变性淀粉浆料"], 0.01), (mat["编织布包装卷"], 0.01)],
+            "全棉色织布": [(mat["精梳棉纱40S"], 0.10), (mat["精梳棉纱32S"], 0.04), (mat["纯棉经纱"], 0.03),
+                         (mat["纯棉纬纱"], 0.04), (mat["活性染料套餐"], 0.02), (mat["编织布包装卷"], 0.01)],
         }
         for pname, items in boms.items():
             for mid, qty in items:
@@ -110,9 +108,9 @@ class TestTextileFullFlow:
         # ======================== 采购 ========================
         # 计算3个订单的总材料需求（增加余量）
         order_defs = [
-            ("上海进出口", "纯棉坯布",   100, 9.32),
-            ("广州华衣",   "T/C涤棉布",  80,  13.50),
-            ("浙江天诚",   "全棉色织布", 60,  18.00),
+            ("上海进出口贸易有限公司",  "纯棉坯布",   100, 9.32),
+            ("广州华衣集团股份有限公司", "T/C涤棉布",  80,  13.50),
+            ("浙江天诚纺织进出口公司",   "全棉色织布", 60,  18.00),
         ]
 
         total_material_needed = {}
@@ -122,17 +120,17 @@ class TestTextileFullFlow:
 
         # 采购——各材料采购量 = 总需求 × 1.3倍余量
         po_items_by_supplier = {
-            sup["山东华润纺织"]: [(mat["棉纱32S"], 30, 32.0), (mat["棉纱40S"], 20, 38.0)],
-            sup["河南新野纺织"]: [(mat["经纱"], 20, 28.0), (mat["纬纱"], 8, 26.0),
-                              (mat["浆料"], 8, 12.0)],
-            sup["江苏阳光纺织"]: [(mat["涤纶丝75D"], 15, 18.0), (mat["染色助剂"], 5, 15.0),
-                              (mat["包装材料"], 8, 5.0)],
+            sup["华润纺织(山东)有限公司"]: [(mat["精梳棉纱32S"], 30, 32.0), (mat["精梳棉纱40S"], 20, 38.0)],
+            sup["新野纺织集团股份有限公司"]: [(mat["纯棉经纱"], 20, 28.0), (mat["纯棉纬纱"], 8, 26.0),
+                        (mat["变性淀粉浆料"], 20, 12.0), (mat["编织布包装卷"], 10, 5.0)],
+            sup["江苏阳光纺织科技有限公司"]: [(mat["涤纶低弹丝75D"], 15, 18.0), (mat["活性染料套餐"], 5, 15.0),
+                               (mat["编织布包装卷"], 8, 5.0)],
         }
 
         # 库存追踪：material_id -> [(batch_no, quantity, unit_price), ...]
         inv_tracker = {}
 
-        for sid, items in po_items_by_supplier.items():
+        for idx, (sid, items) in enumerate(po_items_by_supplier.items()):
             po = api(client, "POST", "/api/purchase/orders", {
                 "supplier_id": sid, "currency_id": cny["id"], "tax_rate": 13,
                 "items": [{"material_id": m, "quantity": q, "unit_price": p}
@@ -155,13 +153,15 @@ class TestTextileFullFlow:
                 "supplier_id": sid, "invoice_date": "2026-07-27",
                 "amount": po_total, "amount_fc": po_total,
                 "tax_amount": round(po_total * 0.13 / 1.13, 2)}, h)
-            ap = api(client, "GET", "/api/purchase/ap", None, h)
-            if ap and ap.get("items"):
-                api(client, "POST", "/api/purchase/payments", {
-                    "supplier_id": sid, "amount": ap["items"][0]["amount"],
-                    "amount_fc": ap["items"][0]["amount"], "currency_id": cny["id"],
-                    "ap_account_ids": ap["items"][0]["id"],
-                    "payment_date": "2026-07-27"}, h)
+            # 后2个采购单不付款，保留应付余额供工作台验证
+            if idx >= 2:
+                ap = api(client, "GET", "/api/purchase/ap", None, h)
+                if ap and ap.get("items"):
+                    api(client, "POST", "/api/purchase/payments", {
+                        "supplier_id": sid, "amount": ap["items"][0]["amount"],
+                        "amount_fc": ap["items"][0]["amount"], "currency_id": cny["id"],
+                        "ap_account_ids": ap["items"][0]["id"],
+                        "payment_date": "2026-07-27"}, h)
 
         # 构建库存追踪表
         bal = api(client, "GET", "/api/inventory/balance?type=material&page_size=50", None, h)
@@ -199,7 +199,7 @@ class TestTextileFullFlow:
                     f"物料 {mid} 库存不足! 需要{needed_qty} 剩余{needed_qty - remaining + sum(c[1] for c in consumed)} 缺{remaining}")
             return consumed
 
-        for cust_name, prod_name, order_qty, unit_price in order_defs:
+        for i, (cust_name, prod_name, order_qty, unit_price) in enumerate(order_defs):
             pid = prod[prod_name]["id"]
             pid_key = prod_name
             pname_short = prod_name[:4]
@@ -320,116 +320,129 @@ class TestTextileFullFlow:
             unit_cost = round((mat_actual_total + total_proc_cost) / order_qty, 2)
             print(f"   ⑤ 完工入库 ¥{mat_actual_total:.0f}+加工¥{total_proc_cost:.0f}=¥{unit_cost}/米 批次{batch_fg}")
 
-            # ======================== 逆向操作测试（仅产品1） ========================
+            # ======================== 逆向操作测试（仅产品1：取消入库→取消发料→重来→入库→关→解关→关）====================
             if prod_name == "纯棉坯布":
                 print(f"\n   ═══ 逆向操作测试 ═══")
 
-                # ---- (7a) 取消入库 ----
+                # (a) 取消入库
                 cancel_rcpt = api(client, "POST",
                                   f"/api/production/productions/{mo_id}/receipts/{rcpt_id}/cancel", {}, h)
                 assert cancel_rcpt, "取消入库失败"
-                print(f"   ⑦a 取消入库 ✅ (状态恢复至: 已完成)")
+                print(f"   rev-a: 取消入库 ✅")
 
-                # ---- (7b) 反退最后一道工序 ----
-                last_proc = processes[-1]  # 织造
-                revert = api(client, "POST",
-                             f"/api/production/productions/{mo_id}/processes/{last_proc['id']}/revert", {}, h)
-                assert revert, "反退工序失败"
-                print(f"   ⑦b 反退工序({last_proc['process_name']}) ✅ (状态→待发料)")
+                # (b) 反退所有工序（从后往前，这样才能取消发料）
+                for proc_item in reversed(processes):
+                    rev = api(client, "POST",
+                              f"/api/production/productions/{mo_id}/processes/{proc_item['id']}/revert", {}, h)
+                    assert rev, f"反退 {proc_item['process_name']} 失败"
+                print(f"   rev-b: 反退全部工序 ✅")
 
-                # ---- (7c) 取消最后工序的发料 ----
-                for mid, bn, qty, price, issue_id in issued_records.get(last_proc['id'], []):
-                    cancel_issue = api(client, "POST",
-                                       f"/api/production/productions/{mo_id}/issues/{issue_id}/cancel", {}, h)
-                    assert cancel_issue, "取消发料失败"
-                    # 归还库存（恢复inv_tracker）
-                    inv_tracker.setdefault(mid, []).append({"batch_no": bn, "qty": qty, "price": price})
-                    total_mat_cost -= qty * price
-                    print(f"   ⑦c 取消发料({mid}) → 归还批次{bn} {qty} ✅")
+                # (c) 取消所有发料（所有工序有材料的都取消）
+                cancel_cnt = 0
+                for pi, proc_item in enumerate(processes):
+                    for mid, bn, cqty, cprice, issue_id in issued_records.get(proc_item["id"], []):
+                        ci = api(client, "POST",
+                                 f"/api/production/productions/{mo_id}/issues/{issue_id}/cancel", {}, h)
+                        if ci:
+                            inv_tracker.setdefault(mid, []).append(
+                                {"batch_no": bn, "qty": cqty, "price": cprice})
+                            cancel_cnt += 1
+                print(f"   rev-c: 取消发料 {cancel_cnt}条 ✅")
 
-                # ---- (7d) 重新发料 + 完工 ----
-                to_issue = mat_assign.get(last_proc['seq'], [])
-                for mid, qty_needed in to_issue:
-                    consumed = consume_material(mid, qty_needed)
-                    for bn, cqty, cprice in consumed:
-                        api(client, "POST",
-                            f"/api/production/productions/{mo_id}/processes/{last_proc['id']}/issue", {
-                            "material_id": mid, "quantity": cqty,
-                            "batch_no": bn, "warehouse_id": wh_rm,
-                            "unit_price": cprice,
-                        }, h)
-                        total_mat_cost += cqty * cprice
-                finish_again = api(client, "POST",
-                                   f"/api/production/productions/{mo_id}/processes/{last_proc['id']}/finish", {
-                    "unit_price": last_proc.get("unit_price", 0) or 1.20,
-                    "process_qty": order_qty,
-                }, h)
-                total_proc_cost = sum(
-                    (p.get("unit_price", 0) or 0) * order_qty
-                    for p in [finish_again, *[{"unit_price": pi.get("unit_price", 0)} for pi in processes[:-1]]]
-                )
-                print(f"   ⑦d 重新发料+完工 ✅")
+                # (d) 重新发料 + 重新完工
+                total_mat_cost = 0
+                total_proc_cost = 0
+                for pi, proc_item in enumerate(processes):
+                    seq = proc_item["seq"]
+                    is_os = bool(proc_item.get("outsourcer_id"))
+                    for mid, qty_needed in mat_assign.get(seq, []):
+                        for bn, cqty, cprice in consume_material(mid, qty_needed):
+                            api(client, "POST",
+                                f"/api/production/productions/{mo_id}/processes/{proc_item['id']}/issue", {
+                                "material_id": mid, "quantity": cqty,
+                                "batch_no": bn, "warehouse_id": wh_rm,
+                                "unit_price": cprice,
+                            }, h)
+                            total_mat_cost += cqty * cprice
+                    up = 0 if (not is_os and seq == 1) else 0.50
+                    f2 = api(client, "POST",
+                             f"/api/production/productions/{mo_id}/processes/{proc_item['id']}/finish", {
+                        "unit_price": up, "process_qty": order_qty,
+                    }, h)
+                    total_proc_cost += up * order_qty
+                print(f"   rev-d: 重新发料+完工 ✅")
 
-                # ---- (7e) 重新入库 ----
+                # (e) 重新入库
                 md3 = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
                 mat_actual = sum(
                     (pm.get("actual_qty", 0) or 0) * (pm.get("unit_price", 0) or 0)
-                    for pm in md3.get("materials", [])
-                ) or total_mat_cost
+                    for pm in md3.get("materials", [])) or total_mat_cost
                 receipt2 = api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
                     "quantity": order_qty, "warehouse_id": wh_fg,
                     "material_cost": mat_actual, "process_cost": total_proc_cost,
                     "receipt_date": "2026-07-27",
                 }, h)
                 batch_fg = receipt2.get("batch_no", "")
-                print(f"   ⑦e 重新入库 ✅ 批次{batch_fg}")
+                print(f"   rev-e: 重新入库 ✅ 批次{batch_fg}")
 
-                # ---- (8) 订单关闭 / 取消关闭 ----
-                close = api(client, "POST", f"/api/production/productions/{mo_id}/close", {}, h)
-                assert close, "关闭订单失败"
-                print(f"   ⑧a 订单关闭 ✅")
-
+                # (f) 关闭
+                assert api(client, "POST", f"/api/production/productions/{mo_id}/close", {}, h), "关闭失败"
                 # 验证关闭后操作被阻止
-                blocked = api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
+                assert api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
                     "quantity": 1, "warehouse_id": wh_fg,
                     "material_cost": 0, "process_cost": 0,
                     "receipt_date": "2026-07-27",
-                }, h)
-                assert blocked is None, "已关闭订单不应允许入库"
-                print(f"   ⑧b 关闭后操作被阻止 ✅")
+                }, h) is None, "已关闭不应允许入库"
+                print(f"   rev-f: 关闭 → 操作被阻止 ✅")
 
-                unclose = api(client, "POST", f"/api/production/productions/{mo_id}/unclose", {}, h)
-                assert unclose, "取消关闭失败"
-                print(f"   ⑧c 取消关闭 ✅")
+                # (g) 取消关闭
+                assert api(client, "POST", f"/api/production/productions/{mo_id}/unclose", {}, h), "取消关闭失败"
+                print(f"   rev-g: 取消关闭 ✅")
+
+                # (h) 最终关闭
+                assert api(client, "POST", f"/api/production/productions/{mo_id}/close", {}, h), "最终关闭失败"
+                print(f"   rev-h: 最终关闭 ✅")
 
             # ---- (9) 销售出库 ----
             sd = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
             oi_id = sd["items"][0]["id"]
-            api(client, "POST", "/api/sales/deliveries", {
+            delivery = api(client, "POST", "/api/sales/deliveries", {
                 "order_id": so_id, "order_item_id": oi_id,
                 "batch_no": batch_fg, "quantity": order_qty, "warehouse_id": wh_fg,
             }, h)
-            print(f"   ⑥ 销售出库 ✅")
+            delivery_no = delivery.get("delivery_no", "") if delivery else ""
+            print(f"   ⑥ 销售出库: {delivery_no}")
 
-            # ---- (10) 销售发票+应收+收款 ----
+            # ---- (9a) 创建报关单 ----
             sa = order_qty * unit_price
+            customs = api(client, "POST", "/api/sales/customs", {
+                "customs_no": f"223320240727{400000+i:06d}",
+                "order_id": so_id, "hs_code_id": 1,
+                "declare_amount": sa, "declare_currency": cny["id"],
+                "declare_date": "2026-07-27",
+            }, h)
+            if customs:
+                print(f"   报关单创建: {customs.get('customs_no', '')}")
+
+            # ---- (10) 销售发票+应收 ----
             inv = api(client, "POST", "/api/sales/invoices", {
                 "invoice_no": f"INV-S-{prod_name[:2]}", "order_id": so_id,
                 "invoice_date": "2026-07-27",
                 "amount": round(sa / 1.13, 2), "amount_fc": round(sa / 1.13, 2),
                 "tax_amount": round(sa * 0.13 / 1.13, 2), "total_amount": sa, "tax_rate": 13,
             }, h)
-
-            ar = api(client, "GET", "/api/sales/ar", None, h)
-            if ar and ar.get("items"):
-                ar_id = ar["items"][0]["id"]
-                api(client, "POST", "/api/sales/collections", {
-                    "customer_id": cust[cust_name], "collection_date": "2026-07-27",
-                    "amount": sa, "amount_fc": sa, "currency_id": cny["id"],
-                    "collection_method": "电汇",
-                    "ar_account_ids": [ar_id], "remark": f"回款{so_no}",
-                }, h)
-            print(f"   开票+应收+收款 ✅")
+            # 仅最后一个订单收款（前2个保留应收余额供工作台验证）
+            if i >= 2:
+                ar = api(client, "GET", "/api/sales/ar", None, h)
+                if ar and ar.get("items"):
+                    ar_id = ar["items"][0]["id"]
+                    api(client, "POST", "/api/sales/collections", {
+                        "customer_id": cust[cust_name], "collection_date": "2026-07-27",
+                        "amount": sa, "amount_fc": sa, "currency_id": cny["id"],
+                        "collection_method": "电汇",
+                        "ar_account_id": ar_id, "remark": f"回款{so_no}",
+                    }, h)
+            print(f"   开票+应收 ✅")
 
             # ---- (11) 毛利 ----
             gp = sa - mat_actual_total - total_proc_cost
@@ -440,7 +453,7 @@ class TestTextileFullFlow:
                 "product": prod_name, "so": so_no, "mo": mo_no,
                 "sales": sa, "mat_cost": mat_actual_total,
                 "proc_cost": total_proc_cost, "gross": gp, "margin": gm,
-                "batch": batch_fg,
+                "batch": batch_fg, "qty": order_qty,
             })
 
         # ======================== 退税 ========================
@@ -451,9 +464,30 @@ class TestTextileFullFlow:
             "tax_rate": 13, "refund_rate": 13, "input_tax": round(total_sales * 0.13 / 1.13, 2),
         }, h)
         did = decl["id"]
+        print(f"\n✅ 退税申报单: {decl['declaration_no']}")
+
+        # 获取自动生成的进项发票 → 创建申报明细行
+        input_invs = api(client, "GET", "/api/tax-refund/input-invoices?page_size=50", None, h)
+        if input_invs and input_invs.get("items"):
+            for r in all_results:
+                # 取第一个可用的进项发票（简化）
+                inv = input_invs["items"][0]
+                row = api(client, "POST", f"/api/tax-refund/declarations/{did}/rows", {
+                    "input_invoice_id": inv["id"],
+                    "product_code": f"HS{r['product'][:2]}",
+                    "product_name": r["product"],
+                    "unit": "米",
+                    "quantity": r.get("qty", 100),
+                    "taxable_amount": round(r["sales"] / 1.13, 2),
+                    "tax_rate": 13,
+                    "refund_rate": 13,
+                }, h)
+                if row:
+                    print(f"   申报明细行: {row.get('assoc_no', '')} — {r['product']}")
+
         api(client, "PUT", f"/api/tax-refund/declarations/{did}/submit", {}, h)
-        api(client, "PUT", f"/api/tax-refund/declarations/{did}/refund", {}, h)
-        print(f"\n✅ 退税申报: {decl['declaration_no']} → 已申报→已退税")
+        api(client, "PUT", f"/api/tax-refund/declarations/{did}/refund", {"amount": round(total_sales * 0.13, 2)}, h)
+        print(f"   ✅ 已申报→已退税")
 
         # ======================== 汇总 ========================
         print(f"\n{'='*60}")
@@ -467,7 +501,7 @@ class TestTextileFullFlow:
         print(f"   合计: ¥{sum(r['sales'] for r in all_results):.0f} "
               f"毛利¥{sum(r['gross'] for r in all_results):.0f} "
               f"({sum(r['gross'] for r in all_results)/sum(r['sales'] for r in all_results)*100:.1f}%)")
-        print(f"   ✅ 逆向操作: 取消入库→反退→取消发料→重新发料→完工→入库→关闭→取消关闭")
+        print(f"   ✅ 逆向操作: 取消入库→反退→取消发料→重发料→完工→入库→关闭→阻止→取消关闭→关闭")
         print(f"   ✅ Bug验证: 自产工序单价可为0")
 
     @staticmethod

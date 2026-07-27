@@ -81,7 +81,7 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="profitVisible" :title="'销售成本拆解 — ' + profitDetail.product_name" width="820px">
+    <el-dialog v-model="profitVisible" :title="'销售成本拆解 — ' + profitDetail.product_name" width="970px">
       <div v-if="profitDetail.product_name">
         <el-descriptions :column="4" border size="small" style="margin-bottom: 12px">
           <el-descriptions-item label="产品">{{ profitDetail.product_name }}</el-descriptions-item>
@@ -90,13 +90,13 @@
           <el-descriptions-item label="总毛利"><span :style="{ color: profitDetail.total_profit >= 0 ? '#67c23a' : '#f56c6c', fontWeight: 'bold' }">{{ $fm(profitDetail.total_profit) }}</span></el-descriptions-item>
         </el-descriptions>
         <el-table :data="profitDetail.detail" border stripe size="small" style="width: 100%">
-          <el-table-column label="销售订单" width="150"><template #default="{ row }"><el-button link type="primary" size="small" @click="openOrderDetail(row.order_no)">{{ row.order_no }}</el-button></template></el-table-column>
+          <el-table-column label="销售订单" width="120"><template #default="{ row }"><el-button link type="primary" size="small" @click="openOrderDetail(row.order_no)">{{ row.order_no }}</el-button></template></el-table-column>
           <el-table-column prop="customer_name" label="客户" min-width="100" show-overflow-tooltip />
           <el-table-column label="数量" width="70" align="right"><template #default="{ row }">{{ $fq(row.qty) }}</template></el-table-column>
-          <el-table-column label="销售发票号" width="150"><template #default="{ row }"><el-button v-if="row.invoice_no" link type="primary" size="small" @click="openInvoiceDetail(row.invoice_no)">{{ row.invoice_no }}</el-button></template></el-table-column>
+          <el-table-column label="销售发票号" width="120"><template #default="{ row }"><el-button v-if="row.invoice_no" link type="primary" size="small" @click="openInvoiceDetail(row.invoice_no)">{{ row.invoice_no }}</el-button></template></el-table-column>
           <el-table-column label="销售单价" width="90" align="right"><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
           <el-table-column label="销售金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.revenue) }}</template></el-table-column>
-          <el-table-column label="出库单号" width="150"><template #default="{ row }"><el-button v-if="row.trans_no" link type="primary" size="small" @click="openTransDetail(row.trans_no)">{{ row.trans_no }}</el-button></template></el-table-column>
+          <el-table-column label="出库单号" width="120"><template #default="{ row }"><el-button v-if="row.trans_no" link type="primary" size="small" @click="openTransDetail(row.trans_no)">{{ row.trans_no }}</el-button></template></el-table-column>
           <el-table-column label="成本单价" width="90" align="right"><template #default="{ row }">{{ $fm(row.unit_cost) }}</template></el-table-column>
           <el-table-column label="成本金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.cost) }}</template></el-table-column>
           <el-table-column label="毛利" width="100" align="right"><template #default="{ row }"><span :style="{ color: row.gross_profit >= 0 ? '#67c23a' : '#f56c6c' }">{{ $fm(row.gross_profit) }}</span></template></el-table-column>
@@ -157,31 +157,65 @@
     </el-dialog>
 
     <el-dialog v-model="netCashVisible" :title="'现金净收支明细 — ' + netCashMonth" width="700px">
-      <div v-if="netCashDetail">
+      <div>
         <el-descriptions :column="3" border size="small" style="margin-bottom: 12px">
           <el-descriptions-item label="收款合计"><span style="color: #409eff; font-weight: bold">{{ $fm(netCashDetail.total_collection) }}</span></el-descriptions-item>
           <el-descriptions-item label="付款合计"><span style="color: #e6a23c; font-weight: bold">{{ $fm(netCashDetail.total_payment) }}</span></el-descriptions-item>
           <el-descriptions-item label="净收支"><span :style="{ color: netCashDetail.net >= 0 ? '#67c23a' : '#f56c6c', fontWeight: 'bold' }">{{ $fm(netCashDetail.net) }}</span></el-descriptions-item>
         </el-descriptions>
-        <el-tabs v-model="netCashActiveTab">
-          <el-tab-pane label="收款明细">
-            <el-table :data="netCashDetail.collections" border stripe size="small" style="width: 100%">
-              <el-table-column prop="doc_no" label="收款单号" width="180" />
-              <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-              <el-table-column prop="date" label="日期" width="100" />
-              <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-            </el-table>
-          </el-tab-pane>
-          <el-tab-pane label="付款明细">
-            <el-table :data="netCashDetail.payments" border stripe size="small" style="width: 100%">
-              <el-table-column prop="doc_no" label="付款单号" width="180" />
-              <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-              <el-table-column prop="date" label="日期" width="100" />
-              <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
-            </el-table>
-          </el-tab-pane>
-        </el-tabs>
+        <div style="display: flex; gap: 12px; margin-bottom: 8px">
+          <el-button :type="netCashActiveTab === 'collections' ? 'primary' : 'default'" size="small" @click="netCashActiveTab = 'collections'">收款明细</el-button>
+          <el-button :type="netCashActiveTab === 'payments' ? 'primary' : 'default'" size="small" @click="netCashActiveTab = 'payments'">付款明细</el-button>
+        </div>
+        <el-table v-show="netCashActiveTab === 'collections'" :data="netCashDetail.collections" border stripe size="small" style="width: 100%">
+          <el-table-column prop="doc_no" label="收款单号" width="180" />
+          <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+          <el-table-column prop="date" label="日期" width="100" />
+          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+        </el-table>
+        <el-table v-show="netCashActiveTab === 'payments'" :data="netCashDetail.payments" border stripe size="small" style="width: 100%">
+          <el-table-column prop="doc_no" label="付款单号" width="180" />
+          <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+          <el-table-column prop="date" label="日期" width="100" />
+          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+        </el-table>
       </div>
+    </el-dialog>
+
+    <el-dialog v-model="arDetailVisible" :title="arDetailTitle" width="970px">
+      <el-table :data="arDetailItems" border stripe size="small" style="width: 100%">
+        <el-table-column prop="ar_no" label="应收单号" width="160" />
+        <el-table-column label="单据日期" width="100" prop="invoice_date" />
+        <el-table-column label="结算方式" width="80" prop="payment_terms" />
+        <el-table-column label="账期" width="60" prop="account_period" />
+        <el-table-column label="金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+        <el-table-column label="已收" width="110" align="right"><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
+        <el-table-column label="余额" width="110" align="right">
+          <template #default="{ row }"><span style="color: #e6a23c; font-weight: bold">{{ $fm(row.balance) }}</span></template>
+        </el-table-column>
+        <el-table-column prop="due_date" label="到期日" width="100" />
+        <el-table-column prop="status" label="状态" width="80" align="center">
+          <template #default="{ row }"><el-tag :type="row.status === '已收款' ? 'success' : 'danger'" size="small">{{ row.status }}</el-tag></template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <el-dialog v-model="apDetailVisible" :title="apDetailTitle" width="970px">
+      <el-table :data="apDetailItems" border stripe size="small" style="width: 100%">
+        <el-table-column prop="ap_no" label="应付单号" width="160" />
+        <el-table-column label="单据日期" width="100" prop="invoice_date" />
+        <el-table-column label="结算方式" width="80" prop="payment_terms" />
+        <el-table-column label="账期" width="60" prop="account_period" />
+        <el-table-column label="金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+        <el-table-column label="已付" width="110" align="right"><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
+        <el-table-column label="余额" width="110" align="right">
+          <template #default="{ row }"><span style="color: #f56c6c; font-weight: bold">{{ $fm(row.balance) }}</span></template>
+        </el-table-column>
+        <el-table-column prop="due_date" label="到期日" width="100" />
+        <el-table-column prop="status" label="状态" width="80" align="center">
+          <template #default="{ row }"><el-tag :type="row.status === '已付款' ? 'success' : 'danger'" size="small">{{ row.status }}</el-tag></template>
+        </el-table-column>
+      </el-table>
     </el-dialog>
   </div>
 </template>
@@ -210,8 +244,14 @@ const invoiceVisible = ref(false)
 const invoiceData = ref(null)
 const netCashVisible = ref(false)
 const netCashMonth = ref('')
-const netCashDetail = ref(null)
+const netCashDetail = ref({ collections: [], payments: [], total_collection: 0, total_payment: 0, net: 0 })
 const netCashActiveTab = ref('collections')
+const arDetailVisible = ref(false)
+const arDetailTitle = ref('')
+const arDetailItems = ref([])
+const apDetailVisible = ref(false)
+const apDetailTitle = ref('')
+const apDetailItems = ref([])
 
 const maxCashIn = computed(() => Math.max(...cashIn.value.map(i => i.amount), 1))
 const maxCashOut = computed(() => Math.max(...cashOut.value.map(i => i.amount), 1))
@@ -237,19 +277,35 @@ async function fetchData() {
 
 function drillCollection(month) { router.push({ path: '/sales/collections', query: { month } }) }
 function drillPayment(month) { router.push({ path: '/purchase/payments', query: { month } }) }
-function drillAR(row) { router.push({ path: '/sales/ar' }) }
-function drillAP(row) { router.push({ path: '/purchase/ap' }) }
+async function drillAR(row) {
+  arDetailTitle.value = `应收账款明细 — ${row.customer_name}`
+  arDetailItems.value = []
+  arDetailVisible.value = true
+  try {
+    const res = await request.get('/sales/ar', { params: { page_size: 100 } })
+    arDetailItems.value = (res.items || []).filter(a => a.customer_name === row.customer_name && a.balance > 0)
+  } catch {}
+}
+async function drillAP(row) {
+  apDetailTitle.value = `应付账款明细 — ${row.supplier_name}`
+  apDetailItems.value = []
+  apDetailVisible.value = true
+  try {
+    const res = await request.get('/purchase/ap', { params: { page_size: 100 } })
+    apDetailItems.value = (res.items || []).filter(a => a.supplier_name === row.supplier_name && a.balance > 0)
+  } catch {}
+}
 
 async function drillCollectionMonth(month) {
-  netCashMonth.value = month; netCashActiveTab.value = 'collections'; netCashDetail.value = null; netCashVisible.value = true
+  netCashMonth.value = month; netCashActiveTab.value = 'collections'; netCashVisible.value = true
   try { netCashDetail.value = await request.get(`/dashboard/net-cash-detail/${month}`) } catch {}
 }
 async function drillPaymentMonth(month) {
-  netCashMonth.value = month; netCashActiveTab.value = 'payments'; netCashDetail.value = null; netCashVisible.value = true
+  netCashMonth.value = month; netCashActiveTab.value = 'payments'; netCashVisible.value = true
   try { netCashDetail.value = await request.get(`/dashboard/net-cash-detail/${month}`) } catch {}
 }
 async function drillNetCash(month) {
-  netCashMonth.value = month; netCashActiveTab.value = 'collections'; netCashDetail.value = null; netCashVisible.value = true
+  netCashMonth.value = month; netCashActiveTab.value = 'collections'; netCashVisible.value = true
   try { netCashDetail.value = await request.get(`/dashboard/net-cash-detail/${month}`) } catch {}
 }
 

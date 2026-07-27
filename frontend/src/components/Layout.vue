@@ -113,6 +113,7 @@ onMounted(() => {
 })
 
 const pageTitle = computed(() => {
+  const path = route.path
   const titles = {
     '/dashboard': '工作台',
     '/foundation/materials': '原辅材料管理',
@@ -142,7 +143,8 @@ const pageTitle = computed(() => {
     '/inventory/management': '库存管理',
     '/tax-refund/declarations': '退税申报',
   }
-  return titles[route.path] || 'LTMP'
+  if (path.startsWith('/production/detail')) return '生产订单详情'
+  return titles[path] || 'LTMP'
 })
 
 const currentRoute = computed(() => route.path)

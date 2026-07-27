@@ -99,7 +99,8 @@ class PurchaseInvoice(Base):
     order_id = Column(Integer, ForeignKey("po_order.id"), nullable=False)
     supplier_id = Column(Integer, ForeignKey("fd_supplier.id"), nullable=False)
     invoice_date = Column(Date, nullable=False, comment="开票日期")
-    invoice_type = Column(String(16), default="专票", comment="类型: 专票/普票")
+    invoice_type = Column(String(32), default="增值税专用发票",
+                          comment="类型: 增值税专用发票/海关进口缴款书/农产品收购发票/普通发票/免税发票")
     amount = Column(Float, default=0, comment="发票金额(本币)")
     amount_fc = Column(Float, default=0, comment="发票金额(外币)")
     tax_amount = Column(Float, default=0, comment="税额")

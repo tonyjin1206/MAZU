@@ -5,6 +5,10 @@ import router from '../router'
 const request = axios.create({
   baseURL: '/api',
   timeout: 30000,
+  headers: {
+    'Cache-Control': 'no-cache',
+    'Pragma': 'no-cache',
+  },
 })
 
 // 驼峰 → 蛇形转换

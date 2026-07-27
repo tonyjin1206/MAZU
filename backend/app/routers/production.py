@@ -193,6 +193,21 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
     }
 
 
+@router.put("/productions/{prod_id}", tags=["生产管理-新"])
+def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """更新生产订单（交期、备注）"""
+    prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
+    if not prod:
+        raise HTTPException(404, "订单不存在")
+    if "due_date" in data and data["due_date"]:
+        from datetime import date
+        prod.due_date = date.fromisoformat(str(data["due_date"])[:10])
+    if "remark" in data:
+        prod.remark = data["remark"]
+    db.commit()
+    return {"message": "生产订单已更新"}
+
+
 @router.post("/productions/{prod_id}/expand-bom", tags=["生产管理-新"])
 def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """展开BOM → 生成物料需求清单"""
@@ -484,7 +499,10 @@ def list_production_issues(
     return {"items": [{
         "id": i.id, "issue_no": i.issue_no, "material_id": i.material_id,
         "material_name": i.material.name if i.material else "",
+        "material_spec": i.material.spec if i.material else "",
+        "material_model": i.material.model if i.material else "",
         "batch_no": i.batch_no, "quantity": i.quantity,
+        "unit_price": i.unit_price or 0,
         "issue_date": str(i.issue_date),
     } for i in items]}
 
@@ -899,6 +917,9 @@ def list_production_receipts(prod_id: int, db: Session = Depends(get_db)):
         "material_cost": r.material_cost or 0,
         "process_cost": r.process_cost or 0,
         "unit_cost": r.unit_cost or 0,
+        "product_name": r.product.name_cn if r.product else "",
+        "product_spec": r.product.spec if r.product else "",
+        "product_model": r.product.model if r.product else "",
         "warehouse_name": r.warehouse.name if r.warehouse else "",
         "receipt_date": str(r.receipt_date) if r.receipt_date else "",
         "operator": r.operator or "",

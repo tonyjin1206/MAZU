@@ -51,8 +51,17 @@
         <el-form-item label="销售价" prop="sale_price">
           <el-input type="number" v-model="form.sale_price" :precision="2" :min="0" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="HS编码" prop="hs_code_id">
-          <el-select v-model="form.hs_code_id" placeholder="选择HS编码" clearable filterable style="width: 100%">
+        <el-form-item label="HS编码" prop="hs_code">
+          <el-input v-model="form.hs_code" placeholder="如 52094200" />
+        </el-form-item>
+        <el-form-item label="退税率%" prop="refund_rate">
+          <el-input type="number" v-model="form.refund_rate" :min="0" :max="17" />
+        </el-form-item>
+        <el-form-item label="征税率%" prop="tax_rate">
+          <el-input type="number" v-model="form.tax_rate" :min="0" :max="17" />
+        </el-form-item>
+        <el-form-item label="选择已有HS" prop="hs_code_id">
+          <el-select v-model="form.hs_code_id" placeholder="(可选)选择已有HS编码" clearable filterable style="width: 100%" @change="onHsCodeSelect">
             <el-option v-for="h in hsCodeOptions" :key="h.id" :label="`${h.hs_code} - ${h.name}`" :value="h.id" />
           </el-select>
         </el-form-item>
@@ -79,7 +88,7 @@ const dialogLoading = ref(false)
 const dialogMode = ref('create')
 const formRef = ref(null)
 const hsCodeOptions = ref([])
-const form = reactive({ id: null, code: '', name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code_id: null })
+const form = reactive({ id: null, code: '', name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code: '', refund_rate: 13, tax_rate: 13, hs_code_id: null })
 
 onMounted(() => {
   fetchData()
@@ -93,10 +102,22 @@ async function loadHsCodes() {
   } catch (e) { /* ignore */ }
 }
 
+function onHsCodeSelect(id) {
+  if (!id) return
+  const h = hsCodeOptions.value.find(x => x.id === id)
+  if (h) {
+    form.hs_code = h.hs_code
+    form.refund_rate = h.refund_rate || 13
+    form.tax_rate = h.tax_rate || 13
+  }
+}
+
 const formRules = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name_cn: [{ required: true, message: '请输入中文名', trigger: 'blur' }],
+  spec: [{ required: true, message: '请输入规格', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
+  sale_price: [{ required: true, message: '请输入销售价', trigger: 'blur' }],
 }
 
 async function fetchData() {
@@ -132,6 +153,9 @@ function openDialog(mode, row = {}) {
     form.spec = row.spec || ''
     form.unit = row.unit || ''
     form.sale_price = row.sale_price || 0
+    form.hs_code = row.hs_code || (row.hs_code_obj && row.hs_code_obj.hs_code) || ''
+    form.refund_rate = row.refund_rate || (row.hs_code_obj && row.hs_code_obj.refund_rate) || 13
+    form.tax_rate = row.tax_rate || (row.hs_code_obj && row.hs_code_obj.tax_rate) || 13
     form.hs_code_id = row.hs_code_id || null
   } else {
     form.id = null
@@ -141,6 +165,9 @@ function openDialog(mode, row = {}) {
     form.spec = ''
     form.unit = ''
     form.sale_price = 0
+    form.hs_code = ''
+    form.refund_rate = 13
+    form.tax_rate = 13
     form.hs_code_id = null
   }
   dialogVisible.value = true

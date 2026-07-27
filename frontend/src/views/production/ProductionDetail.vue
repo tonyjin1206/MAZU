@@ -1,6 +1,6 @@
 <template>
   <div style="padding: 16px">
-    <el-page-header @back="$router.back()" :content="`${order.order_no} - ${order.product_name}`" style="margin-bottom: 16px" />
+    <el-page-header @back="$router.back()" content="生产订单详情" style="margin-bottom: 16px" />
     <el-card>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="订单信息" name="info">
@@ -12,23 +12,77 @@
             </el-row>
             <el-row :gutter="16">
               <el-col :span="8"><el-form-item label="状态"><el-tag :type="statusType(order.status)">{{ order.status }}</el-tag></el-form-item></el-col>
-              <el-col :span="8"><el-form-item label="交期"><el-input :model-value="order.due_date" disabled /></el-form-item></el-col>
-              <el-col :span="8"><el-form-item label="保存日期"><el-input :model-value="order.created_at" disabled /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item label="交期" required>
+                <el-date-picker v-model="order.due_date" type="date" value-format="YYYY-MM-DD"
+                  placeholder="选择交期" style="width: 100%" :disabled="order.status !== '待排产'" />
+              </el-form-item></el-col>
+              <el-col :span="8"><el-form-item label="创建日期"><el-input :model-value="order.created_at" disabled /></el-form-item></el-col>
             </el-row>
             <el-row :gutter="16">
               <el-col :span="8"><el-form-item label="物料成本"><el-input :model-value="$fm(order.total_material_cost)" disabled /></el-form-item></el-col>
               <el-col :span="8"><el-form-item label="加工费合计"><el-input :model-value="$fm(order.total_process_cost)" disabled /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item label="转出材料成本"><el-input :model-value="$fm(order.transferred_material_cost || 0)" disabled /></el-form-item></el-col>
             </el-row>
             <el-row :gutter="16">
               <el-col :span="24"><el-form-item label="备注"><el-input v-model="order.remark" type="textarea" :rows="2" :disabled="order.status !== '待排产'" /></el-form-item></el-col>
             </el-row>
           </el-form>
-          <div v-if="order.status === '待排产'" style="margin-top: 12px">
+          <div v-if="order.status === '待排产'" style="margin-top: 12px; display: flex; gap: 8px">
+            <el-button type="primary" @click="saveOrder" :loading="saveLoading">保存</el-button>
             <el-button type="primary" @click="expandBom" :loading="bomLoading">展开BOM</el-button>
-            <el-button type="success" @click="releaseOrder" :loading="releaseLoading" style="margin-left: 12px">派产</el-button>
+            <el-button type="success" @click="releaseOrder" :loading="releaseLoading">派产</el-button>
           </div>
           <div v-if="order.status === '已排产' || order.status === '生产中'" style="margin-top: 12px">
             <el-button type="warning" @click="unreleaseOrder" :loading="unreleaseLoading">反派产</el-button>
+          </div>
+
+          <!-- 材料出库清单 -->
+          <div style="margin-top: 20px">
+            <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #303133">材料出库清单</div>
+            <el-table :data="issueItems" border size="small" max-height="300" style="width: 100%">
+              <el-table-column label="物料名称" min-width="130" prop="material_name" />
+              <el-table-column label="规格" width="120" prop="material_spec" show-overflow-tooltip />
+              <el-table-column label="型号" width="100" prop="material_model" />
+              <el-table-column label="数量" width="100" align="right">
+                <template #default="{ row }">{{ $fq(row.quantity) }}</template>
+              </el-table-column>
+              <el-table-column label="单价" width="100" align="right" prop="unit_price">
+                <template #default="{ row }">{{ $fm(row.unit_price || 0) }}</template>
+              </el-table-column>
+              <el-table-column label="金额" width="110" align="right">
+                <template #default="{ row }">{{ $fm((row.quantity || 0) * (row.unit_price || 0)) }}</template>
+              </el-table-column>
+              <el-table-column label="批次号" width="130" prop="batch_no" />
+              <el-table-column label="发料日期" width="100" prop="issue_date" />
+            </el-table>
+          </div>
+
+          <!-- 完工入库清单 -->
+          <div style="margin-top: 20px">
+            <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #303133">完工入库清单</div>
+            <el-table :data="receiptItems" border size="small" max-height="300" style="width: 100%">
+              <el-table-column label="产品名称" min-width="130" prop="product_name" />
+              <el-table-column label="规格" width="120" prop="product_spec" show-overflow-tooltip />
+              <el-table-column label="型号" width="100" prop="product_model" />
+              <el-table-column label="数量" width="100" align="right">
+                <template #default="{ row }">{{ $fq(row.quantity) }}</template>
+              </el-table-column>
+              <el-table-column label="材料成本" width="100" align="right">
+                <template #default="{ row }">{{ $fm(row.material_cost || 0) }}</template>
+              </el-table-column>
+              <el-table-column label="加工费" width="90" align="right">
+                <template #default="{ row }">{{ $fm(row.process_cost || 0) }}</template>
+              </el-table-column>
+              <el-table-column label="单位成本" width="100" align="right">
+                <template #default="{ row }">{{ $fm(row.unit_cost || 0) }}</template>
+              </el-table-column>
+              <el-table-column label="合计金额" width="110" align="right">
+                <template #default="{ row }">{{ $fm((row.material_cost || 0) + (row.process_cost || 0)) }}</template>
+              </el-table-column>
+              <el-table-column label="仓库" width="100" prop="warehouse_name" />
+              <el-table-column label="批次号" width="130" prop="batch_no" />
+              <el-table-column label="入库日期" width="100" prop="receipt_date" />
+            </el-table>
           </div>
         </el-tab-pane>
 
@@ -62,7 +116,6 @@
           </el-table>
           <el-button v-if="order.status === '待排产'" type="primary" size="small" @click="saveMaterials" :loading="matLoading" style="margin-top: 8px">保存物料清单</el-button>
 
-          <!-- 物料发料明细弹窗 -->
           <el-dialog v-model="matDetailVisible" :title="matDetailTitle" width="750px" destroy-on-close>
             <el-table :data="matDetailItems" border size="small" max-height="300" style="table-layout: auto">
               <el-table-column label="类型" width="100">
@@ -137,13 +190,16 @@ import { foundationApi } from '../../api/foundation'
 
 const route = useRoute()
 const activeTab = ref('info')
-const order = reactive({ id: null, order_no: '', product_name: '', quantity: 0, status: '', total_material_cost: 0, total_process_cost: 0, due_date: '', remark: '', created_at: '' })
+const order = reactive({ id: null, order_no: '', product_name: '', quantity: 0, status: '', total_material_cost: 0, total_process_cost: 0, transferred_material_cost: 0, due_date: '', remark: '', created_at: '' })
 const materials = ref([])
 const processes = ref([])
+const issueItems = ref([])
+const receiptItems = ref([])
 const materialOptions = ref([])
 const processOptions = ref([])
 const outsourcerOptions = ref([])
 
+const saveLoading = ref(false)
 const bomLoading = ref(false)
 const releaseLoading = ref(false)
 const unreleaseLoading = ref(false)
@@ -169,6 +225,20 @@ async function fetchDetail() {
   processes.value = res.processes || []
 }
 
+async function fetchIssues() {
+  try {
+    const res = await productionApi.productions.listIssues(route.params.id)
+    issueItems.value = res.items || []
+  } catch { issueItems.value = [] }
+}
+
+async function fetchReceipts() {
+  try {
+    const res = await productionApi.productions.listReceipts(route.params.id)
+    receiptItems.value = res.items || []
+  } catch { receiptItems.value = [] }
+}
+
 async function loadOptions() {
   try { materialOptions.value = (await foundationApi.materials.list({ page_size: 200 })).items || [] } catch {}
   try {
@@ -176,6 +246,14 @@ async function loadOptions() {
     processOptions.value = res.items || []
   } catch {}
   try { outsourcerOptions.value = (await foundationApi.outsourcers.select()) || [] } catch {}
+}
+
+async function saveOrder() {
+  saveLoading.value = true
+  try {
+    await productionApi.productions.update(order.id, { due_date: order.due_date, remark: order.remark })
+    ElMessage.success('保存成功')
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { saveLoading.value = false }
 }
 
 async function expandBom() {
@@ -245,5 +323,5 @@ async function saveProcesses() {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { procLoading.value = false }
 }
 
-onMounted(() => { fetchDetail(); loadOptions() })
+onMounted(() => { fetchDetail(); fetchIssues(); fetchReceipts(); loadOptions() })
 </script>

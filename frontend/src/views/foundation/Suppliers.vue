@@ -31,7 +31,7 @@
 
     <!-- 底部卡片：边框表格 -->
     <el-card>
-      <el-table :data="tableData" v-loading="loading" stripe border>
+      <el-table :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
         <el-table-column prop="code" label="编码" width="120" />
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column prop="contact_person" label="联系人" width="110" />
@@ -134,6 +134,9 @@ const form = reactive({
 const rules = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  contact_person: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
+  phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
+  tax_id: [{ required: true, message: '请输入税号', trigger: 'blur' }],
 }
 
 async function fetchData() {
@@ -170,6 +173,7 @@ function openDialog(mode, row) {
     form.name = row.name || ''
     form.contact_person = row.contact_person || ''
     form.phone = row.phone || ''
+    form.tax_id = row.tax_id || ''
     form.payment_terms = row.payment_terms || 'TT'
     form.account_period = row.account_period ?? 30
     form.supplier_type = row.supplier_type || '原材料'

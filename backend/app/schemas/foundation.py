@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field, model_validator
 # ==================== 材料 ====================
 
 class MaterialCreate(BaseModel):
-    code: str = Field(..., description="物料编码")
-    name: str = Field(..., description="物料名称")
-    spec: str = ""
+    code: str
+    name: str
+    spec: str
     model: str = ""
-    unit: str = "个"
+    unit: str
     category: str = "原材料"
     purchase_price: float = 0
     default_supplier_id: int | None = None
@@ -53,11 +53,15 @@ class ProductCreate(BaseModel):
     code: str
     name_cn: str
     name_en: str = ""
-    spec: str = ""
-    unit: str = "个"
+    spec: str
+    model: str = ""
+    unit: str
     estimated_cost: float = 0
     sale_price: float = 0
     hs_code_id: int | None = None
+    hs_code: str = ""
+    refund_rate: float = 13
+    tax_rate: float = 13
     remark: str = ""
 
 
@@ -65,6 +69,7 @@ class ProductUpdate(BaseModel):
     name_cn: str | None = None
     name_en: str | None = None
     spec: str | None = None
+    model: str | None = None
     unit: str | None = None
     estimated_cost: float | None = None
     sale_price: float | None = None
@@ -79,6 +84,7 @@ class ProductOut(BaseModel):
     name_cn: str
     name_en: str | None
     spec: str | None
+    model: str | None
     unit: str
     estimated_cost: float
     sale_price: float
@@ -96,7 +102,7 @@ class BomItemCreate(BaseModel):
     bom_name: str
     product_id: int
     material_id: int
-    quantity: float = 1
+    quantity: float
     loss_rate: float = 0
     process_id: int | None = None
     sort_order: int = 0
@@ -130,16 +136,12 @@ class BomItemOut(BaseModel):
 class ProcessCreate(BaseModel):
     code: str
     name: str
-    standard_hours: float = 0
-    is_outsource: int = 0
     unit_price: float = 0
     remark: str = ""
 
 
 class ProcessUpdate(BaseModel):
     name: str | None = None
-    standard_hours: float | None = None
-    is_outsource: int | None = None
     unit_price: float | None = None
     remark: str | None = None
     is_active: int | None = None
@@ -149,8 +151,6 @@ class ProcessOut(BaseModel):
     id: int
     code: str
     name: str
-    standard_hours: float
-    is_outsource: int
     unit_price: float
     is_active: int
 
@@ -206,12 +206,12 @@ class CustomerCreate(BaseModel):
     code: str
     name_cn: str
     name_en: str = ""
-    country: str = ""
-    contact_person: str = ""
-    phone: str = ""
+    country: str
+    contact_person: str
+    phone: str
     email: str = ""
-    tax_id: str = ""
-    address: str = ""
+    tax_id: str
+    address: str
     credit_limit: float = 0
     payment_terms: str = "TT"
     account_period: int = 30
@@ -259,11 +259,11 @@ class CustomerOut(BaseModel):
 class SupplierCreate(BaseModel):
     code: str
     name: str
-    contact_person: str = ""
-    phone: str = ""
+    contact_person: str
+    phone: str
     email: str = ""
-    tax_id: str = ""
-    address: str = ""
+    tax_id: str
+    address: str
     payment_terms: str = "TT"
     account_period: int = 30
     supply_range: str = ""
@@ -311,8 +311,6 @@ class SupplierOut(BaseModel):
 
 class OutsourcerCreate(BaseModel):
     supplier_id: int
-    process_ids: str = ""
-    unit_price_note: str = ""
     lead_time: int = 7
 
 
@@ -320,7 +318,6 @@ class OutsourcerOut(BaseModel):
     id: int
     supplier_id: int
     supplier_name: str | None = None
-    process_ids: str | None
     lead_time: int
     is_active: int
 
@@ -333,7 +330,7 @@ class OutsourcerOut(BaseModel):
 class WarehouseCreate(BaseModel):
     code: str
     name: str
-    wh_type: str = "原料仓"
+    wh_type: str
     address: str = ""
     manager: str = ""
 
@@ -397,7 +394,7 @@ class ExchangeRateOut(BaseModel):
 class HsCodeCreate(BaseModel):
     hs_code: str
     name: str
-    unit: str = "个"
+    unit: str
     tax_rate: float = 13
     refund_rate: float = 13
     supervision_conditions: str = ""

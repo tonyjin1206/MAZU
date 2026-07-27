@@ -39,17 +39,158 @@ router = APIRouter()
 # ==================== 注册所有基础档案 CRUD ====================
 
 register_crud(router, Material,       MaterialCreate,   MaterialUpdate,   MaterialOut,   "materials",   "基础档案-材料",   search_fields=["code", "name"])
-register_crud(router, Product,        ProductCreate,    ProductUpdate,    ProductOut,    "products",    "基础档案-产品",   search_fields=["code", "name_cn", "name_en"])
 register_crud(router, Process,        ProcessCreate,    ProcessUpdate,    ProcessOut,    "processes",   "基础档案-工序",   search_fields=["code", "name"])
 register_crud(router, Department,     DepartmentCreate, None,             DepartmentOut, "departments", "基础档案-部门",   search_fields=["code", "name"])
 register_crud(router, Employee,       EmployeeCreate,   None,             EmployeeOut,   "employees",   "基础档案-人员",   search_fields=["code", "name"])
 register_crud(router, Customer,       CustomerCreate,   CustomerUpdate,   CustomerOut,   "customers",   "基础档案-客户",   search_fields=["code", "name_cn", "name_en"])
 register_crud(router, Supplier,       SupplierCreate,   SupplierUpdate,   SupplierOut,   "suppliers",   "基础档案-供应商", search_fields=["code", "name"])
-register_crud(router, Outsourcer,     OutsourcerCreate, None,             OutsourcerOut, "outsourcers", "基础档案-委外商", search_fields=[])
 register_crud(router, Warehouse,      WarehouseCreate,  None,             WarehouseOut,  "warehouses",  "基础档案-仓库",   search_fields=["code", "name"])
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])
+
+
+# ==================== 产品自定义创建（HS编码自动关联）====================
+
+@router.post("/products", tags=["基础档案-产品"])
+def create_product_with_hs(
+    data: ProductCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """创建产品，自动创建/关联 HS 编码"""
+    hs_code_id = data.hs_code_id
+    if data.hs_code and not hs_code_id:
+        existing = db.query(HsCode).filter(HsCode.hs_code == data.hs_code).first()
+        if existing:
+            hs_code_id = existing.id
+        else:
+            hs = HsCode(
+                hs_code=data.hs_code,
+                name=data.name_cn,
+                unit=data.unit,
+                tax_rate=data.tax_rate or 13,
+                refund_rate=data.refund_rate or 13,
+            )
+            db.add(hs)
+            db.flush()
+            hs_code_id = hs.id
+    product = Product(
+        code=data.code, name_cn=data.name_cn, name_en=data.name_en or "",
+        spec=data.spec, model=data.model or "", unit=data.unit,
+        estimated_cost=data.estimated_cost or 0, sale_price=data.sale_price or 0,
+        hs_code_id=hs_code_id, remark=data.remark or "",
+    )
+    db.add(product)
+    db.commit()
+    db.refresh(product)
+    return ProductOut.model_validate(product)
+
+
+@router.get("/products", tags=["基础档案-产品"])
+def list_products(
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    keyword: str = Query(""), is_active: int | None = None,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    query = db.query(Product)
+    if keyword:
+        from sqlalchemy import or_
+        query = query.filter(or_(Product.code.like(f"%{keyword}%"),
+                                 Product.name_cn.like(f"%{keyword}%"),
+                                 Product.name_en.like(f"%{keyword}%")))
+    if is_active is not None:
+        query = query.filter(Product.is_active == is_active)
+    total = query.count()
+    items = query.order_by(Product.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    result = []
+    for item in items:
+        obj = ProductOut.model_validate(item).model_dump()
+        if item.hs_code:
+            obj["hs_code"] = item.hs_code.hs_code
+            obj["refund_rate"] = item.hs_code.refund_rate
+            obj["tax_rate"] = item.hs_code.tax_rate
+        result.append(obj)
+    return {"total": total, "page": page, "page_size": page_size, "items": result}
+
+
+@router.get("/products/{item_id}", response_model=ProductOut, tags=["基础档案-产品"])
+def get_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(Product).filter(Product.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "产品不存在")
+    return ProductOut.model_validate(item)
+
+
+@router.put("/products/{item_id}", response_model=ProductOut, tags=["基础档案-产品"])
+def update_product(
+    item_id: int, data: ProductUpdate,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    item = db.query(Product).filter(Product.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "产品不存在")
+    update_data = data.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(item, key, value)
+    db.commit()
+    db.refresh(item)
+    return ProductOut.model_validate(item)
+
+
+@router.delete("/products/{item_id}", tags=["基础档案-产品"])
+def delete_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(Product).filter(Product.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "产品不存在")
+    item.is_active = 0
+    db.commit()
+    return {"message": "产品已删除"}
+
+
+# ==================== 委外商自定义创建（验证供应商类型）====================
+
+@router.post("/outsourcers", tags=["基础档案-委外商"])
+def create_outsourcer(
+    data: OutsourcerCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """创建委外商，验证供应商类型必须为委外"""
+    supplier = db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
+    if not supplier:
+        raise HTTPException(400, "供应商不存在")
+    if supplier.supplier_type != "委外":
+        raise HTTPException(400, f"供应商「{supplier.name}」类型为「{supplier.supplier_type}」，不可作为委外商，请先修改供应商类型为「委外」")
+    out = Outsourcer(supplier_id=data.supplier_id, lead_time=data.lead_time or 7)
+    db.add(out)
+    db.commit()
+    db.refresh(out)
+    return OutsourcerOut.model_validate(out)
+
+
+@router.get("/outsourcers", tags=["基础档案-委外商"])
+def list_outsourcers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    query = db.query(Outsourcer)
+    total = query.count()
+    items = query.order_by(Outsourcer.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size, "items": [
+        OutsourcerOut.model_validate(o) for o in items
+    ]}
+
+
+@router.delete("/outsourcers/{item_id}", tags=["基础档案-委外商"])
+def delete_outsourcer(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    item = db.query(Outsourcer).filter(Outsourcer.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "委外商不存在")
+    if hasattr(item, "is_active"):
+        item.is_active = 0
+    else:
+        db.delete(item)
+    db.commit()
+    return {"message": "委外商已删除"}
 
 
 # ==================== BOM 特殊路由 ====================

@@ -126,6 +126,10 @@ const form = reactive({
 const rules = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name_cn: [{ required: true, message: '请输入中文名', trigger: 'blur' }],
+  country: [{ required: true, message: '请选择国家', trigger: 'change' }],
+  contact_person: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
+  phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
+  tax_id: [{ required: true, message: '请输入税号', trigger: 'blur' }],
 }
 
 async function fetchData() {

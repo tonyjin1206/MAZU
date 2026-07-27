@@ -13,6 +13,7 @@ engine = create_engine(
     settings.DATABASE_URL,
     connect_args={"check_same_thread": False},
     echo=False,
+    pool_pre_ping=True,
 )
 
 # SQLite 开启 WAL 模式 + 外键约束

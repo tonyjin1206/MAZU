@@ -717,6 +717,14 @@ def list_ar(
     result = []
     for ar in items:
         customer = db.query(Customer).filter(Customer.id == ar.customer_id).first()
+        # 查来源发票日期
+        invoice_date = ""
+        payment_terms = customer.payment_terms if customer else ""
+        account_period = customer.account_period if customer else 0
+        if ar.source_type == "sales_invoice" and ar.source_id:
+            inv = db.query(SalesInvoice).filter(SalesInvoice.id == ar.source_id).first()
+            if inv:
+                invoice_date = str(inv.invoice_date) if inv.invoice_date else ""
         result.append({
             "id": ar.id, "ar_no": ar.ar_no or "",
             "source_type": ar.source_type,
@@ -725,6 +733,9 @@ def list_ar(
             "amount": ar.amount, "collected_amount": ar.collected_amount,
             "balance": ar.balance, "due_date": str(ar.due_date) if ar.due_date else "",
             "status": ar.status,
+            "invoice_date": invoice_date,
+            "payment_terms": payment_terms,
+            "account_period": account_period,
             "collection_id": ar.source_id if ar.source_type == "sales_collection" else None,
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}

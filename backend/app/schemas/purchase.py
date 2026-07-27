@@ -174,7 +174,7 @@ class PurchaseInvoiceCreate(BaseModel):
     order_id: int
     supplier_id: int
     invoice_date: date = Field(default_factory=date.today)
-    invoice_type: str = "专票"
+    invoice_type: str = "增值税专用发票"
     amount: float = 0
     amount_fc: float = 0
     tax_amount: float = 0

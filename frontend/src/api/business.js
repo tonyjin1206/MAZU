@@ -54,6 +54,7 @@ export const salesApi = {
 
 export const productionApi = {
   productions: {
+    update: (id, data) => request.put(`/production/productions/${id}`, data),
     list: (params) => request.get('/production/productions', { params }),
     detail: (id) => request.get(`/production/productions/${id}`),
     expandBom: (id) => request.post(`/production/productions/${id}/expand-bom`),

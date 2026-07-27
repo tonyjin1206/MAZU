@@ -592,7 +592,7 @@ def create_invoice(
         order_id=data.order_id,
         supplier_id=data.supplier_id or order.supplier_id,
         invoice_date=data.invoice_date or date.today(),
-        invoice_type=data.invoice_type or "专票",
+        invoice_type=data.invoice_type or "增值税专用发票",
         amount=data.amount,
         amount_fc=data.amount_fc,
         tax_amount=data.tax_amount,
@@ -601,26 +601,28 @@ def create_invoice(
     db.add(invoice)
     db.flush()
 
-    # 同步创建进项发票（退税用）
+    # 同步创建进项发票（退税用, 仅限可抵扣类型）
     from app.models.tax_refund import TaxRefundInputInvoice
-    try:
-        existing = db.query(TaxRefundInputInvoice).filter(
-            TaxRefundInputInvoice.invoice_no == data.invoice_no).first()
-        if not existing:
-            input_inv = TaxRefundInputInvoice(
-                invoice_no=data.invoice_no,
-                supplier_id=data.supplier_id or order.supplier_id,
-                purchase_invoice_id=invoice.id,
-                invoice_date=data.invoice_date or date.today(),
-                amount=data.amount,
-                tax_amount=data.tax_amount or 0,
-                total_amount=(data.amount or 0) + (data.tax_amount or 0),
-                certification_status="未匹配",
-                refund_match_status="未匹配",
-            )
-            db.add(input_inv)
-    except:
-        pass
+    deductible_types = ["增值税专用发票", "海关进口缴款书", "农产品收购发票"]
+    if data.invoice_type in deductible_types:
+        try:
+            existing = db.query(TaxRefundInputInvoice).filter(
+                TaxRefundInputInvoice.invoice_no == data.invoice_no).first()
+            if not existing:
+                input_inv = TaxRefundInputInvoice(
+                    invoice_no=data.invoice_no,
+                    supplier_id=data.supplier_id or order.supplier_id,
+                    purchase_invoice_id=invoice.id,
+                    invoice_date=data.invoice_date or date.today(),
+                    amount=data.amount,
+                    tax_amount=data.tax_amount or 0,
+                    total_amount=(data.amount or 0) + (data.tax_amount or 0),
+                    certification_status="未认证",
+                    refund_match_status="未匹配",
+                )
+                db.add(input_inv)
+        except:
+            pass
 
     # 自动生成应付账款（含税金额）
     total = (data.amount or 0) + (data.tax_amount or 0)
@@ -884,9 +886,18 @@ def list_ap(
         query = query.filter(AccountsPayable.status == status)
     total = query.count()
     items = query.order_by(AccountsPayable.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    from app.models.foundation import Supplier
     result = []
     for ap in items:
         supplier = db.query(Supplier).filter(Supplier.id == ap.supplier_id).first()
+        # 查来源发票日期
+        invoice_date = ""
+        payment_terms = supplier.payment_terms if supplier else ""
+        account_period = supplier.account_period if supplier else 0
+        if ap.source_type == "purchase_invoice" and ap.source_id:
+            inv = db.query(PurchaseInvoice).filter(PurchaseInvoice.id == ap.source_id).first()
+            if inv:
+                invoice_date = str(inv.invoice_date) if inv.invoice_date else ""
         result.append({
             "id": ap.id, "ap_no": ap.ap_no or "",
             "source_type": ap.source_type,
@@ -895,9 +906,11 @@ def list_ap(
             "amount": ap.amount, "paid_amount": ap.paid_amount,
             "balance": ap.balance, "due_date": str(ap.due_date) if ap.due_date else "",
             "status": ap.status, "created_at": str(ap.created_at),
+            "invoice_date": invoice_date,
+            "payment_terms": payment_terms,
+            "account_period": account_period,
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
-
 
 @router.get("/ap/payment-detail", tags=["采购管理"])
 def list_ap_payment_detail(db: Session = Depends(get_db)):

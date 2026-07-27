@@ -111,7 +111,10 @@ const form = reactive({ id: null, code: '', name: '', spec: '', model: '', unit:
 const formRules = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
+  spec: [{ required: true, message: '请输入规格', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
+  category: [{ required: true, message: '请选择类别', trigger: 'change' }],
+  purchase_price: [{ required: true, message: '请输入单价', trigger: 'blur' }],
 }
 
 async function fetchData() {
