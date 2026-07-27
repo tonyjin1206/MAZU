@@ -111,8 +111,8 @@ def create_product_with_hs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建产品，自动创建/关联 HS 编码，自动编码 P+6位流水"""
-    code = data.code or _next_code(db, Product, "P")
+    """创建产品，自动创建/关联 HS 编码，自动编码 PR+6位流水"""
+    code = data.code or _next_code(db, Product, "PR")
     hs_code_id = data.hs_code_id
     if data.hs_code and not hs_code_id:
         existing = db.query(HsCode).filter(HsCode.hs_code == data.hs_code).first()
