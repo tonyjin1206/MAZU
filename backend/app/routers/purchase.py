@@ -442,6 +442,9 @@ def create_receipt(
         if mat and inv_unit_cost > 0:
             mat.purchase_price = inv_unit_cost
 
+        # 刷新确保流水号唯一递增
+        db.flush()
+
     receipt.total_qty = total_qty
     # 更新订单状态
     if order:
