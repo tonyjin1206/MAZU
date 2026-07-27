@@ -67,7 +67,7 @@ def get_dashboard_data(
     ar_aging = []
     for ar in ar_list:
         customer = db.query(Customer).filter(Customer.id == ar.customer_id).first()
-        due_date = ar.created_at.date() + timedelta(days=30) if ar.created_at else now
+        due_date = ar.due_date if ar.due_date else (ar.created_at.date() + timedelta(days=30) if ar.created_at else now)
         overdue = (now - due_date).days if due_date < now else 0
         ar_aging.append({
             "customer_name": customer.name_cn if customer else "",
@@ -88,7 +88,7 @@ def get_dashboard_data(
     ap_aging = []
     for ap in ap_list:
         supplier = db.query(Supplier).filter(Supplier.id == ap.supplier_id).first()
-        due_date = ap.created_at.date() + timedelta(days=30) if ap.created_at else now
+        due_date = ap.due_date if ap.due_date else (ap.created_at.date() + timedelta(days=30) if ap.created_at else now)
         overdue = (now - due_date).days if due_date < now else 0
         ap_aging.append({
             "supplier_name": supplier.name if supplier else "",
