@@ -53,9 +53,6 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增供应商' : '编辑供应商'" width="600px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
-        <el-form-item label="编码" prop="code">
-          <el-input v-model="form.code" :disabled="dialogMode === 'edit'" />
-        </el-form-item>
         <el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
@@ -126,7 +123,7 @@ function resetSearch() {
 }
 
 const form = reactive({
-  id: null, code: '', name: '', contact_person: '', phone: '', tax_id: '',
+  id: null, name: '', contact_person: '', phone: '', tax_id: '',
   payment_terms: 'TT', account_period: 30,
   supplier_type: '原材料', rating: 3,
 })
@@ -159,7 +156,7 @@ async function fetchData() {
 
 function resetForm() {
   Object.assign(form, {
-    id: null, code: '', name: '', contact_person: '', phone: '',
+    id: null, name: '', contact_person: '', phone: '',
     payment_terms: 'TT', account_period: 30,
     supplier_type: '原材料', rating: 3,
   })
@@ -169,7 +166,6 @@ function openDialog(mode, row) {
   dialogMode.value = mode
   if (mode === 'edit' && row) {
     form.id = row.id
-    form.code = row.code
     form.name = row.name || ''
     form.contact_person = row.contact_person || ''
     form.phone = row.phone || ''

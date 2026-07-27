@@ -49,9 +49,6 @@
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="600px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
-        <el-form-item label="编码" prop="code">
-          <el-input v-model="form.code" :disabled="dialogMode === 'edit'" />
-        </el-form-item>
         <el-form-item label="中文名" prop="name_cn">
           <el-input v-model="form.name_cn" />
         </el-form-item>

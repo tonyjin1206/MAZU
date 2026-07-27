@@ -203,7 +203,7 @@ class EmployeeOut(BaseModel):
 # ==================== 客户 ====================
 
 class CustomerCreate(BaseModel):
-    code: str
+    code: str = ""
     name_cn: str
     name_en: str = ""
     country: str
@@ -257,7 +257,7 @@ class CustomerOut(BaseModel):
 # ==================== 供应商 ====================
 
 class SupplierCreate(BaseModel):
-    code: str
+    code: str = ""
     name: str
     contact_person: str
     phone: str

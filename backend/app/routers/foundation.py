@@ -42,8 +42,6 @@ register_crud(router, Material,       MaterialCreate,   MaterialUpdate,   Materi
 register_crud(router, Process,        ProcessCreate,    ProcessUpdate,    ProcessOut,    "processes",   "基础档案-工序",   search_fields=["code", "name"])
 register_crud(router, Department,     DepartmentCreate, None,             DepartmentOut, "departments", "基础档案-部门",   search_fields=["code", "name"])
 register_crud(router, Employee,       EmployeeCreate,   None,             EmployeeOut,   "employees",   "基础档案-人员",   search_fields=["code", "name"])
-register_crud(router, Customer,       CustomerCreate,   CustomerUpdate,   CustomerOut,   "customers",   "基础档案-客户",   search_fields=["code", "name_cn", "name_en"])
-register_crud(router, Supplier,       SupplierCreate,   SupplierUpdate,   SupplierOut,   "suppliers",   "基础档案-供应商", search_fields=["code", "name"])
 register_crud(router, Warehouse,      WarehouseCreate,  None,             WarehouseOut,  "warehouses",  "基础档案-仓库",   search_fields=["code", "name"])
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
@@ -191,6 +189,137 @@ def delete_outsourcer(item_id: int, db: Session = Depends(get_db), current_user:
         db.delete(item)
     db.commit()
     return {"message": "委外商已删除"}
+
+
+# ==================== 客户自定义创建（自动编码 CU+6位流水）====================
+
+def _next_code(db, model, prefix: str, field="code"):
+    """生成编码: 前缀 + 6位流水号"""
+    from sqlalchemy import func as sa_func
+    last = db.query(sa_func.max(getattr(model, field))).filter(
+        getattr(model, field).like(f"{prefix}%")
+    ).scalar()
+    if last:
+        num = int(last[len(prefix):]) + 1
+    else:
+        num = 1
+    return f"{prefix}{num:06d}"
+
+
+@router.post("/customers", tags=["基础档案-客户"])
+def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    code = data.code or _next_code(db, Customer, "CU")
+    c = Customer(code=code, name_cn=data.name_cn, name_en=data.name_en or "",
+                 country=data.country, contact_person=data.contact_person,
+                 phone=data.phone, email=data.email or "", tax_id=data.tax_id,
+                 address=data.address, credit_limit=data.credit_limit or 0,
+                 payment_terms=data.payment_terms or "TT",
+                 account_period=data.account_period or 30, remark=data.remark or "")
+    db.add(c)
+    db.commit()
+    db.refresh(c)
+    return CustomerOut.model_validate(c)
+
+
+@router.get("/customers", tags=["基础档案-客户"])
+def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                   keyword: str = Query(""), db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user)):
+    query = db.query(Customer)
+    if keyword:
+        from sqlalchemy import or_
+        query = query.filter(or_(Customer.code.like(f"%{keyword}%"),
+                                 Customer.name_cn.like(f"%{keyword}%"),
+                                 Customer.name_en.like(f"%{keyword}%")))
+    total = query.count()
+    items = query.order_by(Customer.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size,
+            "items": [CustomerOut.model_validate(c) for c in items]}
+
+
+@router.put("/customers/{item_id}", response_model=CustomerOut, tags=["基础档案-客户"])
+def update_customer(item_id: int, data: CustomerUpdate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    item = db.query(Customer).filter(Customer.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "客户不存在")
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(item, k, v)
+    db.commit()
+    db.refresh(item)
+    return CustomerOut.model_validate(item)
+
+
+@router.delete("/customers/{item_id}", tags=["基础档案-客户"])
+def delete_customer(item_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    item = db.query(Customer).filter(Customer.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "客户不存在")
+    item.is_active = 0
+    db.commit()
+    return {"message": "客户已删除"}
+
+
+# ==================== 供应商自定义创建（自动编码 SU+6位流水）====================
+
+@router.post("/suppliers", tags=["基础档案-供应商"])
+def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    code = data.code or _next_code(db, Supplier, "SU")
+    s = Supplier(code=code, name=data.name, contact_person=data.contact_person,
+                 phone=data.phone, email=data.email or "", tax_id=data.tax_id,
+                 address=data.address, payment_terms=data.payment_terms or "TT",
+                 account_period=data.account_period or 30,
+                 supply_range=data.supply_range or "",
+                 rating=data.rating or 3, supplier_type=data.supplier_type or "原材料",
+                 remark=data.remark or "")
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return SupplierOut.model_validate(s)
+
+
+@router.get("/suppliers", tags=["基础档案-供应商"])
+def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                   keyword: str = Query(""), db: Session = Depends(get_db),
+                   current_user: User = Depends(get_current_user)):
+    query = db.query(Supplier)
+    if keyword:
+        from sqlalchemy import or_
+        query = query.filter(or_(Supplier.code.like(f"%{keyword}%"),
+                                 Supplier.name.like(f"%{keyword}%")))
+    total = query.count()
+    items = query.order_by(Supplier.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size,
+            "items": [SupplierOut.model_validate(s) for s in items]}
+
+
+@router.put("/suppliers/{item_id}", response_model=SupplierOut, tags=["基础档案-供应商"])
+def update_supplier(item_id: int, data: SupplierUpdate, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    item = db.query(Supplier).filter(Supplier.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "供应商不存在")
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(item, k, v)
+    db.commit()
+    db.refresh(item)
+    return SupplierOut.model_validate(item)
+
+
+@router.delete("/suppliers/{item_id}", tags=["基础档案-供应商"])
+def delete_supplier(item_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    item = db.query(Supplier).filter(Supplier.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "供应商不存在")
+    item.is_active = 0
+    db.commit()
+    return {"message": "供应商已删除"}
 
 
 # ==================== BOM 特殊路由 ====================

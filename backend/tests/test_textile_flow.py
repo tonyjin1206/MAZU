@@ -43,7 +43,7 @@ class TestTextileFullFlow:
         sup = {}
         for name, code, cp, phone, tax_id, addr, stype in _realistic["suppliers"]:
             sup[name] = api(client, "POST", "/api/foundation/suppliers",
-                            {"code": code, "name": name,
+                            {"name": name,
                              "contact_person": cp, "phone": phone,
                              "tax_id": tax_id, "address": addr,
                              "supplier_type": stype}, h)["id"]
@@ -59,7 +59,7 @@ class TestTextileFullFlow:
         cust = {}
         for name, code, phone, tax_id, addr in _realistic["customers"]:
             cust[name] = api(client, "POST", "/api/foundation/customers",
-                             {"code": code, "name_cn": name,
+                             {"name_cn": name,
                               "country": "中国", "contact_person": "联系人",
                               "phone": phone, "tax_id": tax_id,
                               "address": addr}, h)["id"]
