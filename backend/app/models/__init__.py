@@ -1,7 +1,7 @@
 """模型包 — 导入所有模型确保注册"""
 
 from app.models.base import BaseMixin
-from app.models.auth import User
+from app.models.auth import User, Role, Permission, RolePermission
 from app.models.foundation import (
     Material, Product, BomItem, Process,
     Department, Employee,
@@ -37,7 +37,7 @@ from app.models.tax_refund import (
 
 __all__ = [
     "BaseMixin",
-    "User",
+    "User", "Role", "Permission", "RolePermission",
     "Material", "Product", "BomItem", "Process",
     "Department", "Employee",
     "Customer", "Supplier", "Outsourcer",

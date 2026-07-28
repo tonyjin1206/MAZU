@@ -12,8 +12,6 @@ const userStr = localStorage.getItem('user')
 if (token && !userStr) {
   localStorage.removeItem('token')
 }
-// 如果过期了也清理（简单判断：token 是 JWT，过期会由后端返回 401）
-// 前端不解析 JWT，让路由守卫和 axios 拦截器处理
 
 const app = createApp(App)
 
@@ -37,6 +35,18 @@ app.config.globalProperties.$fq = (val) => {
   const n = typeof val === 'string' ? parseFloat(val) : val
   if (isNaN(n)) return '0.0000'
   return n.toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+}
+
+// 全局权限检查方法
+app.config.globalProperties.$hasPermission = (code) => {
+  const perms = localStorage.getItem('permissions')
+  if (!perms) return false
+  try {
+    const list = JSON.parse(perms)
+    return list.includes(code)
+  } catch {
+    return false
+  }
 }
 
 app.mount('#app')

@@ -54,6 +54,13 @@ async function login() {
     const res = await authApi.login(form)
     localStorage.setItem('token', res.access_token)
     localStorage.setItem('user', JSON.stringify(res.user))
+    // 获取用户权限
+    try {
+      const permRes = await authApi.getMyPermissions()
+      localStorage.setItem('permissions', JSON.stringify(permRes.permissions || []))
+    } catch {
+      localStorage.setItem('permissions', '[]')
+    }
     ElMessage.success('登录成功')
     router.push('/dashboard')
   } catch (e) {

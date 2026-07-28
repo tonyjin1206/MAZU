@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.2.0 (2026-07-29)
+
+### RBAC 用户权限体系（新增）
+- **新增 3 张数据库表**：`sys_role`（角色）、`sys_permission`（权限定义）、`sys_role_permission`（角色-权限关联）
+- **User 模型升级**：新增 `role_id` 外键关联角色，替代原先的 `role` 字符串字段
+- **预置 4 个角色**：管理员（全部权限）、经理（所有业务含审批）、操作员（读写无审批）、只读（仅查看）
+- **预置 16 个权限码**：覆盖 8 个业务模块，每模块 `read/write/approve` 三级粒度
+- **自动种子数据**：首次启动自动插入权限和角色，已有 admin 用户自动关联管理员角色
+
+### 后端 API（新增）
+- `GET /api/auth/permissions` — 按模块分组的权限列表
+- `GET/POST /api/auth/roles` — 角色列表 / 新建
+- `PUT/DELETE /api/auth/roles/{id}` — 编辑 / 删除角色（内置角色不可删）
+- `PUT /api/auth/users/{id}` — 设置用户角色（支持密码修改）
+- `DELETE /api/auth/users/{id}` — 删除用户
+- `GET /api/auth/me/permissions` — 当前用户有效权限
+- `require_permission(code)` — FastAPI 依赖工厂，声明式权限检查
+
+### 前端新增
+- **用户管理页** `/system/users`：用户 CRUD + 角色分配下拉框 + 启停用
+- **角色管理页** `/system/roles`：角色 CRUD + 按模块分组权限勾选
+- **全局权限方法** `$hasPermission(code)` — 菜单/按钮级权限控制
+- **登录流程增强**：登录后自动拉取用户权限列表存入 localStorage
+- **系统管理菜单**：侧边栏新增「系统管理」菜单组
+- 401 拦截 / 退出登录自动清除权限缓存
+
+### 代码质量
+- 修复 `main.py` 重复初始化代码（移除冗余的 `@app.on_event("startup")`）
+- 修复退出登录未清除权限缓存的遗漏
+
 ## v1.1.0 (2026-07-27)
 
 ### 功能新增

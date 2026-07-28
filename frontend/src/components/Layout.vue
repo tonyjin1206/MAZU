@@ -71,6 +71,13 @@
           <template #title><el-icon><Coin /></el-icon><span>退税管理</span></template>
           <el-menu-item index="/tax-refund/declarations">退税申报</el-menu-item>
         </el-sub-menu>
+
+        <!-- 7. 系统管理 -->
+        <el-sub-menu index="system">
+          <template #title><el-icon><Setting /></el-icon><span>系统管理</span></template>
+          <el-menu-item index="/system/users">用户管理</el-menu-item>
+          <el-menu-item index="/system/roles">角色管理</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
@@ -142,6 +149,8 @@ const pageTitle = computed(() => {
     '/production/inventory': '批次库存/追溯',
     '/inventory/management': '库存管理',
     '/tax-refund/declarations': '退税申报',
+    '/system/users': '用户管理',
+    '/system/roles': '角色管理',
   }
   if (path.startsWith('/production/detail')) return '生产订单详情'
   return titles[path] || 'LTMP'
@@ -152,6 +161,7 @@ const currentRoute = computed(() => route.path)
 function logout() {
   localStorage.removeItem('token')
   localStorage.removeItem('user')
+  localStorage.removeItem('permissions')
   router.push('/login')
 }
 </script>

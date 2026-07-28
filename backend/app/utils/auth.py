@@ -1,4 +1,4 @@
-"""JWT 认证与密码工具"""
+"""JWT 认证与 RBAC 权限工具"""
 
 from datetime import datetime, timedelta
 from fastapi import Depends, HTTPException, status
@@ -59,7 +59,24 @@ def get_current_user(
 
 
 def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
-    """依赖注入：获取当前管理员用户"""
-    if current_user.role != "admin":
+    """依赖注入：获取当前管理员用户（兼容旧版）"""
+    if current_user.role_id is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
-    return current_user
+    if current_user.role and current_user.role.code == "admin":
+        return current_user
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="需要管理员权限")
+
+
+def require_permission(permission_code: str):
+    """FastAPI 依赖工厂：要求用户拥有指定权限
+    
+    用法: Depends(require_permission("purchase:read"))
+    """
+    def _checker(current_user: User = Depends(get_current_user)):
+        if not current_user.has_permission(permission_code):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"缺少权限: {permission_code}",
+            )
+        return current_user
+    return _checker
