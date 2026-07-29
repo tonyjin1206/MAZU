@@ -17,6 +17,13 @@
       >
         <el-menu-item index="/dashboard"><el-icon><DataAnalysis /></el-icon><span>工作台</span></el-menu-item>
 
+        <!-- 系统管理 -->
+        <el-sub-menu index="system">
+          <template #title><el-icon><Setting /></el-icon><span>系统管理</span></template>
+          <el-menu-item index="/system/users">用户管理</el-menu-item>
+          <el-menu-item index="/system/roles">角色管理</el-menu-item>
+        </el-sub-menu>
+
         <!-- 1. 基础档案 -->
         <el-sub-menu index="foundation">
           <template #title><el-icon><List /></el-icon><span>基础档案</span></template>
@@ -72,12 +79,6 @@
           <el-menu-item index="/tax-refund/declarations">退税申报</el-menu-item>
         </el-sub-menu>
 
-        <!-- 7. 系统管理 -->
-        <el-sub-menu index="system">
-          <template #title><el-icon><Setting /></el-icon><span>系统管理</span></template>
-          <el-menu-item index="/system/users">用户管理</el-menu-item>
-          <el-menu-item index="/system/roles">角色管理</el-menu-item>
-        </el-sub-menu>
       </el-menu>
     </el-aside>
 
