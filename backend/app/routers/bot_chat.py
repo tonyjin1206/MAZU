@@ -374,6 +374,22 @@ def process_message(text: str, session: dict, db: Session) -> dict:
                 }
 
     if state == "idle":
+        # 0) 快速确认检测：用户说"是的/对/是"时，从历史中找上次 AI 猜的意图
+        CONFIRM_WORDS_SET = {"是的", "对", "是", "y", "yes", "确认", "确定"}
+        if text.strip().lower() in {w.lower() for w in CONFIRM_WORDS_SET}:
+            history = session.get("history", [])
+            for i in range(len(history) - 1, -1, -1):
+                if history[i].get("role") == "assistant":
+                    last_assistant = history[i]["content"]
+                    for intent_key, intent_label in INTENT_LABELS.items():
+                        if intent_label in last_assistant or intent_key in last_assistant:
+                            session["intent"] = intent_key
+                            session["state"] = "collecting"
+                            session["data"] = {}
+                            session["history"] = []
+                            return collect_fields(text, session, db)
+                    break
+
         # 1) 尝试 AI 理解（已配置 LLM 时）
         ai_history = session.get("history", [])
         ai_result = process_with_ai(text, db, ai_history)
