@@ -17,7 +17,7 @@
       <div v-for="(msg, i) in messages" :key="i" style="margin-bottom: 12px; display: flex; flex-direction: column; align-items: flex-start">
         <!-- Bot 消息 -->
         <div v-if="msg.role === 'bot'" style="display: flex; gap: 8px; max-width: 80%">
-          <div style="width: 28px; height: 28px; border-radius: 6px; background: #1d4ed8; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; flex-shrink: 0">🤖</div>
+          <div style="width: 28px; height: 28px; border-radius: 6px; background: linear-gradient(135deg, #1d4ed8, #7c3aed); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-family: 'Segoe UI', sans-serif; font-weight: 800; font-size: 14px; color: #fff">M</div>
           <div class="bot-message-content" style="background: #fff; border-radius: 4px 12px 12px 12px; padding: 10px 14px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; box-shadow: 0 1px 2px rgba(0,0,0,0.06)">
             <div v-html="renderMarkdown(msg.content)"></div>
           </div>
@@ -143,7 +143,7 @@ async function resetChat() {
   }
   messages.value = [{
     role: 'bot',
-    content: '你好！我是 MTS Bot 🤖\n\n📋 **创建单据**\n  「采购PCB板100片15块」— 采购订单\n  「100个产品A卖给美国客户500块」— 销售订单\n\n💰 **收款/付款**\n  「收美国客户5000块」— 创建收款单\n  「付给深圳华强3000」— 创建付款单\n\n📄 **发票录入**\n  「采购单PO-001发票12345金额5000」— 采购发票\n  「销售单SO-001发票67890金额8000」— 销售发票\n\n🔍 **查询档案**\n  「查一下客户深圳」— 查客户\n  「全部供应商」— 供应商清单\n  「应收账款清单」— 应收汇总\n\n🏭 **生产**\n  「委外工序1给深圳华强加工100个」— 委外单\n  「生产单MO-001发料PCB板50片」— 发料\n  「生产单MO-001入库80个」— 完工入库\n\n你想做什么？',
+    content: '你好！我是 **Mazu Trade System** 的 AI 助手，我是 **Matsu**！😊\n\n📋 **创建单据**\n  「采购PCB板100片15块」— 采购订单\n  「100个产品A卖给美国客户500块」— 销售订单\n\n💰 **收款/付款**\n  「收美国客户5000块」— 创建收款单\n  「付给深圳华强3000」— 创建付款单\n\n📄 **发票录入**\n  「采购单PO-001发票12345金额5000」— 采购发票\n  「销售单SO-001发票67890金额8000」— 销售发票\n\n🔍 **查询档案**\n  「查一下客户深圳」— 查客户\n  「全部供应商」— 供应商清单\n  「应收账款清单」— 应收汇总\n\n🏭 **生产**\n  「委外工序1给深圳华强加工100个」— 委外单\n  「生产单MO-001发料PCB板50片」— 发料\n  「生产单MO-001入库80个」— 完工入库\n\n你想做什么？',
   }]
   sessionId.value = ''
   localStorage.removeItem('bot_session_id')

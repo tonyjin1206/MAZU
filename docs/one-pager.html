@@ -164,82 +164,7 @@ body::before {
   opacity: 0.4;
 }
 
-/* === FEATURE GRID === */
-.feature-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 16px;
-}
-
-.feature-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-cyan);
-  border-radius: 8px;
-  padding: 24px;
-  position: relative;
-  transition: border-color 0.3s, box-shadow 0.3s;
-  backdrop-filter: blur(4px);
-}
-
-.feature-card:hover {
-  border-color: var(--cyan);
-  box-shadow: var(--glow-cyan);
-}
-
-.feature-card .card-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.feature-card .card-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.feature-card .card-icon.cyan { background: var(--cyan-dim); color: var(--cyan); }
-.feature-card .card-icon.magenta { background: var(--magenta-dim); color: var(--magenta); }
-.feature-card .card-icon.yellow { background: var(--yellow-dim); color: var(--yellow); }
-.feature-card .card-icon.green { background: rgba(0, 255, 136, 0.12); color: var(--green); }
-.feature-card .card-icon.blue { background: rgba(59, 130, 246, 0.12); color: var(--blue); }
-
-.feature-card h3 {
-  font-family: 'Orbitron', sans-serif;
-  font-size: 13px;
-  letter-spacing: 2px;
-  color: var(--text-primary);
-}
-
-.feature-card ul {
-  list-style: none;
-  padding: 0;
-}
-
-.feature-card li {
-  font-size: 13px;
-  color: var(--text-secondary);
-  padding: 3px 0;
-  padding-left: 14px;
-  position: relative;
-  line-height: 1.6;
-}
-
-.feature-card li::before {
-  content: '▸';
-  position: absolute;
-  left: 0;
-  color: var(--cyan);
-  opacity: 0.6;
-}
-
-/* === AI SECTION === */
+/* === FEATURE ORBIT === */
 .ai-hero-card {
   background: linear-gradient(135deg, rgba(0,240,255,0.08), rgba(255,0,170,0.05));
   border: 1px solid rgba(0,240,255,0.3);
@@ -351,6 +276,113 @@ body::before {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.7;
+}
+
+/* === FEATURE ORBIT === */
+.orbit-container {
+  position: relative;
+  width: 100%;
+  max-width: 860px;
+  height: 660px;
+  margin: 0 auto;
+}
+
+.orbit-center {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100px; height: 100px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 2px solid rgba(0,240,255,0.4);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  box-shadow: 0 0 30px rgba(0,240,255,0.2);
+}
+
+.orbit-ring {
+  position: absolute;
+  top: 50%; left: 50%;
+  border-radius: 50%;
+  border: 1px dashed;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.ring-1 {
+  width: 460px; height: 460px;
+  border-color: rgba(0,240,255,0.12);
+}
+.ring-2 {
+  width: 590px; height: 590px;
+  border-color: rgba(255,0,170,0.08);
+  border-style: dotted;
+}
+
+.orbit-card {
+  position: absolute;
+  width: 220px;
+  padding: 18px 16px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-cyan);
+  border-radius: 8px;
+  transition: border-color 0.3s, box-shadow 0.3s, transform 0.3s;
+  backdrop-filter: blur(4px);
+}
+.orbit-card:hover {
+  border-color: var(--cyan);
+  box-shadow: var(--glow-cyan);
+  transform: scale(1.05);
+  z-index: 10;
+}
+.orbit-card h3 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+.orbit-card ul { list-style: none; padding: 0; }
+.orbit-card li {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 0 3px 14px;
+  position: relative;
+  line-height: 1.5;
+}
+.orbit-card li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--cyan);
+  opacity: 0.6;
+}
+
+.oc-icon {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 22px;
+  margin-bottom: 8px;
+}
+.oc-icon.cyan { color: var(--cyan); }
+.oc-icon.magenta { color: var(--magenta); }
+.oc-icon.yellow { color: var(--yellow); }
+.oc-icon.green { color: var(--green); }
+.oc-icon.blue { color: var(--blue); }
+
+/* Card positions — 6 cards evenly spaced on a circle (60° apart, R=235px, card=220×135px) */
+.pos-0 { top: calc(50% - 68px);  left: calc(50% + 120px); }   /* 0°   — right */
+.pos-1 { top: calc(50% + 128px); left: calc(50% + 5px); }     /* 60°  — bottom-right */
+.pos-2 { top: calc(50% + 128px); left: calc(50% - 225px); }   /* 120° — bottom-left */
+.pos-3 { top: calc(50% - 68px);  left: calc(50% - 345px); }   /* 180° — left */
+.pos-4 { top: calc(50% - 268px); left: calc(50% - 225px); }   /* 240° — top-left */
+.pos-5 { top: calc(50% - 268px); left: calc(50% + 5px); }     /* 300° — top-right */
+
+@media (max-width: 700px) {
+  .orbit-container { height: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .orbit-center, .orbit-ring { display: none; }
+  .orbit-card { position: static; width: auto; }
 }
 
 /* === ADVANTAGES === */
@@ -574,61 +606,55 @@ body::before {
       <span class="cmd">「工序1委外给华强加工100个」</span>
       <span class="cmd">「MO-001入库80个」</span>
     </div>
+    <div class="ai-item">
+      <div class="ai-icon" style="color:var(--yellow);font-family:'Orbitron',sans-serif;font-size:24px">🔔</div>
+      <h4>智能提醒（即将上线）</h4>
+      <p>应收/应付到期预警、库存警戒线提醒、订单异常通知。AI 自动检测并推送。</p>
+    </div>
+    <div class="ai-item">
+      <div class="ai-icon" style="color:var(--cyan);font-family:'Orbitron',sans-serif;font-size:24px">📊</div>
+      <h4>经营看板（即将上线）</h4>
+      <p>移动端数据概览，关键指标实时推送。随时随地掌握企业经营状况。</p>
+    </div>
   </div>
 
-  <!-- 功能模块 -->
+  <!-- 功能模块（环状布局） -->
   <div class="section-title">核心功能模块</div>
   <div class="neon-divider"></div>
 
-  <div class="feature-grid">
-    <div class="feature-card">
-      <div class="card-header"><div class="card-icon cyan" style="font-family:'Orbitron',sans-serif;font-size:16px">⬡</div><h3>采购管理</h3></div>
-      <ul>
-        <li>供应商管理，采购订单全生命周期</li>
-        <li>采购入库支持多次/超量入库，自动生成批次</li>
-        <li>采购发票 → 应付账款 → 付款，自动核销</li>
-      </ul>
+  <div class="orbit-container">
+    <div class="orbit-center">
+      <div style="font-size:32px;font-family:'Orbitron',sans-serif;background:linear-gradient(135deg,var(--cyan),var(--magenta));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">M</div>
+      <div style="font-size:9px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;margin-top:2px">TRADE</div>
     </div>
-    <div class="feature-card">
-      <div class="card-header"><div class="card-icon magenta" style="font-family:'Orbitron',sans-serif;font-size:16px">◆</div><h3>销售管理</h3></div>
-      <ul>
-        <li>批次出库，库存成本自动核算</li>
-        <li>未开票金额自动跟踪，防止重复开票</li>
-        <li>应收账款账龄自动计算，到期预警</li>
-      </ul>
-    </div>
-    <div class="feature-card">
-      <div class="card-header"><div class="card-icon yellow" style="font-family:'Orbitron',sans-serif;font-size:16px">⚙</div><h3>生产管理</h3></div>
-      <ul>
-        <li>BOM 自动展开物料需求</li>
-        <li>多批次发料，每步操作可反退</li>
-        <li>工序派产+委外+成品入库，成本自动归集</li>
-      </ul>
-    </div>
-    <div class="feature-card">
-      <div class="card-header"><div class="card-icon green" style="font-family:'Orbitron',sans-serif;font-size:16px">⬟</div><h3>库存管理</h3></div>
-      <ul>
-        <li>库存余额实时查询（数量 + 金额）</li>
-        <li>库存流水全程追溯，来源单据可穿透</li>
-        <li>批次管理，支持正向/反向追踪</li>
-      </ul>
-    </div>
-    <div class="feature-card">
-      <div class="card-header"><div class="card-icon blue" style="font-family:'Orbitron',sans-serif;font-size:16px">◈</div><h3>财务管理</h3></div>
-      <ul>
-        <li>应收/应付双维度管理（汇总 + 明细）</li>
-        <li>收款/付款与应收/应付自动核销</li>
-        <li>加工费发票独立管理</li>
-      </ul>
-    </div>
-    <div class="feature-card">
-      <div class="card-header"><div class="card-icon cyan" style="font-family:'Orbitron',sans-serif;font-size:16px">⟳</div><h3>退税管理</h3></div>
-      <ul>
-        <li>按申报期管理退税批次</li>
-        <li>关联销售发票，一键生成申报</li>
-        <li>进度跟踪：申报→审核→已退税</li>
-      </ul>
-    </div>
+
+    <!-- 连接圆环 -->
+    <div class="orbit-ring ring-1"></div>
+    <div class="orbit-ring ring-2"></div>
+
+    <!-- Card 1 — 采购管理 (right) -->
+    <div class="orbit-card pos-0"><div class="oc-icon cyan">⬡</div><h3>采购管理</h3>
+      <ul><li>供应商管理，采购订单全生命周期</li><li>采购入库支持多次/超量入库</li><li>采购发票→应付→付款自动核销</li></ul></div>
+
+    <!-- Card 2 — 销售管理 (60°) -->
+    <div class="orbit-card pos-1"><div class="oc-icon magenta">◆</div><h3>销售管理</h3>
+      <ul><li>批次出库，库存成本自动核算</li><li>未开票金额自动跟踪防重复</li><li>应收账款账龄自动计算预警</li></ul></div>
+
+    <!-- Card 3 — 生产管理 (120°) -->
+    <div class="orbit-card pos-2"><div class="oc-icon yellow">⚙</div><h3>生产管理</h3>
+      <ul><li>BOM 自动展开物料需求</li><li>多批次发料，每步可反退</li><li>派产+委外+入库，成本自动归集</li></ul></div>
+
+    <!-- Card 4 — 库存管理 (180°) -->
+    <div class="orbit-card pos-3"><div class="oc-icon green">⬟</div><h3>库存管理</h3>
+      <ul><li>库存余额实时查询（数量+金额）</li><li>库存流水全程追溯可穿透</li><li>批次管理，正反向追踪</li></ul></div>
+
+    <!-- Card 5 — 财务管理 (240°) -->
+    <div class="orbit-card pos-4"><div class="oc-icon blue">◈</div><h3>财务管理</h3>
+      <ul><li>应收/应付双维度管理</li><li>收/付款与应收/应付自动核销</li><li>加工费发票独立管理</li></ul></div>
+
+    <!-- Card 6 — 退税管理 (300°) -->
+    <div class="orbit-card pos-5"><div class="oc-icon cyan">⟳</div><h3>退税管理</h3>
+      <ul><li>按申报期管理退税批次</li><li>关联销售发票一键申报</li><li>进度跟踪：申报→审核→退税</li></ul></div>
   </div>
 
   <!-- 核心优势 -->
