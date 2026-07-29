@@ -1,12 +1,14 @@
 {
-  "name": "erp-app",
+  "name": "ltmp-desktop",
   "version": "1.0.0",
-  "description": "LTMP (Lightweight Trade Management Platform)",
+  "description": "LTMP (Lightweight Trade Management Platform) — 外贸ERP桌面版",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --mac",
-    "build:dir": "electron-builder --mac dir"
+    "build": "node build.js",
+    "build:mac": "electron-builder --mac",
+    "build:win": "electron-builder --win",
+    "build:all": "electron-builder --mac --win --linux"
   },
   "build": {
     "appId": "com.erp.foreigntrade",
@@ -16,6 +18,28 @@
       "icon": "icon.icns",
       "target": ["dmg", "zip"],
       "hardenedRuntime": false
+    },
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        "portable"
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "LTMP"
+    },
+    "linux": {
+      "icon": "icon.png",
+      "target": ["AppImage", "deb"],
+      "category": "Office"
     },
     "dmg": {
       "title": "LTMP安装器",

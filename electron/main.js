@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog } = require('electron')
 const path = require('path')
 const { spawn } = require('child_process')
 const http = require('http')
+const fs = require('fs')
 
 let mainWindow = null
 let backendProcess = null
@@ -9,21 +10,31 @@ const PORT = 18788
 const DATA_DIR = path.join(app.getPath('userData'), 'data')
 const DB_PATH = path.join(DATA_DIR, 'erp.db')
 
+/** 检测当前平台 */
+const IS_WIN = process.platform === 'win32'
+/** 获取 Python 可执行文件名 */
+function pythonBin() {
+  return IS_WIN ? 'python' : 'python3'
+}
+
 function startBackend() {
   const isDev = process.env.NODE_ENV === 'development'
   let serverPath
+
   if (isDev) {
     serverPath = path.join(__dirname, '../../backend/run.py')
   } else {
-    serverPath = path.join(process.resourcesPath, 'backend/server')
+    // 生产模式：使用 PyInstaller 打包后的可执行文件
+    const ext = IS_WIN ? '.exe' : ''
+    serverPath = path.join(process.resourcesPath, `backend/server${ext}`)
   }
 
   const env = { ...process.env, PORT: String(PORT), ERP_DATA_DIR: DATA_DIR }
 
   if (isDev) {
-    backendProcess = spawn('python3', [serverPath], { env, stdio: 'pipe' })
+    backendProcess = spawn(pythonBin(), [serverPath], { env, stdio: 'pipe' })
   } else {
-    backendProcess = spawn(serverPath, [], { env, stdio: 'pipe', detached: true })
+    backendProcess = spawn(serverPath, [], { env, stdio: 'pipe', detached: !IS_WIN })
   }
 
   backendProcess.stderr.on('data', (data) => {
@@ -34,13 +45,19 @@ function startBackend() {
     console.log('[backend]', msg)
   })
 
+  backendProcess.stdout.on('data', (data) => {
+    const msg = data.toString()
+    console.log('[backend]', msg)
+  })
+
   backendProcess.on('error', (err) => {
     console.error('Backend start failed:', err)
     dialog.showErrorBox('启动失败', '无法启动后端服务，请检查安装是否完整。')
     app.quit()
   })
 
-  backendProcess.on('exit', () => {
+  backendProcess.on('exit', (code) => {
+    console.log(`[backend] exited with code ${code}`)
     if (mainWindow) {
       mainWindow.webContents.executeJavaScript(`
         document.body.innerHTML = '<div style="text-align:center;padding:80px;font-size:18px;color:#999;">服务已停止</div>'
@@ -65,27 +82,32 @@ function waitForBackend(retries = 30) {
 }
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const winOptions = {
     width: 1440,
     height: 900,
     minWidth: 1200,
     minHeight: 700,
-    title: '外贸ERP系统',
+    title: 'LTMP — 外贸ERP系统',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
     },
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 15, y: 15 },
-  })
+  }
 
+  // 跨平台标题栏样式
+  if (!IS_WIN) {
+    winOptions.titleBarStyle = 'hiddenInset'
+    winOptions.trafficLightPosition = { x: 15, y: 15 }
+  }
+
+  mainWindow = new BrowserWindow(winOptions)
   mainWindow.loadURL(`http://127.0.0.1:${PORT}`)
   mainWindow.on('closed', () => { mainWindow = null })
 }
 
 app.whenReady().then(async () => {
   // 确保数据目录存在
-  const fs = require('fs')
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
   startBackend()
@@ -99,7 +121,13 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  if (backendProcess) backendProcess.kill()
+  if (backendProcess) {
+    if (IS_WIN) {
+      backendProcess.kill('SIGTERM')
+    } else {
+      backendProcess.kill()
+    }
+  }
   app.quit()
 })
 

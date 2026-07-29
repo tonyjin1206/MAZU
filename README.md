@@ -1,64 +1,62 @@
 # Lightweight Trade Management Platform (LTMP)
 
 > 面向中小外贸企业的轻量化管理平台  
-> 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化
+> 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化  
+> **支持 macOS / Windows / Linux**
 
 ---
 
 ## 快速开始
 
-### 1. 安装
-
-打开终端，进入解压后的目录，执行一条命令即可：
-
 ```bash
+# macOS / Linux
 chmod +x install.sh && ./install.sh
+
+# 或者使用跨平台启动器（macOS / Windows / Linux 通用）
+python launcher.py
 ```
 
-脚本会自动完成以下操作：
-
-| 步骤 | 说明 |
-|------|------|
-| ① 检测系统环境 | 检查是否已安装 Python 和 Node.js |
-| ② 安装系统依赖 | 通过 Homebrew 自动安装缺失的 Python / Node.js |
-| ③ 安装后端依赖 | 创建 Python 虚拟环境，pip 安装 FastAPI 等依赖 |
-| ④ 安装前端依赖 | npm 安装 Vue 3、Element Plus 等依赖 |
-| ⑤ 构建前端 | 编译生成静态文件 |
-| ⑥ 启动服务 | 自动启动后端（8788端口）和前端（5173端口） |
-
-> ⏱ 首次安装约需 3-5 分钟（取决于网络速度）
-
-### 2. 使用
-
-安装完成后浏览器自动可访问：
-
+启动后自动打开：
 | 地址 | 说明 |
 |------|------|
 | `http://localhost:5173` | 前端系统界面 |
-| `http://localhost:8788` | 后端 API（可直接请求接口） |
+| `http://localhost:8788` | 后端 API |
 
 **默认账户：** `admin` / `admin123`
 
-### 3. 停止
+### Windows 手动启动
 
-在终端按 `Ctrl+C` 即可停止所有服务。
-
----
-
-## 手动启动
-
-如果不想使用一键脚本，也可以分别启动：
-
-```bash
+```powershell
 # 终端 1：启动后端
 cd backend
-source venv/bin/activate
-python3 run.py
+venv\Scripts\activate
+python run.py
 
 # 终端 2：启动前端
 cd frontend
 npm run dev
 ```
+
+### 跨平台启动器（推荐）
+
+```bash
+# 安装依赖（首次运行）
+python launcher.py install
+
+# 启动服务
+python launcher.py start
+
+# 一键安装 + 启动
+python launcher.py
+
+# 重置数据库
+python launcher.py reset-db
+
+# 查看帮助
+python launcher.py --help
+```
+
+> ⏱ 首次安装约需 3-5 分钟（取决于网络速度）
 
 ---
 
@@ -66,7 +64,7 @@ npm run dev
 
 | 组件 | 最低版本 |
 |------|---------|
-| 操作系统 | macOS 12+（Intel 或 Apple Silicon） |
+| 操作系统 | macOS 12+ / Windows 10+ / Linux |
 | Python | 3.10 或更高 |
 | Node.js | 18 或更高 |
 | 内存 | 4GB 以上 |
