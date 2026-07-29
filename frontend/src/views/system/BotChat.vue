@@ -18,7 +18,7 @@
         <!-- Bot 消息 -->
         <div v-if="msg.role === 'bot'" style="display: flex; gap: 8px; max-width: 80%">
           <div style="width: 28px; height: 28px; border-radius: 6px; background: #1d4ed8; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; flex-shrink: 0">🤖</div>
-          <div style="background: #fff; border-radius: 4px 12px 12px 12px; padding: 10px 14px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; box-shadow: 0 1px 2px rgba(0,0,0,0.06)">
+          <div class="bot-message-content" style="background: #fff; border-radius: 4px 12px 12px 12px; padding: 10px 14px; font-size: 13px; line-height: 1.6; white-space: pre-wrap; box-shadow: 0 1px 2px rgba(0,0,0,0.06)">
             <div v-html="renderMarkdown(msg.content)"></div>
           </div>
         </div>
@@ -67,6 +67,14 @@ import { ElMessage } from 'element-plus'
 import { systemConfigApi } from '../../api/foundation'
 import request from '../../api/request'
 
+import { marked } from 'marked'
+
+// 配置 marked
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+})
+
 const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
@@ -87,11 +95,11 @@ function saveState() {
 
 function renderMarkdown(text) {
   if (!text) return ''
-  // 简单 markdown 渲染：粗体 + 换行 + 序号
-  return text
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>')
-    .replace(/^(\d+[\.)])/gm, '<span style="color:#1d4ed8;font-weight:600">$1</span>')
+  try {
+    return marked.parse(text)
+  } catch {
+    return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')
+  }
 }
 
 function scrollToBottom() {
@@ -156,5 +164,31 @@ nextTick(() => inputRef.value?.focus())
 @keyframes blink {
   0%, 80%, 100% { opacity: 0; }
   40% { opacity: 1; }
+}
+.bot-message-content :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  margin: 8px 0;
+}
+.bot-message-content :deep(th) {
+  background: #f3f4f6;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+  font-weight: 600;
+}
+.bot-message-content :deep(td) {
+  padding: 4px 10px;
+  border: 1px solid #e5e7eb;
+}
+.bot-message-content :deep(code) {
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+.bot-message-content :deep(strong) {
+  font-weight: 600;
 }
 </style>
