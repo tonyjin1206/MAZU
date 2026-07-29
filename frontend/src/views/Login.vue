@@ -1,5 +1,5 @@
 <template>
-  <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #103B9C 0%, #1a4a9c 100%)">
+  <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0c2d7a 0%, #123d8a 100%)">
     <el-card style="width: 400px; padding: 20px">
       <template #header>
         <div style="text-align: center">

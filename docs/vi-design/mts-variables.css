@@ -10,16 +10,16 @@
   /* ═══════════════════════════════════════════════
      1. 品牌主色 (Primary — Ocean Blue)
      ═══════════════════════════════════════════════ */
-  --mts-primary-50: #eff6ff;
-  --mts-primary-100: #dbeafe;
-  --mts-primary-200: #bfdbfe;
-  --mts-primary-300: #93c5fd;
-  --mts-primary-400: #60a5fa;
-  --mts-primary-500: #3b82f6;
-  --mts-primary-600: #2563eb;
-  --mts-primary-700: #1d4ed8;
-  --mts-primary-800: #1e40af;
-  --mts-primary-900: #1e3a5f;
+  --mts-primary-50: #dbeafe;
+  --mts-primary-100: #bfdbfe;
+  --mts-primary-200: #93c5fd;
+  --mts-primary-300: #60a5fa;
+  --mts-primary-400: #3b82f6;
+  --mts-primary-500: #1d4ed8;
+  --mts-primary-600: #1e40af;
+  --mts-primary-700: #1e3a5f;
+  --mts-primary-800: #0c2d7a;
+  --mts-primary-900: #081a45;
 
   /* ═══════════════════════════════════════════════
      2. 语义色 (Semantic)
@@ -52,8 +52,8 @@
   /* ═══════════════════════════════════════════════
      4. 侧边栏 (Sidebar)
      ═══════════════════════════════════════════════ */
-  --mts-sidebar-bg-start: #103B9C;
-  --mts-sidebar-bg-end: #1a4a9c;
+  --mts-sidebar-bg-start: #0c2d7a;
+  --mts-sidebar-bg-end: #123d8a;
   --mts-sidebar-text: rgba(255, 255, 255, 0.65);
   --mts-sidebar-active: #ffffff;
   --mts-sidebar-hover-bg: rgba(255, 255, 255, 0.05);

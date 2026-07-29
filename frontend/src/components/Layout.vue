@@ -1,7 +1,7 @@
 <template>
   <el-container style="height: 100vh">
     <!-- 侧边栏 -->
-    <el-aside :width="isCollapse ? '64px' : '220px'" style="background: linear-gradient(180deg, #103B9C 0%, #1a4a9c 100%); overflow-y: auto; overflow-x: hidden; height: 100vh">
+    <el-aside :width="isCollapse ? '64px' : '220px'" style="background: linear-gradient(180deg, #0c2d7a 0%, #123d8a 100%); overflow-y: auto; overflow-x: hidden; height: 100vh">
       <div style="height: 60px; display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.07)">
         <img v-if="!isCollapse" src="/LOGO-light.svg" alt="MTS" style="width: 34px; height: 34px; border-radius: 7px">
         <img v-else src="/LOGO-light.svg" alt="MTS" style="width: 34px; height: 34px; border-radius: 7px">
