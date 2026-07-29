@@ -36,7 +36,9 @@ def call_ai(
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"]
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger("ai_chat").error(f"AI call failed: {e}")
         return None
 
 
