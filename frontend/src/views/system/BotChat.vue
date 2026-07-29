@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { systemConfigApi } from '../../api/foundation'
 import request from '../../api/request'
@@ -140,7 +140,12 @@ async function resetChat() {
   scrollToBottom()
 }
 
-onMounted(resetChat)
+// 有历史记录就加载，没有就显示欢迎语
+if (!sessionId.value) {
+  resetChat()
+} else {
+  scrollToBottom()
+}
 </script>
 
 <style scoped>
