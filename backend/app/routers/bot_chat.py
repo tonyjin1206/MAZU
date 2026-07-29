@@ -62,6 +62,32 @@ QUERY_ENTITIES = {
 
 CONFIRM_WORDS = {"确认", "y", "yes", "对", "是的", "没错", "提交", "可以", "是"}
 CANCEL_WORDS = {"取消", "算了", "不要了", "撤销", "取消订单"}
+INTENT_LABELS = {
+    "purchase_order": "采购订单",
+    "sales_order": "销售订单",
+    "production_order": "生产订单",
+}
+
+
+def detect_intent_from_chat(text: str, current_intent: str | None, history: list | None) -> str | None:
+    """在对话中检测用户是否想切换意图"""
+    t = text.lower()
+    sales_kw = ["销售", "so", "客户要", "卖", "出货", "sales"]
+    purchase_kw = ["采购", "po", "买", "进货", "purchase"]
+    production_kw = ["生产", "mo", "工单", "做", "制造", "production"]
+
+    for kw in sales_kw:
+        if kw in t and current_intent != "sales_order":
+            return "sales_order"
+    for kw in purchase_kw:
+        if kw in t and current_intent != "purchase_order":
+            return "purchase_order"
+    for kw in production_kw:
+        if kw in t and current_intent != "production_order":
+            return "production_order"
+    return None
+
+
 MODIFY_PREFIXES = ["改", "修改", "换", "换成", "变更"]
 
 
@@ -417,6 +443,14 @@ def process_message(text: str, session: dict, db: Session) -> dict:
         return collect_fields(text, session, db)
 
     if state == "collecting":
+        # 检查用户是否改了意图（比如从采购改为销售）
+        new_intent = detect_intent_from_chat(text, intent, session.get("history", []))
+        if new_intent and new_intent != intent:
+            session["intent"] = new_intent
+            session["data"] = {}
+            session["history"] = []
+            return {"reply": f"好的，改为{INTENT_LABELS.get(new_intent, new_intent)}，我们重新开始。", "state": "collecting"}
+
         # 只提取当前第一个缺失字段
         fields = INTENT_FIELDS.get(intent, [])
         for field_key, question in fields:
