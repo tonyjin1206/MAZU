@@ -140,6 +140,10 @@ def start():
         print(f"  {yellow('⚠️  虚拟环境不存在，先运行 install')}")
         install()
 
+    if not (FRONTEND / "node_modules").exists():
+        print(f"  {yellow('⚠️  前端 node_modules 不存在，先运行 install')}")
+        install()
+
     processes = []
 
     try:
@@ -192,13 +196,43 @@ def start():
         if IS_WINDOWS:
             frontend_proc = subprocess.Popen(
                 [npm(), "run", "dev"], cwd=str(FRONTEND),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
             )
         else:
             frontend_proc = subprocess.Popen(
                 [npm(), "run", "dev"], cwd=str(FRONTEND),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             )
         processes.append(("frontend", frontend_proc))
+
+        # 等待前端就绪（检查 Vite 输出）
+        print(f"  等待前端就绪", end="", flush=True)
+        frontend_ready = False
+        for _ in range(30):
+            time.sleep(0.5)
+            print(".", end="", flush=True)
+            if frontend_proc.poll() is not None:
+                # 前端进程已退出 — 读日志
+                out = frontend_proc.stdout.read(2048).decode(errors="replace") if frontend_proc.stdout else ""
+                print(f"\n  {red('❌ 前端启动失败')}")
+                for line in out.split("\n")[:10]:
+                    print(f"    {line}")
+                break
+            # 尝试 HTTP 访问前端
+            try:
+                import http.client
+                conn = http.client.HTTPConnection("127.0.0.1", 5173, timeout=1)
+                conn.request("GET", "/")
+                resp = conn.getresponse()
+                if resp.status in (200, 304):
+                    frontend_ready = True
+                    break
+            except:
+                pass
+        print()
+        if frontend_ready:
+            print(f"  {green('✅ 前端已就绪')}")
 
         print(f"\n{'=' * 50}")
         print(f"  {green('✅ 系统启动成功！')}")
