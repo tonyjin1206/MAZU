@@ -50,9 +50,122 @@ INTENT_KEYWORDS = {
     "production_order": ["生产", "工单", "做", "制造", "mo", "排产"],
 }
 
+QUERY_WORDS = {"查", "查询", "找", "搜索", "看一下"}
+QUERY_ENTITIES = {
+    "supplier": ["供应商", "厂家"],
+    "customer": ["客户", "买家"],
+    "material": ["物料", "材料", "原料"],
+    "product": ["产品", "商品"],
+    "logistics": ["物流", "快递", "货代", "运输"],
+}
+
 CONFIRM_WORDS = {"确认", "y", "yes", "对", "是的", "没错", "提交", "可以", "是"}
 CANCEL_WORDS = {"取消", "算了", "不要了", "撤销", "取消订单"}
 MODIFY_PREFIXES = ["改", "修改", "换", "换成", "变更"]
+
+
+def detect_query(text: str) -> tuple[str, str] | None:
+    """检测是否为查询类请求，返回 (entity_type, search_term)"""
+    t = text.strip()
+    # 检查是否包含查询关键词
+    has_query = any(qw in t for qw in QUERY_WORDS)
+    # 检查是否包含"编码"或"号码" — 也是隐式查询
+    has_code_query = "编码" in t or "代码" in t or "号码" in t
+
+    if not has_query and not has_code_query:
+        return None
+
+    # 识别要查什么实体
+    entity_type = None
+    for etype, keywords in QUERY_ENTITIES.items():
+        for kw in keywords:
+            idx = t.find(kw)
+            if idx >= 0:
+                entity_type = etype
+                break
+        if entity_type:
+            break
+
+    # 提取搜索关键词：去掉查询词和实体词
+    search_term = t
+    for qw in QUERY_WORDS:
+        search_term = search_term.replace(qw, "")
+    for kws in QUERY_ENTITIES.values():
+        for kw in kws:
+            search_term = search_term.replace(kw, "")
+    for w in ["的", "编码", "代码", "号码", "叫", "是", "什么", "一下", "信息", "详细"]:
+        search_term = search_term.replace(w, "")
+    search_term = search_term.strip()
+
+    return entity_type, search_term
+
+
+def handle_query(entity_type: str, search_term: str, db: Session) -> str:
+    """执行查询并返回格式化结果"""
+    from app.models.foundation import Supplier, Customer, Material, Product
+
+    if not search_term:
+        entity_label = {"supplier": "供应商", "customer": "客户", "material": "物料", "product": "产品", "logistics": "物流"}.get(entity_type, entity_type)
+        return f"你想查哪个{entity_label}？说具体名称或关键词"
+
+    like = f"%{search_term}%"
+
+    ENTITY_LABELS = {"supplier": "供应商", "customer": "客户", "material": "物料", "product": "产品", "logistics": "物流"}
+
+    if entity_type == "supplier":
+        items = db.query(Supplier).filter(
+            Supplier.name.like(like) | Supplier.code.like(like),
+            Supplier.is_active == 1
+        ).limit(5).all()
+        if not items:
+            return f"未找到匹配的供应商「{search_term}」"
+        lines = [f"📋 找到 {len(items)} 个供应商："]
+        for s in items:
+            lines.append(f"  **{s.name}**｜编码 `{s.code}`｜{s.contact_person} {s.phone}")
+        return "\n".join(lines)
+
+    elif entity_type == "customer":
+        items = db.query(Customer).filter(
+            (Customer.name_cn.like(like)) | (Customer.code.like(like)),
+            Customer.is_active == 1
+        ).limit(5).all()
+        if not items:
+            return f"未找到匹配的客户「{search_term}」"
+        lines = [f"📋 找到 {len(items)} 个客户："]
+        for c in items:
+            lines.append(f"  **{c.name_cn}**｜编码 `{c.code}`｜{c.contact_person} {c.phone}")
+        return "\n".join(lines)
+
+    elif entity_type == "material":
+        items = db.query(Material).filter(
+            Material.name.like(like) | Material.code.like(like),
+            Material.is_active == 1
+        ).limit(5).all()
+        if not items:
+            return f"未找到匹配的物料「{search_term}」"
+        lines = [f"📋 找到 {len(items)} 个物料："]
+        for m in items:
+            spec = f" 规格{m.spec}" if m.spec else ""
+            lines.append(f"  **{m.name}**｜编码 `{m.code}`｜{m.unit}{spec}")
+        return "\n".join(lines)
+
+    elif entity_type == "product":
+        items = db.query(Product).filter(
+            Product.name_cn.like(like) | Product.code.like(like),
+            Product.is_active == 1
+        ).limit(5).all()
+        if not items:
+            return f"未找到匹配的产品「{search_term}」"
+        lines = [f"📋 找到 {len(items)} 个产品："]
+        for p in items:
+            lines.append(f"  **{p.name_cn}**｜编码 `{p.code}`｜规格 {p.spec or '-'}")
+        return "\n".join(lines)
+
+    elif entity_type == "logistics":
+        # 物流信息 — 先给提示
+        return "物流信息查询功能开发中，请联系管理员 🔧"
+
+    return f"暂时不支持查询{ENTITY_LABELS.get(entity_type, entity_type)}"
 
 
 def detect_intent(text: str) -> str | None:
@@ -234,15 +347,26 @@ def process_message(text: str, session: dict, db: Session) -> dict:
                 }
 
     if state == "idle":
-        # 检测意图
+        # 检测查询意图（优先于创建单据）
+        q = detect_query(text)
+        if q and q[0]:
+            reply = handle_query(q[0], q[1], db)
+            return {"reply": reply, "state": "idle"}
+
+        # 检测创建单据意图
         detected = detect_intent(text)
         if not detected:
             return {
                 "reply": (
-                    "你好！我可以帮你创建以下单据：\n"
-                    "1️⃣ **采购订单** — 说「采购」或「下单」\n"
-                    "2️⃣ **销售订单** — 说「销售」或「出货」\n"
-                    "3️⃣ **生产订单** — 说「生产」或「工单」\n\n"
+                    "你好！我可以帮你：\n\n"
+                    "📋 **创建单据**\n"
+                    "  「采购PCB板100片」— 创建采购订单\n"
+                    "  「销售产品A」— 创建销售订单\n"
+                    "  「生产工单」— 创建生产订单\n\n"
+                    "🔍 **查询档案**\n"
+                    "  「查一下客户深圳电子」— 查客户信息\n"
+                    "  「找供应商编码」— 查供应商\n"
+                    "  「查物料名称」— 查物料\n\n"
                     "你想做什么？"
                 ),
                 "state": "idle",
