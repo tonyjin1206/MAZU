@@ -51,7 +51,8 @@ INTENT_KEYWORDS = {
     "production_order": ["生产", "工单", "做", "制造", "mo", "排产"],
 }
 
-QUERY_WORDS = {"查", "查询", "找", "搜索", "看一下"}
+QUERY_WORDS = {"查", "查询", "找", "搜索", "看一下", "全部", "所有", "清单", "列表"}
+ALL_KEYWORDS = {"全部", "所有", "清单", "列表"}
 QUERY_ENTITIES = {
     "supplier": ["供应商", "厂家"],
     "customer": ["客户", "买家"],
@@ -115,6 +116,7 @@ def detect_query(text: str) -> tuple[str, str] | None:
 
     # 提取搜索关键词：去掉查询词和实体词
     search_term = t
+    is_list_all = any(ak in search_term for ak in ALL_KEYWORDS) and len(search_term) < 10
     for qw in QUERY_WORDS:
         search_term = search_term.replace(qw, "")
     for kws in QUERY_ENTITIES.values():
@@ -124,6 +126,10 @@ def detect_query(text: str) -> tuple[str, str] | None:
         search_term = search_term.replace(w, "")
     search_term = search_term.strip()
 
+    # 全部清单 → keyword="" 表示列出全部
+    if is_list_all and not search_term:
+        return entity_type, ""
+
     return entity_type, search_term
 
 
@@ -132,18 +138,25 @@ def handle_query(entity_type: str, search_term: str, db: Session) -> str:
     from app.models.foundation import Supplier, Customer, Material, Product
 
     if not search_term:
-        entity_label = {"supplier": "供应商", "customer": "客户", "material": "物料", "product": "产品", "logistics": "物流"}.get(entity_type, entity_type)
+        entity_label = ENTITY_LABELS.get(entity_type, entity_type)
         return f"你想查哪个{entity_label}？说具体名称或关键词"
 
     like = f"%{search_term}%"
 
     ENTITY_LABELS = {"supplier": "供应商", "customer": "客户", "material": "物料", "product": "产品", "logistics": "物流"}
 
+    def _query_all(model_cls, limit=100):
+        """查询全部或模糊搜索"""
+        try:
+            name_col = model_cls.name
+        except AttributeError:
+            name_col = model_cls.name_cn
+        if search_term:
+            return db.query(model_cls).filter(name_col.like(like), model_cls.is_active == 1).limit(limit).all()
+        return db.query(model_cls).filter(model_cls.is_active == 1).limit(limit).all()
+
     if entity_type == "supplier":
-        items = db.query(Supplier).filter(
-            Supplier.name.like(like) | Supplier.code.like(like),
-            Supplier.is_active == 1
-        ).limit(5).all()
+        items = _query_all(Supplier)
         if not items:
             return f"未找到匹配的供应商「{search_term}」"
         lines = [f"📋 找到 {len(items)} 个供应商："]
@@ -152,10 +165,7 @@ def handle_query(entity_type: str, search_term: str, db: Session) -> str:
         return "\n".join(lines)
 
     elif entity_type == "customer":
-        items = db.query(Customer).filter(
-            (Customer.name_cn.like(like)) | (Customer.code.like(like)),
-            Customer.is_active == 1
-        ).limit(5).all()
+        items = _query_all(Customer)
         if not items:
             return f"未找到匹配的客户「{search_term}」"
         lines = [f"📋 找到 {len(items)} 个客户："]
@@ -164,10 +174,7 @@ def handle_query(entity_type: str, search_term: str, db: Session) -> str:
         return "\n".join(lines)
 
     elif entity_type == "material":
-        items = db.query(Material).filter(
-            Material.name.like(like) | Material.code.like(like),
-            Material.is_active == 1
-        ).limit(5).all()
+        items = _query_all(Material)
         if not items:
             return f"未找到匹配的物料「{search_term}」"
         lines = [f"📋 找到 {len(items)} 个物料："]
@@ -177,10 +184,7 @@ def handle_query(entity_type: str, search_term: str, db: Session) -> str:
         return "\n".join(lines)
 
     elif entity_type == "product":
-        items = db.query(Product).filter(
-            Product.name_cn.like(like) | Product.code.like(like),
-            Product.is_active == 1
-        ).limit(5).all()
+        items = _query_all(Product)
         if not items:
             return f"未找到匹配的产品「{search_term}」"
         lines = [f"📋 找到 {len(items)} 个产品："]
@@ -311,7 +315,7 @@ def extract_field(text: str, field: str, db: Session) -> str | dict | None:
 
 def parse_confirm(text: str) -> bool | None:
     """检测确认/取消/修改意图"""
-    t = text.strip().lower()
+    t = text.strip().strip("。.!！，,").lower()
     if t in CONFIRM_WORDS:
         return True
     if t in CANCEL_WORDS:
