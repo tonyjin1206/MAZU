@@ -1,19 +1,256 @@
-"""AI API 调用封装 — 支持 DeepSeek / OpenAI 兼容接口"""
+"""
+AI Agent — Function Calling 方案
+=================================
+LLM 通过工具函数操作 ERP，不再需要解析 JSON 或关键词规则。
+"""
 
 import json
 import httpx
+from datetime import date
 from sqlalchemy.orm import Session
 
 from app.models.system_config import BotConfig
 from app.utils.crypto import decrypt
 
 
-def call_ai(
-    system_prompt: str,
-    messages: list[dict],
-    bot_config: BotConfig,
-) -> str | None:
-    """调用 AI 模型，返回回复文本"""
+# ==================== 工具定义 ====================
+
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "query_entities",
+            "description": "查询档案信息：客户、供应商、物料、产品。支持模糊搜索。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_type": {
+                        "type": "string",
+                        "enum": ["customer", "supplier", "material", "product"],
+                        "description": "要查询的档案类型",
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": "搜索关键词，留空则列出全部",
+                    },
+                },
+                "required": ["entity_type"],
+            },
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_order",
+            "description": "创建业务单据。必须先确认所有字段后再调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order_type": {
+                        "type": "string",
+                        "enum": ["purchase_order", "sales_order", "production_order"],
+                        "description": "单据类型",
+                    },
+                    "supplier_name": {"type": "string", "description": "供应商名称（采购单必填）"},
+                    "customer_name": {"type": "string", "description": "客户名称（销售单必填）"},
+                    "product_name": {"type": "string", "description": "产品名称（销售单/生产单必填）"},
+                    "material_name": {"type": "string", "description": "物料名称（采购单必填）"},
+                    "quantity": {"type": "number", "description": "数量"},
+                    "unit_price": {"type": "number", "description": "单价"},
+                    "order_date": {"type": "string", "description": "日期，默认为今天"},
+                    "due_date": {"type": "string", "description": "计划完成日（生产单）"},
+                },
+            },
+        }
+    },
+]
+
+SYSTEM_PROMPT = """你是 MTS 系统的 AI 助手，通过对话帮助用户操作 ERP 系统。
+
+## 工作方式
+- 用户说什么你自然回应
+- 需要查数据或创建单据时，调用对应的工具函数
+- **不确定时先问用户**，确认后再执行
+
+## 工具使用规则
+
+### query_entities
+- 用户说「查客户/找供应商/物料编码」等时调用
+- 用户说「全部客户/所有供应商/客户清单」时 keyword 留空
+- 调用后把结果用自然的表格或列表展示给用户
+
+### create_order
+- **必须先跟用户确认所有字段**再调用
+- 确认格式：逐项列出让用户确认，用户说「对/是」再调用
+- 如果调用失败（如供应商名称匹配不到），告诉用户原因
+
+## 对话原则
+- 中文自然交流，像同事聊天
+- 一次只确认一件事"""
+
+
+# ==================== 工具执行 ====================
+
+ENTITY_LABELS = {
+    "supplier": "供应商", "customer": "客户",
+    "material": "物料", "product": "产品",
+}
+
+
+def _execute_query_entities(args: dict, db: Session) -> str:
+    """执行 query_entities 工具"""
+    from app.models.foundation import Supplier, Customer, Material, Product
+
+    etype = args.get("entity_type")
+    keyword = (args.get("keyword") or "").strip()
+
+    MODEL_MAP = {
+        "supplier": (Supplier, Supplier.name, "name", ["name", "code", "contact_person", "phone"]),
+        "customer": (Customer, Customer.name_cn, "name_cn", ["name_cn", "code", "contact_person", "phone"]),
+        "material": (Material, Material.name, "name", ["name", "code", "unit", "spec"]),
+        "product": (Product, Product.name_cn, "name_cn", ["name_cn", "code", "spec"]),
+    }
+    if etype not in MODEL_MAP:
+        return f"不支持的查询类型：{etype}"
+
+    model_cls, name_col, name_attr, fields = MODEL_MAP[etype]
+    q = db.query(model_cls).filter(model_cls.is_active == 1)
+    if keyword:
+        q = q.filter(name_col.like(f"%{keyword}%"))
+    items = q.limit(100).all()
+
+    if not items:
+        label = ENTITY_LABELS.get(etype, etype)
+        if keyword:
+            return f"未找到匹配的{label}「{keyword}」"
+        return f"系统中暂无{label}数据"
+
+    label = ENTITY_LABELS.get(etype, etype)
+    lines = [f"📋 找到 {len(items)} 个{label}："]
+    for item in items:
+        parts = []
+        for f in fields:
+            v = getattr(item, f, "") or ""
+            if f == "name_cn":
+                v = f"**{v}**"
+            elif f == "code":
+                v = f"`{v}`"
+            parts.append(str(v))
+        lines.append("  " + "｜".join(parts))
+    return "\n".join(lines)
+
+
+def _execute_create_order(args: dict, db: Session) -> str:
+    """执行 create_order 工具"""
+    from app.models.foundation import Supplier, Customer, Material, Product
+
+    otype = args.get("order_type")
+    today = date.today().isoformat()
+
+    try:
+        if otype == "purchase_order":
+            from app.models.purchase import PurchaseOrder, PurchaseOrderItem
+            from app.utils.batch_no import generate_doc_no
+
+            sup_name = args.get("supplier_name", "")
+            mat_name = args.get("material_name", "")
+            qty = float(args.get("quantity", 0))
+            price = float(args.get("unit_price", 0))
+            order_date = args.get("order_date", today)
+
+            sup = db.query(Supplier).filter(Supplier.name.like(f"%{sup_name}%"), Supplier.is_active == 1).first()
+            if not sup:
+                return f"未找到供应商「{sup_name}」，请核实名称"
+            mat = db.query(Material).filter(Material.name.like(f"%{mat_name}%"), Material.is_active == 1).first()
+            if not mat:
+                return f"未找到物料「{mat_name}」，请核实名称"
+
+            order_no = generate_doc_no(db, "PO")
+            po = PurchaseOrder(order_no=order_no, supplier_id=sup.id, order_date=_parse_date(order_date),
+                               status="待审批", total_amount=round(qty * price, 2), tax_rate=13,
+                               remark="通过AI助手创建", created_by="AI")
+            db.add(po); db.flush()
+            item = PurchaseOrderItem(order_id=po.id, material_id=mat.id, quantity=qty,
+                                     unit_price=price, total_amount=round(qty * price, 2), tax_rate=13)
+            db.add(item); db.commit()
+            return f"✅ **采购订单 {order_no} 已创建！**\n状态：待审批\n可在采购管理查看"
+
+        elif otype == "sales_order":
+            from app.models.sales import SalesOrder, SalesOrderItem
+            from app.utils.batch_no import generate_doc_no
+
+            cust_name = args.get("customer_name", "")
+            prod_name = args.get("product_name", "")
+            qty = float(args.get("quantity", 0))
+            price = float(args.get("unit_price", 0))
+            order_date = args.get("order_date", today)
+
+            cust = db.query(Customer).filter(Customer.name_cn.like(f"%{cust_name}%"), Customer.is_active == 1).first()
+            if not cust:
+                # 试试英文名
+                cust = db.query(Customer).filter(Customer.name_en.like(f"%{cust_name}%"), Customer.is_active == 1).first()
+            if not cust:
+                return f"未找到客户「{cust_name}」，请核实名称"
+            prod = db.query(Product).filter(Product.name_cn.like(f"%{prod_name}%"), Product.is_active == 1).first()
+            if not prod:
+                return f"未找到产品「{prod_name}」，请核实名称"
+
+            order_no = generate_doc_no(db, "SO")
+            so = SalesOrder(order_no=order_no, customer_id=cust.id, order_date=_parse_date(order_date),
+                            status="待审核", total_amount=round(qty * price, 2),
+                            currency_id=1, exchange_rate=1, remark="通过AI助手创建", created_by="AI")
+            db.add(so); db.flush()
+            item = SalesOrderItem(order_id=so.id, product_id=prod.id, quantity=qty,
+                                  unit_price=price, total_amount=round(qty * price, 2), tax_rate=13)
+            db.add(item); db.commit()
+            return f"✅ **销售订单 {order_no} 已创建！**\n状态：待审核\n可在销售管理查看"
+
+        elif otype == "production_order":
+            from app.models.production import ProductionOrder
+            from app.utils.batch_no import generate_doc_no
+
+            prod_name = args.get("product_name", "")
+            qty = float(args.get("quantity", 0))
+            due = args.get("due_date", "")
+
+            prod = db.query(Product).filter(Product.name_cn.like(f"%{prod_name}%"), Product.is_active == 1).first()
+            if not prod:
+                return f"未找到产品「{prod_name}」，请核实名称"
+
+            order_no = generate_doc_no(db, "MO")
+            mo = ProductionOrder(order_no=order_no, product_id=prod.id, quantity=qty,
+                                 due_date=_parse_date(due) if due else None,
+                                 status="待排产", remark="通过AI助手创建", created_by="AI")
+            db.add(mo); db.commit()
+            return f"✅ **生产订单 {order_no} 已创建！**\n状态：待排产\n可在生产管理查看"
+
+        else:
+            return f"不支持的单据类型：{otype}"
+
+    except Exception as e:
+        db.rollback()
+        return f"❌ 创建失败：{e}"
+
+
+def _parse_date(val):
+    if val is None or isinstance(val, date):
+        return val
+    try:
+        return date.fromisoformat(str(val)[:10])
+    except (ValueError, TypeError):
+        return date.today()
+
+
+TOOL_EXECUTORS = {
+    "query_entities": _execute_query_entities,
+    "create_order": _execute_create_order,
+}
+
+
+# ==================== AI 调用 ====================
+
+def _call_llm(messages: list[dict], bot_config: BotConfig, tool_choice=None) -> dict | None:
+    """调用 LLM，支持 function calling"""
     headers = {
         "Authorization": f"Bearer {bot_config.api_key}",
         "Content-Type": "application/json",
@@ -22,105 +259,99 @@ def call_ai(
         "https://api.deepseek.com" if bot_config.provider == "deepseek"
         else "https://api.openai.com"
     )
-    url = f"{base_url}/v1/chat/completions"
     payload = {
         "model": bot_config.model or "deepseek-chat",
-        "messages": [{"role": "system", "content": system_prompt}] + messages,
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
         "temperature": bot_config.temperature or 0.1,
-        "max_tokens": bot_config.max_tokens or 1024,
+        "max_tokens": bot_config.max_tokens or 2048,
+        "tools": TOOLS,
     }
+    if tool_choice:
+        payload["tool_choice"] = tool_choice
 
     try:
-        with httpx.Client(timeout=30) as client:
-            resp = client.post(url, headers=headers, json=payload)
+        with httpx.Client(timeout=60) as client:
+            resp = client.post(f"{base_url}/v1/chat/completions", headers=headers, json=payload)
             resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            return resp.json()
     except Exception as e:
         import logging
-        logging.getLogger("ai_chat").error(f"AI call failed: {e}")
+        logging.getLogger("ai_chat").error(f"LLM call failed: {e}")
         return None
 
 
-AI_SYSTEM_PROMPT = """你是 MTS 系统的 AI 助手，帮助用户操作 ERP。
+# ==================== 主流程 ====================
 
-## 核心原则
-- **不确定就问**，猜对了等用户确认再行动
-- **用户否定就换**，不要固执
-- **一次只问一个事**，不要一次问太多
+def process_message(message: str, history: list[dict], db: Session) -> dict:
+    """
+    处理用户消息（核心入口）
+    返回 {"reply": str, "state": str, "history": list}
+    """
+    config = _get_config(db)
+    if not config:
+        return {"reply": "AI 未配置，请先在系统管理中配置 AI 模型", "state": "error", "history": history or []}
 
-## 意图判断规则
-用户说「客户/买家/美国/出口」等 → sales_order
-用户说「供应商/厂家/原材料/物料」 → purchase_order
-用户说「产品/BOM」 → 倾向 sales_order，除非同时提到采购
-用户说「生产/工单/做/制造」 → production_order
-只说「下单」 → 反问：是销售订单、采购订单还是生产订单？
+    messages = list(history or [])
+    messages.append({"role": "user", "content": message})
 
-## 确认流程（loop）
-你猜出意图后，必须问用户确认：
-「您是想下销售订单，对吗？」
-用户说「对/是/Y」 → 返回 create 类型
-用户说「不是/不对/采购/销售」 → 换一个意图再问
-用户说「算了/取消」 → 返回 chat 类型说好的
+    # 最多 3 轮 tool call 循环
+    for _ in range(3):
+        result = _call_llm(messages, config)
+        if not result:
+            return {"reply": "AI 调用失败", "state": "error", "history": history or []}
 
-## 查询档案
-用户说「查xxx/找xxx/xxx编码」 → 返回 query 类型
-query 不需要确认
+        choice = result["choices"][0]
+        msg = choice["message"]
 
-## 响应格式
-必须返回 JSON。
+        # LLM 返回文本 → 结束
+        if msg.get("content"):
+            messages.append({"role": "assistant", "content": msg["content"]})
+            # 截断历史（保留最近 20 条）
+            if len(messages) > 20:
+                messages = messages[-20:]
+            return {"reply": msg["content"], "state": "idle", "history": messages}
 
-### 确定可以下单
-{"type":"create","intent":"purchase_order|sales_order|production_order","fields":{}}
+        # LLM 调用了工具
+        if msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                fn = tc["function"]
+                name = fn["name"]
+                try:
+                    args = json.loads(fn["arguments"])
+                except json.JSONDecodeError:
+                    args = {}
 
-### 查询档案
-{"type":"query","entity":"supplier|customer|material|product","keyword":"搜索关键词"}
+                # 记录 tool call
+                messages.append({
+                    "role": "assistant",
+                    "tool_calls": [{"id": tc["id"], "type": "function",
+                                    "function": {"name": name, "arguments": fn["arguments"]}}],
+                })
 
-### 还没确定，继续聊天/反问
-{"type":"chat","reply":"你的自然回复"}
+                # 执行工具
+                executor = TOOL_EXECUTORS.get(name)
+                if executor:
+                    tool_result = executor(args, db)
+                else:
+                    tool_result = f"未知工具：{name}"
 
-## 字段收集
-一旦用户确认了意图：
-- purchase_order 需要：supplier, material, quantity, unit_price
-- sales_order 需要：customer, product, quantity, unit_price
-- production_order 需要：product, quantity, due_date
-- 如果用户一句话说了多个字段，全部填到 fields 里
-- 日期默认为今天"""
+                # 记录工具结果
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": tool_result,
+                })
+            # 继续循环，让 LLM 处理工具结果
+            continue
+
+        break  # 安全兜底
+
+    return {"reply": "抱歉，我暂时无法处理这个请求", "state": "error", "history": history or []}
 
 
-def get_active_bot_config(db: Session) -> BotConfig | None:
-    """获取启用的 AI 配置，并解密 API Key"""
+def _get_config(db: Session) -> BotConfig | None:
+    """获取启用的 AI 配置"""
     config = db.query(BotConfig).filter(BotConfig.is_active == 1).first()
     if config and config.api_key:
         config.api_key = decrypt(config.api_key)
     return config
-
-
-def process_with_ai(
-    message: str,
-    db: Session,
-    history: list[dict] | None = None,
-) -> dict | None:
-    """用 AI 解析用户消息，传入最近对话历史让 LLM 理解上下文"""
-    config = get_active_bot_config(db)
-    if not config or not config.api_key:
-        return None
-
-    messages = [{"role": msg["role"], "content": msg["content"]}
-                for msg in (history or [])]
-    messages.append({"role": "user", "content": message})
-
-    reply = call_ai(AI_SYSTEM_PROMPT, messages, config)
-    if not reply:
-        return None
-
-    try:
-        if "```json" in reply:
-            reply = reply.split("```json")[1].split("```")[0].strip()
-        elif "```" in reply:
-            reply = reply.split("```")[1].split("```")[0].strip()
-        result = json.loads(reply)
-        return result
-    except (json.JSONDecodeError, KeyError, IndexError):
-        # AI 返回了非 JSON 文本 → 当 chat 类型处理
-        return {"type": "chat", "reply": reply}
