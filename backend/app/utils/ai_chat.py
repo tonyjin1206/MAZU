@@ -48,8 +48,8 @@ TOOLS = [
                 "properties": {
                     "order_type": {
                         "type": "string",
-                        "enum": ["purchase_order", "sales_order", "production_order"],
-                        "description": "单据类型",
+                        "enum": ["purchase_order", "sales_order"],
+                        "description": "单据类型（生产订单仅能通过生产模块创建，不支持AI创建）",
                     },
                     "supplier_name": {"type": "string", "description": "供应商名称（采购单必填）"},
                     "customer_name": {"type": "string", "description": "客户名称（销售单必填）"},
@@ -70,7 +70,7 @@ SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助用户完
 ## 核心能力
 你有两个工具可以在 ERP 系统中执行操作：
 1. query_entities — 查询客户/供应商/物料/产品档案
-2. create_order — 创建采购/销售/生产订单
+2. create_order — 创建采购订单/销售订单（生产订单需在系统中手动创建）
 
 ## 工作流程
 
@@ -84,11 +84,10 @@ SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助用户完
 创建订单前必须经过「三步确认」：
 
 第一步 — 确认单据类型
-  用户说「下单/采购/销售/生产」→ 问清是哪种单
+  用户说「下单/采购/销售」→ 问清是采购单还是销售单（生产订单不支持AI创建）
 第二步 — 收集字段（如果有缺的）
   purchase：supplier_name, material_name, quantity, unit_price
   sales：customer_name, product_name, quantity, unit_price
-  production：product_name, quantity, due_date
 第三步 — 逐项确认
   列出全部字段让用户核对，用户说「对/是/确认」再调 create_order
 
@@ -215,25 +214,6 @@ def _execute_create_order(args: dict, db: Session) -> str:
                                   unit_price=price, total_amount=round(qty * price, 2), tax_rate=13)
             db.add(item); db.commit()
             return f"✅ **销售订单 {order_no} 已创建！**\n状态：待审核\n可在销售管理查看"
-
-        elif otype == "production_order":
-            from app.models.production import ProductionOrder
-            from app.utils.batch_no import generate_doc_no
-
-            prod_name = args.get("product_name", "")
-            qty = float(args.get("quantity", 0))
-            due = args.get("due_date", "")
-
-            prod = db.query(Product).filter(Product.name_cn.like(f"%{prod_name}%"), Product.is_active == 1).first()
-            if not prod:
-                return f"未找到产品「{prod_name}」，请核实名称"
-
-            order_no = generate_doc_no(db, "MO")
-            mo = ProductionOrder(order_no=order_no, product_id=prod.id, quantity=qty,
-                                 due_date=_parse_date(due) if due else None,
-                                 status="待排产", remark="通过AI助手创建", created_by="AI")
-            db.add(mo); db.commit()
-            return f"✅ **生产订单 {order_no} 已创建！**\n状态：待排产\n可在生产管理查看"
 
         else:
             return f"不支持的单据类型：{otype}"
