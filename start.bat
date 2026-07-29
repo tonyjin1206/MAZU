@@ -1,92 +1,101 @@
 @echo off
 chcp 65001 >nul
-title MTS — Mazu Trade System
-cd /d "%~dp0"
+setlocal enabledelayedexpansion
+title MTS
 
 echo =========================================
-echo   MTS — Mazu Trade System
+echo   MTS - Mazu Trade System
 echo =========================================
 echo.
 
-:: 检测 Python
+:: Check Python
 python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ❌ Python 未找到，请安装 Python 3.10+
-    echo    下载: https://www.python.org/downloads/
+if errorlevel 1 (
+    echo [FAIL] Python not found. Install Python 3.10+ from:
+    echo        https://www.python.org/downloads/
     pause
     exit /b 1
 )
+for /f "tokens=2" %%i in ('python --version 2^>^&1') do set pyver=%%i
+echo [OK] Python %pyver%
 
-:: 检测 Node.js
+:: Check Node
 node --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo ❌ Node.js 未找到，请安装 Node.js 18+
-    echo    下载: https://nodejs.org/
+if errorlevel 1 (
+    echo [FAIL] Node.js not found. Install Node.js 18+ from:
+    echo        https://nodejs.org/
     pause
     exit /b 1
 )
 
-:: 后端虚环境
+:: Backend venv
 if not exist "backend\venv\Scripts\python.exe" (
-    echo [1/3] 创建后端虚环境...
+    echo.
+    echo [1/3] Creating virtual environment...
     python -m venv backend\venv
 )
-echo [1/3] 安装后端依赖...
+echo [1/3] Installing backend dependencies...
 backend\venv\Scripts\python -m pip install -r backend\requirements.txt -q
-echo   ✅ 后端依赖安装完成
+echo   [OK] Backend ready
 
-:: 前端依赖
+:: Frontend deps
 if not exist "frontend\node_modules" (
-    echo [2/3] 安装前端依赖...
-    cd frontend
-    call npm install --silent
-    cd ..
+    echo.
+    echo [2/3] Installing frontend dependencies...
+    pushd frontend
+    call npm install
+    popd
 ) else (
-    echo [2/3] 前端依赖已存在
+    echo [2/3] Frontend dependencies already installed
 )
-echo   ✅ 前端依赖就绪
 
-:: 重置数据库
-if exist "backend\data\erp.db" (
-    echo [3/3] 清理旧数据库...
-    del /q "backend\data\erp.db" 2>nul
-    del /q "backend\data\erp.db-wal" 2>nul
-    del /q "backend\data\erp.db-shm" 2>nul
-)
-echo   ✅ 数据库已重置
+:: Reset DB
+echo.
+echo [3/3] Resetting database...
+if exist "backend\data\erp.db" del "backend\data\erp.db"
+if exist "backend\data\erp.db-wal" del "backend\data\erp.db-wal"
+if exist "backend\data\erp.db-shm" del "backend\data\erp.db-shm"
+echo   [OK] Database reset
 
+:: Start backend
 echo.
 echo =========================================
-echo   🚀 启动服务...
+echo   Starting services...
 echo =========================================
 echo.
+echo Starting backend (port 8788)...
+start "" /B backend\venv\Scripts\python backend\run.py >nul 2>&1
 
-:: 启动后端（新窗口）
-start "MTS-Backend" /B backend\venv\Scripts\python backend\run.py
-
-:: 等后端就绪
-echo 等待后端就绪......
-:wait_backend
+:: Wait for backend
+set retries=0
+:wait_loop
+set /a retries+=1
+if !retries! gtr 30 (
+    echo [FAIL] Backend did not start in time
+    pause
+    exit /b 1
+)
+>nul 2>&1 curl -s http://127.0.0.1:8788/api/health && goto backend_ok
 timeout /t 1 /nobreak >nul
->nul 2>&1 curl -s http://127.0.0.1:8788/api/health && goto backend_ready
-goto wait_backend
-:backend_ready
-echo   ✅ 后端已就绪 (端口 8788)
+goto wait_loop
 
-:: 启动前端（新窗口）
-start "MTS-Frontend" /B cmd /c "cd frontend && npm run dev"
+:backend_ok
+echo   [OK] Backend ready
 
-echo   ✅ 前端已启动 (端口 5173)
+:: Start frontend
+echo Starting frontend (port 5173)...
+start "" /B cmd /c "cd /d %cd%\frontend && npm run dev" >nul 2>&1
+echo   [OK] Frontend started
+
 echo.
 echo =========================================
-echo   系统启动成功！
+echo   System is running!
 echo.
-echo   前端: http://localhost:5173
-echo   后端: http://localhost:8788
-echo   账户: admin / admin123
+echo   Frontend: http://localhost:5173
+echo   Backend:  http://localhost:8788
+echo   Account:  admin / admin123
 echo.
-echo   关闭所有窗口即可停止服务
+echo   Close this window to stop all services.
 echo =========================================
-
-:: 保持窗口打开
+echo.
 pause
