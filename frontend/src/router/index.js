@@ -51,6 +51,9 @@ const routes = [
       // 系统管理
       { path: 'system/users', name: 'SystemUsers', component: () => import('../views/system/Users.vue') },
       { path: 'system/roles', name: 'SystemRoles', component: () => import('../views/system/Roles.vue') },
+      { path: 'system/wecom', name: 'WecomConfig', component: () => import('../views/system/WecomConfig.vue') },
+      { path: 'system/bot', name: 'BotConfig', component: () => import('../views/system/BotConfig.vue') },
+      { path: 'system/reminders', name: 'Reminders', component: () => import('../views/system/Reminders.vue') },
     ],
   },
 ]

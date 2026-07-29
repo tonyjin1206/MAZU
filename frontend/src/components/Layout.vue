@@ -29,6 +29,9 @@
           </template>
           <el-menu-item index="/system/users">用户管理</el-menu-item>
           <el-menu-item index="/system/roles">角色管理</el-menu-item>
+          <el-menu-item index="/system/wecom">企业微信</el-menu-item>
+          <el-menu-item index="/system/bot">AI 模型</el-menu-item>
+          <el-menu-item index="/system/reminders">提醒管理</el-menu-item>
         </el-sub-menu>
 
         <!-- 1. 基础档案 -->
@@ -176,6 +179,9 @@ const pageTitle = computed(() => {
     '/tax-refund/declarations': '退税申报',
     '/system/users': '用户管理',
     '/system/roles': '角色管理',
+    '/system/wecom': '企业微信配置',
+    '/system/bot': 'AI 模型配置',
+    '/system/reminders': '提醒管理',
   }
   if (path.startsWith('/production/detail')) return '生产订单详情'
   return titles[path] || 'MTS'
