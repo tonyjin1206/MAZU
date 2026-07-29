@@ -28,7 +28,7 @@ r = requests.post(f"{BASE}/auth/login", json={"username":"admin","password":"adm
 assert r.status_code == 200, f"登录失败: {r.text}"
 TOKEN = r.json()["access_token"]
 user = r.json()["user"]
-print(f"\n{OK} 登录成功: {user['display_name']} ({user['role']})")
+print(f"\n{OK} 登录成功: {user['display_name']} ({user.get('role_code', user.get('role', '?'))})")
 step += 1
 
 # === 2. 基础数据 ===
