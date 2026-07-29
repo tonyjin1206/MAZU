@@ -465,7 +465,9 @@ def process_message(text: str, session: dict, db: Session) -> dict:
             session["intent"] = new_intent
             session["data"] = {}
             session["history"] = []
-            return {"reply": f"好的，改为{INTENT_LABELS.get(new_intent, new_intent)}，我们重新开始。", "state": "collecting"}
+            # 回到 idle 让 AI 反问确认
+            session["state"] = "idle"
+            return {"reply": f"您是想改为{INTENT_LABELS.get(new_intent, new_intent)}，对吗？", "state": "idle"}
 
         # 只提取当前第一个缺失字段
         fields = INTENT_FIELDS.get(intent, [])
