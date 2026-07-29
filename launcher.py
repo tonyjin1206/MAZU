@@ -99,7 +99,7 @@ def check_dependencies():
 
 def install():
     """安装所有依赖"""
-    print(f"\n{cyan('📦 LTMP — 安装依赖')}")
+    print(f"\n{cyan('📦 MTS — 安装依赖')}")
     print("=" * 50)
 
     check_dependencies()

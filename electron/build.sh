@@ -7,7 +7,7 @@ BACKEND_DIR="$PROJECT_DIR/backend"
 ELECTRON_DIR="$PROJECT_DIR/electron"
 
 echo "=============================="
-echo "   LTMP macOS 打包"
+echo "   MTS macOS 打包"
 echo "=============================="
 
 # Step 1: 构建前端

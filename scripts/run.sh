@@ -7,7 +7,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$DIR/backend"
 
 echo "========================================="
-echo "   LTMP v1.0"
+echo "   MTS v1.0"
 echo "  http://localhost:${PORT}"
 echo "========================================="
 

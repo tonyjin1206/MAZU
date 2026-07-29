@@ -2,6 +2,8 @@
 
 ## 概览
 
+> A Lightweight Trade Management Platform.
+
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 
 - 后端: FastAPI (端口 8788)
