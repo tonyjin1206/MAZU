@@ -1,7 +1,7 @@
 {
   "name": "ltmp-desktop",
   "version": "1.0.0",
-  "description": "LTMP (Lightweight Trade Management Platform) — 外贸ERP桌面版",
+  "description": "MTS (Mazu Trade System) — 外贸ERP桌面版",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -12,7 +12,7 @@
   },
   "build": {
     "appId": "com.erp.foreigntrade",
-    "productName": "LTMP",
+    "productName": "MTS",
     "mac": {
       "category": "public.app-category.business",
       "icon": "icon.icns",
@@ -34,7 +34,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "shortcutName": "LTMP"
+      "shortcutName": "MTS"
     },
     "linux": {
       "icon": "icon.png",
@@ -42,7 +42,7 @@
       "category": "Office"
     },
     "dmg": {
-      "title": "LTMP安装器",
+      "title": "MTS安装器",
       "contents": [
         { "x": 130, "y": 220 },
         { "x": 410, "y": 220, "type": "link", "path": "/Applications" }

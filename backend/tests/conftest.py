@@ -1,4 +1,4 @@
-"""LTMP 后端 — 共享 fixtures（含 RBAC 种子数据）"""
+"""MTS 后端 — 共享 fixtures（含 RBAC 种子数据）"""
 
 import shutil
 from pathlib import Path

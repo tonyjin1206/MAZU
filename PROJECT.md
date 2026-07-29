@@ -1,4 +1,4 @@
-# LTMP (Lightweight Trade Management Platform) — 项目文档
+# MTS (Mazu Trade System) — 项目文档
 
 ## 概览
 

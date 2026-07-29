@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LTMP (Lightweight Trade Management Platform) — 后端入口
+MTS (Mazu Trade System) — 后端入口
 FastAPI + SQLAlchemy + SQLite
 """
 from pathlib import Path

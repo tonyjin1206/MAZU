@@ -1,7 +1,7 @@
 # ERP Electron 封装方案
 
 ## 目标
-将外贸ERP系统打包成 macOS .dmg 安装包，双击即用。
+将MTS打包成 macOS .dmg 安装包，双击即用。
 
 ## 架构
 ```

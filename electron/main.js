@@ -87,7 +87,7 @@ function createWindow() {
     height: 900,
     minWidth: 1200,
     minHeight: 700,
-    title: 'LTMP — 外贸ERP系统',
+    title: 'MTS — Mazu Trade System',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

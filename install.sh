@@ -1,5 +1,5 @@
 #!/bin/bash
-# LTMP — 全自动安装脚本
+# Mazu Trade System (MTS) — 全自动安装脚本
 # 自动检测并安装 Python、Node.js、项目依赖，一键部署
 set -e
 
@@ -15,7 +15,7 @@ NODE_REQUIRED="18"
 
 echo ""
 echo -e "${CYAN}╔══════════════════════════════════════════════════╗${NC}"
-echo -e "${CYAN}║       LTMP — 一键安装                          ║${NC}"
+echo -e "${CYAN}║       MTS — 一键安装                          ║${NC}"
 echo -e "${CYAN}╚══════════════════════════════════════════════════╝${NC}"
 echo ""
 

@@ -1,5 +1,5 @@
 """
-LTMP 全流程测试脚本
+MTS 全流程测试脚本
 走完：基础数据→采购→委外→完工→销售→报关→应收→退税
 """
 import requests, json, sys
@@ -21,7 +21,7 @@ def api(method, path, data=None, token=None):
 
 # === 1. 登录 ===
 print(f"\n{'='*60}")
-print(f"   LTMP 全流程测试")
+print(f"   MTS 全流程测试")
 print(f"{'='*60}")
 
 r = requests.post(f"{BASE}/auth/login", json={"username":"admin","password":"admin123"})

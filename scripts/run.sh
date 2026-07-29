@@ -1,5 +1,5 @@
 #!/bin/bash
-# LTMP 一键启动脚本
+# Mazu Trade System (MTS) 一键启动脚本
 # 用法: sh run.sh [port]
 
 PORT=${1:-8788}

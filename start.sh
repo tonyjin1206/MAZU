@@ -1,5 +1,5 @@
 #!/bin/bash
-# LTMP — 启动脚本（依赖已安装时使用）
+# Mazu Trade System (MTS) — 启动脚本（依赖已安装时使用）
 set -e
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"

@@ -1,4 +1,4 @@
-# LTMP — 产品文档
+# Mazu Trade System (MTS) — 产品文档
 
 > 版本 1.0 | 最后更新 2026-07-23
 

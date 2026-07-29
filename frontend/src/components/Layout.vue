@@ -153,7 +153,7 @@ const pageTitle = computed(() => {
     '/system/roles': '角色管理',
   }
   if (path.startsWith('/production/detail')) return '生产订单详情'
-  return titles[path] || 'LTMP'
+  return titles[path] || 'MTS'
 })
 
 const currentRoute = computed(() => route.path)

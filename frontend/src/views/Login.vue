@@ -3,7 +3,7 @@
     <el-card style="width: 400px; padding: 20px">
       <template #header>
         <div style="text-align: center">
-          <h2 style="margin: 0">📦 LTMP</h2>
+          <h2 style="margin: 0">📦 MTS</h2>
           <p style="color: #909399; font-size: 13px; margin: 8px 0 0">请登录</p>
         </div>
       </template>

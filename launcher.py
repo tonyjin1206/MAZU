@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LTMP 跨平台启动器
+MTS 跨平台启动器
 ==================
 统一管理 macOS / Windows 上的安装、启动、重置数据库。
 
@@ -132,7 +132,7 @@ def install():
 
 def start():
     """启动后端和前端"""
-    print(f"\n{cyan('🚀 LTMP — 启动服务')}")
+    print(f"\n{cyan('🚀 MTS — 启动服务')}")
     print("=" * 50)
 
     # 检查依赖是否已安装
@@ -255,7 +255,7 @@ def cleanup(processes):
 
 def print_help():
     print(f"""
-{cyan('LTMP 跨平台启动器')}
+{cyan('MTS 跨平台启动器')}
 {'=' * 40}
 
 用法:

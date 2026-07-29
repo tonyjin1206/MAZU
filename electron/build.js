@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * LTMP 跨平台打包脚本
+ * MTS 跨平台打包脚本
  * 构建前端 → 打包后端 → Electron 打包 → 输出安装包
  *
  * 用法:
