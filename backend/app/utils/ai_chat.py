@@ -1,7 +1,7 @@
 """
 AI Agent — Function Calling 方案
 =================================
-LLM 通过工具函数操作 ERP，不再需要解析 JSON 或关键词规则。
+LLM 通过工具函数操作 ERP。
 """
 
 import json
@@ -47,11 +47,7 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "order_type": {
-                        "type": "string",
-                        "enum": ["purchase_order", "sales_order"],
-                        "description": "单据类型",
-                    },
+                    "order_type": {"type": "string", "enum": ["purchase_order", "sales_order"], "description": "单据类型"},
                     "supplier_name": {"type": "string", "description": "供应商名称（采购单必填）"},
                     "customer_name": {"type": "string", "description": "客户名称（销售单必填）"},
                     "product_name": {"type": "string", "description": "产品名称（销售单必填）"},
@@ -65,128 +61,93 @@ TOOLS = [
         }
     },
     {
-        "type": "function",
-        "function": {
+        "type": "function", "function": {
             "name": "create_collection",
             "description": "创建收款单，用于记录客户回款并核销应收账款。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "customer_name": {"type": "string", "description": "客户名称"},
-                    "amount": {"type": "number", "description": "收款金额"},
-                    "collection_date": {"type": "string", "description": "收款日期，默认今天"},
-                    "payment_method": {"type": "string", "description": "付款方式：TT/LC/DP等"},
-                    "remark": {"type": "string", "description": "备注"},
-                },
-                "required": ["customer_name", "amount"],
-            },
+            "parameters": {"type": "object", "properties": {
+                "customer_name": {"type": "string", "description": "客户名称"},
+                "amount": {"type": "number", "description": "收款金额"},
+                "collection_date": {"type": "string", "description": "收款日期，默认今天"},
+                "payment_method": {"type": "string", "description": "付款方式：TT/LC/DP等"},
+                "remark": {"type": "string", "description": "备注"},
+            }, "required": ["customer_name", "amount"]},
         }
     },
     {
-        "type": "function",
-        "function": {
+        "type": "function", "function": {
             "name": "create_payment",
             "description": "创建付款单，用于记录向供应商付款并核销应付账款。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "supplier_name": {"type": "string", "description": "供应商名称"},
-                    "amount": {"type": "number", "description": "付款金额"},
-                    "payment_date": {"type": "string", "description": "付款日期，默认今天"},
-                    "payment_method": {"type": "string", "description": "付款方式"},
-                    "remark": {"type": "string", "description": "备注"},
-                },
-                "required": ["supplier_name", "amount"],
-            },
+            "parameters": {"type": "object", "properties": {
+                "supplier_name": {"type": "string", "description": "供应商名称"},
+                "amount": {"type": "number", "description": "付款金额"},
+                "payment_date": {"type": "string", "description": "付款日期，默认今天"},
+                "payment_method": {"type": "string", "description": "付款方式"},
+                "remark": {"type": "string", "description": "备注"},
+            }, "required": ["supplier_name", "amount"]},
         }
     },
     {
-        "type": "function",
-        "function": {
+        "type": "function", "function": {
             "name": "create_purchase_invoice",
             "description": "录入采购发票，关联到采购订单。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_no": {"type": "string", "description": "采购订单编号"},
-                    "invoice_no": {"type": "string", "description": "发票号码"},
-                    "amount": {"type": "number", "description": "发票金额"},
-                    "invoice_date": {"type": "string", "description": "开票日期，默认今天"},
-                },
-                "required": ["order_no", "invoice_no", "amount"],
-            },
+            "parameters": {"type": "object", "properties": {
+                "order_no": {"type": "string", "description": "采购订单编号"},
+                "invoice_no": {"type": "string", "description": "发票号码"},
+                "amount": {"type": "number", "description": "发票金额"},
+                "invoice_date": {"type": "string", "description": "开票日期，默认今天"},
+            }, "required": ["order_no", "invoice_no", "amount"]},
         }
     },
     {
-        "type": "function",
-        "function": {
+        "type": "function", "function": {
             "name": "create_sales_invoice",
             "description": "录入销售发票，关联到销售订单。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "order_no": {"type": "string", "description": "销售订单编号"},
-                    "invoice_no": {"type": "string", "description": "发票号码"},
-                    "amount": {"type": "number", "description": "发票金额"},
-                    "invoice_date": {"type": "string", "description": "开票日期，默认今天"},
-                },
-                "required": ["order_no", "invoice_no", "amount"],
-            },
+            "parameters": {"type": "object", "properties": {
+                "order_no": {"type": "string", "description": "销售订单编号"},
+                "invoice_no": {"type": "string", "description": "发票号码"},
+                "amount": {"type": "number", "description": "发票金额"},
+                "invoice_date": {"type": "string", "description": "开票日期，默认今天"},
+            }, "required": ["order_no", "invoice_no", "amount"]},
         }
     },
     {
-        "type": "function",
-        "function": {
+        "type": "function", "function": {
             "name": "create_outsourcing",
             "description": "创建委外加工单：指定工序委外给某供应商加工，同时发出物料。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "production_order_no": {"type": "string", "description": "生产订单编号"},
-                    "process_name": {"type": "string", "description": "委外的工序名称"},
-                    "supplier_name": {"type": "string", "description": "委外供应商名称"},
-                    "material_name": {"type": "string", "description": "发出的物料名称"},
-                    "material_qty": {"type": "number", "description": "发出物料数量"},
-                    "outsource_qty": {"type": "number", "description": "委外加工数量"},
-                    "unit_price": {"type": "number", "description": "委外加工单价"},
-                    "due_date": {"type": "string", "description": "要求完成日期"},
-                },
-                "required": ["production_order_no", "process_name", "supplier_name", "outsource_qty"],
-            },
+            "parameters": {"type": "object", "properties": {
+                "production_order_no": {"type": "string", "description": "生产订单编号"},
+                "process_name": {"type": "string", "description": "委外的工序名称"},
+                "supplier_name": {"type": "string", "description": "委外供应商名称"},
+                "material_name": {"type": "string", "description": "发出的物料名称"},
+                "material_qty": {"type": "number", "description": "发出物料数量"},
+                "outsource_qty": {"type": "number", "description": "委外加工数量"},
+                "unit_price": {"type": "number", "description": "委外加工单价"},
+                "due_date": {"type": "string", "description": "要求完成日期"},
+            }, "required": ["production_order_no", "process_name", "supplier_name", "outsource_qty"]},
         }
     },
     {
-        "type": "function",
-        "function": {
+        "type": "function", "function": {
             "name": "issue_materials",
             "description": "生产领料/发料：为生产订单发出物料到产线或委外商。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "production_order_no": {"type": "string", "description": "生产订单编号"},
-                    "material_name": {"type": "string", "description": "物料名称"},
-                    "quantity": {"type": "number", "description": "发料数量"},
-                    "warehouse_name": {"type": "string", "description": "仓库名称，不填用默认"},
-                },
-                "required": ["production_order_no", "material_name", "quantity"],
-            },
+            "parameters": {"type": "object", "properties": {
+                "production_order_no": {"type": "string", "description": "生产订单编号"},
+                "material_name": {"type": "string", "description": "物料名称"},
+                "quantity": {"type": "number", "description": "发料数量"},
+                "warehouse_name": {"type": "string", "description": "仓库名称，不填用默认"},
+            }, "required": ["production_order_no", "material_name", "quantity"]},
         }
     },
     {
-        "type": "function",
-        "function": {
+        "type": "function", "function": {
             "name": "production_receipt",
             "description": "生产完工入库：将生产完成的成品入到成品仓。",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "production_order_no": {"type": "string", "description": "生产订单编号"},
-                    "quantity": {"type": "number", "description": "入库数量"},
-                    "warehouse_name": {"type": "string", "description": "仓库名称，不填用默认成品仓"},
-                    "receipt_date": {"type": "string", "description": "入库日期，默认今天"},
-                },
-                "required": ["production_order_no", "quantity"],
-            },
+            "parameters": {"type": "object", "properties": {
+                "production_order_no": {"type": "string", "description": "生产订单编号"},
+                "quantity": {"type": "number", "description": "入库数量"},
+                "warehouse_name": {"type": "string", "description": "仓库名称，不填用默认成品仓"},
+                "receipt_date": {"type": "string", "description": "入库日期，默认今天"},
+            }, "required": ["production_order_no", "quantity"]},
         }
     },
 ]
@@ -194,7 +155,6 @@ TOOLS = [
 SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助用户完成工作。
 
 ## 可用工具
-
 1. query_entities — 查客户/供应商/物料/产品/应收/应付/发票清单
 2. create_order — 创建采购订单/销售订单
 3. create_collection — 创建收款单（客户回款+自动核销应收）
@@ -208,304 +168,205 @@ SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助用户完
 ## 工作流程
 
 ### 查询
-- 用户说「查xxx/找xxx/xxx清单」→ **必须立即调 query_entities**，不准只回复「好的」
+- 用户说「查xxx/找xxx/xxx清单」→ **调 query_entities**
 - keyword 留空 = 列出全部；有 keyword = 模糊搜索
 - 应收/应付会自动汇总余额
 - **不要编造数据**，工具返回什么就展示什么
 
 ### 创建类操作（三步确认）
 第一步：问清要做什么
-  用户说模糊时反问：「您是要下单、收款、付款，还是做委外/发料/入库？」
-
-第二步：收集必要字段
-  逐一问，一次只问一个，用户回答了再问下一个
-  - 采购单需要：供应商、物料、数量、单价
-  - 销售单需要：客户、产品、数量、单价
-  - 收款需要：客户、金额
-  - 付款需要：供应商、金额
-  - 采购发票需要：采购单号、发票号、金额
-  - 销售发票需要：销售单号、发票号、金额
-  - 委外需要：生产单号、工序、供应商、数量
-  - 发料需要：生产单号、物料、数量
-  - 入库需要：生产单号、数量
-
-第三步：逐项核对后执行
-  列出全部字段让用户确认，用户说「对/是/确认」再调工具
-  如果工具返回错误，如实告诉用户原因
+第二步：收集必要的字段，一次只问一个
+第三步：逐项列出让用户核对，说「对/是/确认」再调工具
 
 ## 对话风格
-- 中文，简短，像同事聊天
+- 中文，简短
 - 一次只问一件事
-- 不懂就反问，不要瞎编
-- 查询结果直接给"""
-
+- 不懂就反问"""
 
 
 # ==================== 工具执行 ====================
 
 ENTITY_LABELS = {
-    "supplier": "供应商", "customer": "客户",
-    "material": "物料", "product": "产品",
+    "supplier": "供应商", "customer": "客户", "material": "物料", "product": "产品",
     "receivable": "应收账款", "payable": "应付账款",
     "purchase_invoice": "采购发票", "sales_invoice": "销售发票",
 }
 
 
 def _execute_query_entities(args: dict, db: Session) -> str:
-    """执行 query_entities 工具"""
     from app.models.foundation import Supplier, Customer, Material, Product
     from app.models.sales import AccountsReceivable, SalesInvoice
     from app.models.purchase import AccountsPayable, PurchaseInvoice
 
-    etype = args.get("entity_type")
-    keyword = (args.get("keyword") or "").strip()
+    etype, keyword = args.get("entity_type"), (args.get("keyword") or "").strip()
 
-    FOUNDATION_MAP = {
-        "supplier": (Supplier, Supplier.name, ["name", "code", "contact_person", "phone"]),
-        "customer": (Customer, Customer.name_cn, ["name_cn", "code", "contact_person", "phone"]),
-        "material": (Material, Material.name, ["name", "code", "unit", "spec"]),
-        "product": (Product, Product.name_cn, ["name_cn", "code", "spec"]),
-    }
-
-    # 基础档案
-    if etype in FOUNDATION_MAP:
-        model_cls, name_col, fields = FOUNDATION_MAP[etype]
-        q = db.query(model_cls).filter(model_cls.is_active == 1)
-        if keyword:
-            q = q.filter(name_col.like(f"%{keyword}%"))
+    if etype in {"supplier", "customer", "material", "product"}:
+        FM = {"supplier": (Supplier, Supplier.name, ["name", "code", "contact_person", "phone"]),
+              "customer": (Customer, Customer.name_cn, ["name_cn", "code", "contact_person", "phone"]),
+              "material": (Material, Material.name, ["name", "code", "unit", "spec"]),
+              "product": (Product, Product.name_cn, ["name_cn", "code", "spec"])}
+        mc, nc, fs = FM[etype]
+        q = db.query(mc).filter(mc.is_active == 1)
+        if keyword: q = q.filter(nc.like(f"%{keyword}%"))
         items = q.limit(100).all()
         label = ENTITY_LABELS.get(etype, etype)
-        if not items:
-            return f"未找到匹配的{label}" + (f"「{keyword}」" if keyword else "")
+        if not items: return f"未找到{label}" + (f"「{keyword}」" if keyword else "")
         lines = [f"📋 找到 {len(items)} 个{label}："]
-        for item in items:
-            parts = [f"**{getattr(item, fields[0], '')}**"]
-            for f in fields[1:]:
-                v = getattr(item, f, "") or ""
-                if f == "code": v = f"`{v}`"
-                parts.append(str(v))
+        for it in items:
+            parts = [f"**{getattr(it, fs[0], '')}**"] + [f"`{getattr(it, f, '')}`" if f == "code" else str(getattr(it, f, "") or "") for f in fs[1:]]
             lines.append("  " + "｜".join(parts))
         return "\n".join(lines)
 
-    # 应收账款
     if etype == "receivable":
         q = db.query(AccountsReceivable)
-        if keyword:
-            q = q.join(Customer).filter(Customer.name_cn.like(f"%{keyword}%"))
+        if keyword: q = q.join(Customer).filter(Customer.name_cn.like(f"%{keyword}%"))
         items = q.order_by(AccountsReceivable.due_date).limit(50).all()
-        if not items:
-            return "暂无应收账款数据" if not keyword else f"未找到匹配的应收账款「{keyword}」"
+        if not items: return "暂无应收数据" if not keyword else f"未找到应收「{keyword}」"
         total = sum(i.balance for i in items)
-        lines = [f"📋 应收账款（共 {len(items)} 笔，余额合计 ¥{total:,.2f}）："]
+        lines = [f"📋 应收账款（共{len(items)}笔，余额¥{total:,.2f}）："]
         for ar in items[:20]:
-            cust_name = ""
-            try:
-                cust = db.query(Customer).filter(Customer.id == ar.customer_id).first()
-                cust_name = cust.name_cn if cust else f"ID:{ar.customer_id}"
-            except: pass
-            lines.append(f"  {ar.ar_no}｜{cust_name}｜应收 ¥{ar.amount:,.2f}｜余额 ¥{ar.balance:,.2f}｜到期 {ar.due_date}")
+            cn = db.query(Customer).filter(Customer.id == ar.customer_id).first()
+            lines.append(f"  {ar.ar_no}｜{cn.name_cn if cn else '-'}｜应收¥{ar.amount:,.2f}｜余额¥{ar.balance:,.2f}｜到期{ar.due_date}")
         return "\n".join(lines)
 
-    # 应付账款
     if etype == "payable":
         q = db.query(AccountsPayable)
-        if keyword:
-            q = q.join(Supplier).filter(Supplier.name.like(f"%{keyword}%"))
+        if keyword: q = q.join(Supplier).filter(Supplier.name.like(f"%{keyword}%"))
         items = q.order_by(AccountsPayable.due_date).limit(50).all()
-        if not items:
-            return "暂无应付账款数据" if not keyword else f"未找到匹配的应付账款「{keyword}」"
+        if not items: return "暂无应付数据" if not keyword else f"未找到应付「{keyword}」"
         total = sum(i.balance for i in items)
-        lines = [f"📋 应付账款（共 {len(items)} 笔，余额合计 ¥{total:,.2f}）："]
+        lines = [f"📋 应付账款（共{len(items)}笔，余额¥{total:,.2f}）："]
         for ap in items[:20]:
-            sup_name = ""
-            try:
-                sup = db.query(Supplier).filter(Supplier.id == ap.supplier_id).first()
-                sup_name = sup.name if sup else f"ID:{ap.supplier_id}"
-            except: pass
-            lines.append(f"  {ap.ap_no}｜{sup_name}｜应付 ¥{ap.amount:,.2f}｜余额 ¥{ap.balance:,.2f}｜到期 {ap.due_date}")
+            sn = db.query(Supplier).filter(Supplier.id == ap.supplier_id).first()
+            lines.append(f"  {ap.ap_no}｜{sn.name if sn else '-'}｜应付¥{ap.amount:,.2f}｜余额¥{ap.balance:,.2f}｜到期{ap.due_date}")
         return "\n".join(lines)
 
-    # 采购发票
     if etype == "purchase_invoice":
-        q = db.query(PurchaseInvoice)
-        if keyword:
-            q = q.filter(PurchaseInvoice.invoice_no.like(f"%{keyword}%"))
-        items = q.order_by(PurchaseInvoice.invoice_date.desc()).limit(50).all()
-        if not items:
-            return "暂无采购发票数据" if not keyword else f"未找到匹配的采购发票「{keyword}」"
-        lines = [f"📋 采购发票（共 {len(items)} 张）："]
-        for inv in items:
-            lines.append(f"  {inv.invoice_no}｜¥{inv.amount:,.2f}｜{inv.invoice_date}｜{inv.status or '-'}")
+        items = db.query(PurchaseInvoice).order_by(PurchaseInvoice.invoice_date.desc()).limit(50).all()
+        if not items: return "暂无采购发票数据"
+        lines = [f"📋 采购发票（共{len(items)}张）："]
+        for i in items: lines.append(f"  {i.invoice_no}｜¥{i.amount:,.2f}｜{i.invoice_date}｜{i.status or '-'}")
         return "\n".join(lines)
 
-    # 销售发票
     if etype == "sales_invoice":
-        q = db.query(SalesInvoice)
-        if keyword:
-            q = q.filter(SalesInvoice.invoice_no.like(f"%{keyword}%"))
-        items = q.order_by(SalesInvoice.invoice_date.desc()).limit(50).all()
-        if not items:
-            return "暂无销售发票数据" if not keyword else f"未找到匹配的销售发票「{keyword}」"
-        lines = [f"📋 销售发票（共 {len(items)} 张）："]
-        for inv in items:
-            lines.append(f"  {inv.invoice_no}｜¥{inv.amount:,.2f}｜{inv.invoice_date}｜{inv.status or '-'}")
+        items = db.query(SalesInvoice).order_by(SalesInvoice.invoice_date.desc()).limit(50).all()
+        if not items: return "暂无销售发票数据"
+        lines = [f"📋 销售发票（共{len(items)}张）："]
+        for i in items: lines.append(f"  {i.invoice_no}｜¥{i.amount:,.2f}｜{i.invoice_date}｜{i.status or '-'}")
         return "\n".join(lines)
 
-    return f"不支持的查询类型：{etype}"
+    return f"不支持的类型：{etype}"
 
 
 def _execute_create_order(args: dict, db: Session) -> str:
     from app.models.foundation import Supplier, Customer, Material, Product
-    otype = args.get("order_type")
-    today = date.today().isoformat()
+    from app.utils.batch_no import generate_doc_no
     try:
-        if otype == "purchase_order":
+        if args["order_type"] == "purchase_order":
             from app.models.purchase import PurchaseOrder, PurchaseOrderItem
-            from app.utils.batch_no import generate_doc_no
-            sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%"), Supplier.is_active == 1).first()
+            sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
             if not sup: return f"未找到供应商「{args['supplier_name']}」"
-            mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%"), Material.is_active == 1).first()
+            mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
             if not mat: return f"未找到物料「{args['material_name']}」"
-            qty, price = float(args.get("quantity", 0)), float(args.get("unit_price", 0))
-            order_no = generate_doc_no(db, "PO")
-            po = PurchaseOrder(order_no=order_no, supplier_id=sup.id, order_date=_parse_date(args.get("order_date", today)),
-                               status="待审批", total_amount=round(qty * price, 2), tax_rate=13, remark="通过AI助手创建", created_by="AI")
+            qty, pr = float(args.get("quantity",0)), float(args.get("unit_price",0))
+            no = generate_doc_no(db, "PO")
+            po = PurchaseOrder(order_no=no, supplier_id=sup.id, order_date=_parse_date(args.get("order_date","")),
+                               status="待审批", total_amount=round(qty*pr,2), tax_rate=13, remark="AI", created_by="AI")
             db.add(po); db.flush()
-            db.add(PurchaseOrderItem(order_id=po.id, material_id=mat.id, quantity=qty, unit_price=price, total_amount=round(qty * price, 2), tax_rate=13))
+            db.add(PurchaseOrderItem(order_id=po.id, material_id=mat.id, quantity=qty, unit_price=pr, total_amount=round(qty*pr,2), tax_rate=13))
             db.commit()
-            return f"✅ **采购订单 {order_no} 已创建！**\n状态：待审批"
-        elif otype == "sales_order":
+            return f"✅ 采购订单 {no} 已创建！状态：待审批"
+        else:
             from app.models.sales import SalesOrder, SalesOrderItem
-            from app.utils.batch_no import generate_doc_no
-            cust = db.query(Customer).filter(Customer.name_cn.like(f"%{args['customer_name']}%"), Customer.is_active == 1).first()
-            if not cust: cust = db.query(Customer).filter(Customer.name_en.like(f"%{args['customer_name']}%"), Customer.is_active == 1).first()
+            cust = db.query(Customer).filter(Customer.name_cn.like(f"%{args['customer_name']}%")).first()
+            if not cust: cust = db.query(Customer).filter(Customer.name_en.like(f"%{args['customer_name']}%")).first()
             if not cust: return f"未找到客户「{args['customer_name']}」"
-            prod = db.query(Product).filter(Product.name_cn.like(f"%{args['product_name']}%"), Product.is_active == 1).first()
+            prod = db.query(Product).filter(Product.name_cn.like(f"%{args['product_name']}%")).first()
             if not prod: return f"未找到产品「{args['product_name']}」"
-            qty, price = float(args.get("quantity", 0)), float(args.get("unit_price", 0))
-            order_no = generate_doc_no(db, "SO")
-            so = SalesOrder(order_no=order_no, customer_id=cust.id, order_date=_parse_date(args.get("order_date", today)),
-                            status="待审核", total_amount=round(qty * price, 2), currency_id=1, exchange_rate=1, remark="通过AI助手创建", created_by="AI")
+            qty, pr = float(args.get("quantity",0)), float(args.get("unit_price",0))
+            no = generate_doc_no(db, "SO")
+            so = SalesOrder(order_no=no, customer_id=cust.id, order_date=_parse_date(args.get("order_date","")),
+                            status="待审核", total_amount=round(qty*pr,2), currency_id=1, exchange_rate=1, remark="AI", created_by="AI")
             db.add(so); db.flush()
-            db.add(SalesOrderItem(order_id=so.id, product_id=prod.id, quantity=qty, unit_price=price, total_amount=round(qty * price, 2), tax_rate=13))
+            db.add(SalesOrderItem(order_id=so.id, product_id=prod.id, quantity=qty, unit_price=pr, total_amount=round(qty*pr,2), tax_rate=13))
             db.commit()
-            return f"✅ **销售订单 {order_no} 已创建！**\n状态：待审核"
-        return f"不支持的单据类型：{otype}"
-    except Exception as e:
-        db.rollback()
-        return f"❌ 创建失败：{e}"
+            return f"✅ 销售订单 {no} 已创建！状态：待审核"
+    except Exception as e: db.rollback(); return f"❌ 创建失败：{e}"
 
 
 def _execute_create_collection(args: dict, db: Session) -> str:
-    """创建收款单 + 核销应收账款"""
     from app.models.foundation import Customer
     from app.models.sales import Collection, AccountsReceivable, CollectionAllocation
     from app.utils.batch_no import generate_doc_no
-
     try:
-        cust = db.query(Customer).filter(Customer.name_cn.like(f"%{args['customer_name']}%"), Customer.is_active == 1).first()
+        cust = db.query(Customer).filter(Customer.name_cn.like(f"%{args['customer_name']}%")).first()
         if not cust: return f"未找到客户「{args['customer_name']}」"
-
-        amount = float(args["amount"])
-        coll_no = generate_doc_no(db, "RC")
-        coll = Collection(collection_no=coll_no, customer_id=cust.id, amount=amount, amount_fc=amount,
-                          currency_id=1, exchange_rate=1, collection_date=_parse_date(args.get("collection_date", "")),
-                          payment_method=args.get("payment_method", "TT"), operator="AI助手")
-        db.add(coll); db.flush()
-
-        # 自动核销：按到期日顺序核销
-        ares = db.query(AccountsReceivable).filter(
-            AccountsReceivable.customer_id == cust.id,
-            AccountsReceivable.balance > 0,
-        ).order_by(AccountsReceivable.due_date).all()
-        remaining = amount
-        allocated_lines = []
-        for ar in ares:
+        amt = float(args["amount"]); cno = generate_doc_no(db, "RC")
+        c = Collection(collection_no=cno, customer_id=cust.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
+                       collection_date=_parse_date(args.get("collection_date","")), operator="AI")
+        db.add(c); db.flush()
+        remaining, lines = amt, []
+        for ar in db.query(AccountsReceivable).filter(AccountsReceivable.customer_id==cust.id, AccountsReceivable.balance>0).order_by(AccountsReceivable.due_date).all():
             if remaining <= 0: break
-            alloc = min(remaining, ar.balance)
-            db.add(CollectionAllocation(collection_id=coll.id, ar_account_id=ar.id, allocated_amount=alloc))
-            ar.balance -= alloc
-            ar.collected_amount = (ar.collected_amount or 0) + alloc
+            a = min(remaining, ar.balance)
+            db.add(CollectionAllocation(collection_id=c.id, ar_account_id=ar.id, allocated_amount=a))
+            ar.balance -= a; ar.collected_amount = (ar.collected_amount or 0) + a
             if ar.balance <= 0.001: ar.status = "已收款"
             elif ar.collected_amount > 0: ar.status = "部分收款"
-            remaining -= alloc
-            allocated_lines.append(f"    {ar.ar_no}：核销 ¥{alloc:,.2f}")
+            remaining -= a; lines.append(f"    {ar.ar_no}：¥{a:,.2f}")
         db.commit()
-
-        detail = "\n".join(allocated_lines)
-        return f"✅ **收款单 {coll_no} 已创建！**\n收款金额：¥{amount:,.2f}\n核销明细：\n{detail}"
-    except Exception as e:
-        db.rollback()
-        return f"❌ 创建收款单失败：{e}"
+        return f"✅ 收款单 {cno} ¥{amt:,.2f}\n核销：\n" + "\n".join(lines)
+    except Exception as e: db.rollback(); return f"❌ 收款失败：{e}"
 
 
 def _execute_create_payment(args: dict, db: Session) -> str:
-    """创建付款单 + 核销应付账款"""
     from app.models.foundation import Supplier
     from app.models.purchase import Payment, AccountsPayable, PaymentAllocation
     from app.utils.batch_no import generate_doc_no
-
     try:
-        sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%"), Supplier.is_active == 1).first()
+        sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
         if not sup: return f"未找到供应商「{args['supplier_name']}」"
-
-        amount = float(args["amount"])
-        pay_no = generate_doc_no(db, "PAY")
-        pay = Payment(payment_no=pay_no, supplier_id=sup.id, amount=amount, amount_fc=amount,
-                      currency_id=1, exchange_rate=1, payment_date=_parse_date(args.get("payment_date", "")),
-                      payment_method=args.get("payment_method", "TT"), operator="AI助手")
-        db.add(pay); db.flush()
-
-        aps = db.query(AccountsPayable).filter(
-            AccountsPayable.supplier_id == sup.id, AccountsPayable.balance > 0
-        ).order_by(AccountsPayable.due_date).all()
-        remaining = amount
-        allocated_lines = []
-        for ap in aps:
+        amt = float(args["amount"]); pno = generate_doc_no(db, "PAY")
+        p = Payment(payment_no=pno, supplier_id=sup.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
+                    payment_date=_parse_date(args.get("payment_date","")), operator="AI")
+        db.add(p); db.flush()
+        remaining, lines = amt, []
+        for ap in db.query(AccountsPayable).filter(AccountsPayable.supplier_id==sup.id, AccountsPayable.balance>0).order_by(AccountsPayable.due_date).all():
             if remaining <= 0: break
-            alloc = min(remaining, ap.balance)
-            db.add(PaymentAllocation(payment_id=pay.id, ap_account_id=ap.id, allocated_amount=alloc))
-            ap.balance -= alloc
-            ap.paid_amount = (ap.paid_amount or 0) + alloc
+            a = min(remaining, ap.balance)
+            db.add(PaymentAllocation(payment_id=p.id, ap_account_id=ap.id, allocated_amount=a))
+            ap.balance -= a; ap.paid_amount = (ap.paid_amount or 0) + a
             if ap.balance <= 0.001: ap.status = "已付款"
             elif ap.paid_amount > 0: ap.status = "部分付款"
-            remaining -= alloc
-            allocated_lines.append(f"    {ap.ap_no}：核销 ¥{alloc:,.2f}")
+            remaining -= a; lines.append(f"    {ap.ap_no}：¥{a:,.2f}")
         db.commit()
-
-        detail = "\n".join(allocated_lines)
-        return f"✅ **付款单 {pay_no} 已创建！**\n付款金额：¥{amount:,.2f}\n核销明细：\n{detail}"
-    except Exception as e:
-        db.rollback()
-        return f"❌ 创建付款单失败：{e}"
+        return f"✅ 付款单 {pno} ¥{amt:,.2f}\n核销：\n" + "\n".join(lines)
+    except Exception as e: db.rollback(); return f"❌ 付款失败：{e}"
 
 
 def _execute_create_purchase_invoice(args: dict, db: Session) -> str:
     from app.models.purchase import PurchaseOrder, PurchaseInvoice
-    from app.utils.batch_no import generate_doc_no
     try:
-        order = db.query(PurchaseOrder).filter(PurchaseOrder.order_no == args["order_no"]).first()
-        if not order: return f"未找到采购订单「{args['order_no']}」"
-        inv = PurchaseInvoice(invoice_no=args["invoice_no"], order_id=order.id, supplier_id=order.supplier_id,
-                              invoice_date=_parse_date(args.get("invoice_date", "")), amount=float(args["amount"]),
-                              status="已开票")
-        db.add(inv); db.commit()
-        return f"✅ **采购发票 {args['invoice_no']} 已录入！**\n关联订单：{args['order_no']}"
-    except Exception as e: return f"❌ 录入采购发票失败：{e}"
+        o = db.query(PurchaseOrder).filter(PurchaseOrder.order_no==args["order_no"]).first()
+        if not o: return f"未找到采购订单「{args['order_no']}」"
+        db.add(PurchaseInvoice(invoice_no=args["invoice_no"], order_id=o.id, supplier_id=o.supplier_id,
+                               invoice_date=_parse_date(args.get("invoice_date","")), amount=float(args["amount"]), status="已开票"))
+        db.commit()
+        return f"✅ 采购发票 {args['invoice_no']} 已录入"
+    except Exception as e: return f"❌ 失败：{e}"
 
 
 def _execute_create_sales_invoice(args: dict, db: Session) -> str:
     from app.models.sales import SalesOrder, SalesInvoice
-    from app.utils.batch_no import generate_doc_no
     try:
-        order = db.query(SalesOrder).filter(SalesOrder.order_no == args["order_no"]).first()
-        if not order: return f"未找到销售订单「{args['order_no']}」"
-        inv = SalesInvoice(invoice_no=args["invoice_no"], order_id=order.id, customer_id=order.customer_id,
-                           invoice_date=_parse_date(args.get("invoice_date", "")), amount=float(args["amount"]),
-                           tax_amount=0, total_amount=float(args["amount"]), status="已开票")
-        db.add(inv); db.commit()
-        return f"✅ **销售发票 {args['invoice_no']} 已录入！**\n关联订单：{args['order_no']}"
-    except Exception as e: return f"❌ 录入销售发票失败：{e}"
+        o = db.query(SalesOrder).filter(SalesOrder.order_no==args["order_no"]).first()
+        if not o: return f"未找到销售订单「{args['order_no']}」"
+        db.add(SalesInvoice(invoice_no=args["invoice_no"], order_id=o.id, customer_id=o.customer_id,
+                            invoice_date=_parse_date(args.get("invoice_date","")), amount=float(args["amount"]),
+                            tax_amount=0, total_amount=float(args["amount"]), status="已开票"))
+        db.commit()
+        return f"✅ 销售发票 {args['invoice_no']} 已录入"
+    except Exception as e: return f"❌ 失败：{e}"
 
 
 def _execute_create_outsourcing(args: dict, db: Session) -> str:
@@ -513,105 +374,76 @@ def _execute_create_outsourcing(args: dict, db: Session) -> str:
     from app.models.production import ProductionOrder, OutsourcingOrder, MaterialIssueItem
     from app.utils.batch_no import generate_doc_no
     try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no == args["production_order_no"]).first()
+        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
         if not mo: return f"未找到生产订单「{args['production_order_no']}」"
         sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
         if not sup: return f"未找到供应商「{args['supplier_name']}」"
-
         os_no = generate_doc_no(db, "OS")
-        oo = OutsourcingOrder(outsource_no=os_no, production_id=mo.id, outsourcer_id=sup.id,
-                              product_id=mo.product_id, quantity=float(args["outsource_qty"]),
-                              unit_price=float(args.get("unit_price", 0)),
-                              total_amount=float(args.get("unit_price", 0)) * float(args["outsource_qty"]),
-                              due_date=_parse_date(args.get("due_date", "")), status="待发料")
+        oo = OutsourcingOrder(outsource_no=os_no, production_id=mo.id, outsourcer_id=sup.id, product_id=mo.product_id,
+                              quantity=float(args["outsource_qty"]), unit_price=float(args.get("unit_price",0)),
+                              total_amount=float(args.get("unit_price",0))*float(args["outsource_qty"]),
+                              due_date=_parse_date(args.get("due_date","")), status="待发料")
         db.add(oo); db.flush()
-
-        # 如果有物料，同时发料
-        mat_name = args.get("material_name", "")
-        if mat_name:
-            mat = db.query(Material).filter(Material.name.like(f"%{mat_name}%")).first()
+        if args.get("material_name"):
+            mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
             if mat and args.get("material_qty"):
-                from datetime import datetime
-                issue = MaterialIssueItem(issue_no=os_no, outsource_id=oo.id, material_id=mat.id,
-                                          quantity=float(args["material_qty"]), issue_date=date.today(),
-                                          operator="AI助手")
-                db.add(issue)
+                db.add(MaterialIssueItem(issue_no=os_no, outsource_id=oo.id, material_id=mat.id, quantity=float(args["material_qty"]), operator="AI"))
                 oo.material_status = "已发料"
         db.commit()
-        return f"✅ **委外加工单 {os_no} 已创建！**\n供应商：{sup.name}\n加工数量：{args['outsource_qty']}"
-    except Exception as e:
-        db.rollback()
-        return f"❌ 创建委外单失败：{e}"
+        return f"✅ 委外单 {os_no}（{sup.name}）"
+    except Exception as e: db.rollback(); return f"❌ 委外失败：{e}"
 
 
 def _execute_issue_materials(args: dict, db: Session) -> str:
-    from app.models.foundation import Material, Warehouse
+    from app.models.foundation import Material
     from app.models.production import ProductionOrder, MaterialIssueItem
     try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no == args["production_order_no"]).first()
+        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
         if not mo: return f"未找到生产订单「{args['production_order_no']}」"
         mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
         if not mat: return f"未找到物料「{args['material_name']}」"
-
-        issue = MaterialIssueItem(issue_no=f"IS-{date.today().isoformat()}", production_id=mo.id,
-                                  material_id=mat.id, quantity=float(args["quantity"]),
-                                  issue_date=date.today(), operator="AI助手")
-        db.add(issue); db.commit()
-        return f"✅ **已发料：{mat.name} × {args['quantity']}**\n生产订单：{args['production_order_no']}"
-    except Exception as e:
-        db.rollback()
-        return f"❌ 发料失败：{e}"
+        db.add(MaterialIssueItem(issue_no=f"IS-{date.today()}", production_id=mo.id, material_id=mat.id,
+                                 quantity=float(args["quantity"]), issue_date=date.today(), operator="AI"))
+        db.commit()
+        return f"✅ 已发料：{mat.name} × {args['quantity']}"
+    except Exception as e: db.rollback(); return f"❌ 发料失败：{e}"
 
 
 def _execute_production_receipt(args: dict, db: Session) -> str:
-    from app.models.foundation import Warehouse
-    from app.models.production import ProductionOrder, ProductionReceipt, ProcessingInvoice
+    from app.models.production import ProductionOrder, ProductionReceipt
     from app.utils.batch_no import generate_doc_no
     try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no == args["production_order_no"]).first()
+        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
         if not mo: return f"未找到生产订单「{args['production_order_no']}」"
-
-        rcp_no = generate_doc_no(db, "FG")
-        rcp = ProductionReceipt(receipt_no=rcp_no, production_id=mo.id, product_id=mo.product_id,
-                                quantity=float(args["quantity"]), receipt_date=_parse_date(args.get("receipt_date", "")),
-                                operator="AI助手")
-        db.add(rcp); db.commit()
-        return f"✅ **完工入库单 {rcp_no} 已创建！**\n入库数量：{args['quantity']}\n生产订单：{args['production_order_no']}"
-    except Exception as e:
-        db.rollback()
-        return f"❌ 入库失败：{e}"
+        rc = generate_doc_no(db, "FG")
+        db.add(ProductionReceipt(receipt_no=rc, production_id=mo.id, product_id=mo.product_id,
+                                  quantity=float(args["quantity"]), receipt_date=_parse_date(args.get("receipt_date","")), operator="AI"))
+        db.commit()
+        return f"✅ 入库单 {rc}（{args['quantity']}个）"
+    except Exception as e: db.rollback(); return f"❌ 入库失败：{e}"
 
 
 def _parse_date(val):
-    if val is None or isinstance(val, date):
-        return val
+    if val is None or isinstance(val, date): return val
     try: return date.fromisoformat(str(val)[:10])
-    except (ValueError, TypeError): return date.today()
+    except: return date.today()
 
 
-TOOL_EXECUTORS = {
-    "query_entities": _execute_query_entities,
-    "create_order": _execute_create_order,
-    "create_collection": _execute_create_collection,
-    "create_payment": _execute_create_payment,
-    "create_purchase_invoice": _execute_create_purchase_invoice,
-    "create_sales_invoice": _execute_create_sales_invoice,
-    "create_outsourcing": _execute_create_outsourcing,
-    "issue_materials": _execute_issue_materials,
-    "production_receipt": _execute_production_receipt,
-}
+TOOL_EXECUTORS = {k: globals()[f"_execute_{k}"] for k in
+    ["query_entities", "create_order", "create_collection", "create_payment",
+     "create_purchase_invoice", "create_sales_invoice", "create_outsourcing",
+     "issue_materials", "production_receipt"]}
 
 
 # ==================== AI 调用 ====================
 
-def _call_llm(messages: list[dict], bot_config: BotConfig, tool_choice=None) -> dict | None:
+def _call_llm(messages: list[dict], bot_config: BotConfig) -> dict | None:
     headers = {
         "Authorization": f"Bearer {bot_config.api_key}",
         "Content-Type": "application/json",
     }
     base_url = (bot_config.base_url or "").rstrip("/") or (
-        "https://api.deepseek.com" if bot_config.provider == "deepseek"
-        else "https://api.openai.com"
+        "https://api.deepseek.com" if bot_config.provider == "deepseek" else "https://api.openai.com"
     )
     payload = {
         "model": bot_config.model or "deepseek-chat",
@@ -619,9 +451,8 @@ def _call_llm(messages: list[dict], bot_config: BotConfig, tool_choice=None) -> 
         "temperature": bot_config.temperature or 0.1,
         "max_tokens": bot_config.max_tokens or 4096,
         "tools": TOOLS,
+        "tool_choice": "auto",
     }
-    if tool_choice:
-        payload["tool_choice"] = tool_choice
     try:
         with httpx.Client(timeout=60) as client:
             resp = client.post(f"{base_url}/v1/chat/completions", headers=headers, json=payload)
@@ -638,7 +469,7 @@ def _call_llm(messages: list[dict], bot_config: BotConfig, tool_choice=None) -> 
 def process_message(message: str, history: list[dict], db: Session) -> dict:
     config = _get_config(db)
     if not config:
-        return {"reply": "AI 未配置，请先在系统管理中配置 AI 模型", "state": "error", "history": history or []}
+        return {"reply": "AI 未配置", "state": "error", "history": history or []}
 
     messages = list(history or [])
     messages.append({"role": "user", "content": message})
@@ -651,37 +482,30 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
         choice = result["choices"][0]
         msg = choice["message"]
 
-        if msg.get("content"):
-            messages.append({"role": "assistant", "content": msg["content"]})
-            if len(messages) > 20:
-                messages = messages[-20:]
-            return {"reply": msg["content"], "state": "idle", "history": messages}
-
+        # 优先处理 tool_calls（DeepSeek 可能同时返回 content + tool_calls）
         if msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
                 fn = tc["function"]
                 name = fn["name"]
-                try:
-                    args = json.loads(fn["arguments"])
-                except json.JSONDecodeError:
-                    args = {}
-                messages.append({
-                    "role": "assistant",
-                    "tool_calls": [{"id": tc["id"], "type": "function",
-                                    "function": {"name": name, "arguments": fn["arguments"]}}],
-                })
+                try: args = json.loads(fn["arguments"])
+                except: args = {}
+                messages.append({"role": "assistant", "tool_calls": [{"id": tc["id"], "type": "function", "function": {"name": name, "arguments": fn["arguments"]}}]})
                 executor = TOOL_EXECUTORS.get(name)
                 tool_result = executor(args, db) if executor else f"未知工具：{name}"
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": tool_result})
             continue
 
+        if msg.get("content"):
+            messages.append({"role": "assistant", "content": msg["content"]})
+            if len(messages) > 20: messages = messages[-20:]
+            return {"reply": msg["content"], "state": "idle", "history": messages}
+
         break
 
-    return {"reply": "抱歉，我暂时无法处理这个请求", "state": "error", "history": history or []}
+    return {"reply": "抱歉，我暂时无法处理", "state": "error", "history": history or []}
 
 
 def _get_config(db: Session) -> BotConfig | None:
     config = db.query(BotConfig).filter(BotConfig.is_active == 1).first()
-    if config and config.api_key:
-        config.api_key = decrypt(config.api_key)
+    if config and config.api_key: config.api_key = decrypt(config.api_key)
     return config
