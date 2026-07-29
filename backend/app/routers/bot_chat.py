@@ -465,9 +465,29 @@ def process_message(text: str, session: dict, db: Session) -> dict:
                         reply_lines.append("回复编号或全称")
                         return {"reply": "\n".join(reply_lines), "state": "collecting"}
                     data[field_key] = val
-                    # 成功提取一个字段后重新检查是否全部齐了
                     return collect_fields(text, session, db)
-                # 没提取到 — 再问一次这个字段
+
+                # 关键词没提取到 → 调 AI 理解
+                ai_history = session.get("history", [])
+                ai_result = process_with_ai(text, db, ai_history)
+                if ai_result:
+                    rtype = ai_result.get("type")
+                    # AI 说这是闲聊/换话题 → 重置回 idle
+                    if rtype == "chat":
+                        reply = ai_result.get("reply", "好的")
+                        session["state"] = "idle"
+                        session["intent"] = None
+                        session["data"] = {}
+                        session["history"] = []
+                        return {"reply": reply, "state": "idle"}
+                    # AI 识别到了字段值
+                    if rtype == "create":
+                        ai_fields = ai_result.get("fields", {})
+                        if field_key in ai_fields and ai_fields[field_key]:
+                            data[field_key] = ai_fields[field_key]
+                            return collect_fields(text, session, db)
+
+                # 都没提取到 — 再问一次
                 return {"reply": question, "state": "collecting"}
 
         # 所有字段齐了

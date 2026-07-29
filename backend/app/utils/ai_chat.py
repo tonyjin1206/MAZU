@@ -122,4 +122,5 @@ def process_with_ai(
         result = json.loads(reply)
         return result
     except (json.JSONDecodeError, KeyError, IndexError):
-        return None
+        # AI 返回了非 JSON 文本 → 当 chat 类型处理
+        return {"type": "chat", "reply": reply}
