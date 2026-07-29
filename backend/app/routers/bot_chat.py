@@ -18,6 +18,7 @@ from app.database import get_db
 from app.models.auth import User
 from app.models.foundation import Supplier, Customer, Material, Product
 from app.utils.auth import get_current_user
+from app.utils.ai_chat import process_with_ai
 
 router = APIRouter(prefix="/chat", tags=["AI Bot"])
 
@@ -347,7 +348,45 @@ def process_message(text: str, session: dict, db: Session) -> dict:
                 }
 
     if state == "idle":
-        # 检测查询意图（优先于创建单据）
+        # 1) 尝试 AI 理解（已配置 LLM 时）
+        ai_history = session.get("history", [])
+        ai_result = process_with_ai(text, db, ai_history)
+        if ai_result:
+            rtype = ai_result.get("type")
+
+            # 查询类
+            if rtype == "query":
+                reply = handle_query(ai_result["entity"], ai_result.get("keyword", ""), db)
+                # 记录历史
+                session.setdefault("history", []).append({"role": "user", "content": text})
+                session.setdefault("history", []).append({"role": "assistant", "content": reply})
+                return {"reply": reply, "state": "idle"}
+
+            # 创建单据类 — 确定了意图，进入 collecting
+            if rtype == "create":
+                intent = ai_result.get("intent")
+                if intent in INTENT_FIELDS:
+                    session["intent"] = intent
+                    session["state"] = "collecting"
+                    session["data"] = {}
+                    ai_fields = ai_result.get("fields", {})
+                    for k, v in ai_fields.items():
+                        if v is not None and v != "":
+                            session["data"][k] = v
+                    session["history"] = []
+                    return collect_fields(text, session, db)
+
+            # 闲聊/反问 — 继续对话，保持 idle
+            if rtype == "chat":
+                reply = ai_result.get("reply", "好的")
+                # 记录历史（最多保留 10 轮）
+                session.setdefault("history", []).append({"role": "user", "content": text})
+                session.setdefault("history", []).append({"role": "assistant", "content": reply})
+                if len(session.get("history", [])) > 20:
+                    session["history"] = session["history"][-20:]
+                return {"reply": reply, "state": "idle"}
+
+        # 2) AI 不可用 — 关键词规则
         q = detect_query(text)
         if q and q[0]:
             reply = handle_query(q[0], q[1], db)
