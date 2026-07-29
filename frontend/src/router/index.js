@@ -53,6 +53,7 @@ const routes = [
       { path: 'system/roles', name: 'SystemRoles', component: () => import('../views/system/Roles.vue') },
       { path: 'system/wecom', name: 'WecomConfig', component: () => import('../views/system/WecomConfig.vue') },
       { path: 'system/bot', name: 'BotConfig', component: () => import('../views/system/BotConfig.vue') },
+      { path: 'system/bot-chat', name: 'BotChat', component: () => import('../views/system/BotChat.vue') },
       { path: 'system/reminders', name: 'Reminders', component: () => import('../views/system/Reminders.vue') },
     ],
   },

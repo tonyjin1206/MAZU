@@ -181,6 +181,8 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router, prefix="/api", tags=["驾驶舱"])
     from app.routers.system_config import router as system_config_router
     app.include_router(system_config_router, prefix="/api")
+    from app.routers.bot_chat import router as bot_chat_router
+    app.include_router(bot_chat_router, prefix="/api")
 
     @app.get("/api/health")
     def health():
