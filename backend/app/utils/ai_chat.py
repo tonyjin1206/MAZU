@@ -94,9 +94,8 @@ def process_with_ai(
     if not config or not config.api_key:
         return None
 
-    messages = [{"role": "user", "content": msg["content"]}
-                for msg in (history or [])
-                if msg.get("role") == "user"]
+    messages = [{"role": msg["role"], "content": msg["content"]}
+                for msg in (history or [])]
     messages.append({"role": "user", "content": message})
 
     reply = call_ai(AI_SYSTEM_PROMPT, messages, config)
