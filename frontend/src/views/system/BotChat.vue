@@ -69,8 +69,19 @@ import request from '../../api/request'
 const messages = ref([])
 const inputText = ref('')
 const loading = ref(false)
-const sessionId = ref('')
+const sessionId = ref(localStorage.getItem('bot_session_id') || '')
 const msgContainer = ref(null)
+
+// 加载历史消息
+const savedMessages = localStorage.getItem('bot_messages')
+if (savedMessages) {
+  try { messages.value = JSON.parse(savedMessages) } catch {}
+}
+
+function saveState() {
+  localStorage.setItem('bot_session_id', sessionId.value)
+  localStorage.setItem('bot_messages', JSON.stringify(messages.value))
+}
 
 function renderMarkdown(text) {
   if (!text) return ''
@@ -106,6 +117,7 @@ async function sendMessage() {
 
     sessionId.value = res.session_id
     messages.value.push({ role: 'bot', content: res.reply })
+    saveState()
   } catch (e) {
     messages.value.push({ role: 'bot', content: '❌ 请求失败，请重试' })
   }
@@ -123,6 +135,8 @@ async function resetChat() {
     content: '你好！我是 MTS Bot 🤖\n我可以帮你创建以下单据：\n\n1️⃣ **采购订单** — 说「采购」或「下单」\n2️⃣ **销售订单** — 说「销售」或「出货」\n3️⃣ **生产订单** — 说「生产」或「工单」\n\n你想做什么？',
   }]
   sessionId.value = ''
+  localStorage.removeItem('bot_session_id')
+  localStorage.removeItem('bot_messages')
   scrollToBottom()
 }
 
