@@ -1,44 +1,57 @@
 <template>
   <el-container style="height: 100vh">
     <!-- 侧边栏 -->
-    <el-aside :width="isCollapse ? '64px' : '220px'" style="background: linear-gradient(180deg, #1e3a5f 0%, #1a2d4a 100%); overflow-y: auto; overflow-x: hidden; height: 100vh">
-      <div style="height: 60px; display: flex; align-items: center; justify-content: center; color: #d8dce6; font-size: 16px; font-weight: 600; letter-spacing: 0.5px; border-bottom: 1px solid rgba(255,255,255,0.07)">
-        <span v-if="!isCollapse">Steve's project</span>
-        <span v-else>S</span>
+    <el-aside :width="isCollapse ? '64px' : '220px'" style="background: linear-gradient(180deg, #103B9C 0%, #1a4a9c 100%); overflow-y: auto; overflow-x: hidden; height: 100vh">
+      <div style="height: 60px; display: flex; align-items: center; justify-content: center; gap: 8px; border-bottom: 1px solid rgba(255,255,255,0.07)">
+        <img v-if="!isCollapse" src="/LOGO-light.svg" alt="MTS" style="width: 34px; height: 34px; border-radius: 7px">
+        <img v-else src="/LOGO-light.svg" alt="MTS" style="width: 34px; height: 34px; border-radius: 7px">
+        <span v-if="!isCollapse" style="color: #d8dce6; font-size: 16px; font-weight: 600; letter-spacing: 0.5px">MTS</span>
       </div>
       <el-menu
         :default-active="currentRoute"
         :collapse="isCollapse"
         background-color="transparent"
-        text-color="#a8b2c8"
-        active-text-color="#6a95ff"
+        text-color="rgba(255,255,255,0.65)"
+        active-text-color="#ffffff"
         router
         style="border-right: none; padding: 4px 0"
       >
-        <el-menu-item index="/dashboard"><el-icon><DataAnalysis /></el-icon><span>工作台</span></el-menu-item>
+        <el-menu-item index="/dashboard">
+          <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-diagnose"/></svg>
+          <span>工作台</span>
+        </el-menu-item>
 
         <!-- 系统管理 -->
         <el-sub-menu index="system">
-          <template #title><el-icon><Setting /></el-icon><span>系统管理</span></template>
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-lock"/></svg>
+            <span>系统管理</span>
+          </template>
           <el-menu-item index="/system/users">用户管理</el-menu-item>
           <el-menu-item index="/system/roles">角色管理</el-menu-item>
         </el-sub-menu>
 
         <!-- 1. 基础档案 -->
         <el-sub-menu index="foundation">
-          <template #title><el-icon><List /></el-icon><span>基础档案</span></template>
-          <el-menu-item index="/foundation/customers">客户管理</el-menu-item>
-          <el-menu-item index="/foundation/suppliers">供应商管理</el-menu-item>
-          <el-menu-item index="/foundation/materials">原辅材料</el-menu-item>
-          <el-menu-item index="/foundation/products">产品档案</el-menu-item>
-          <el-menu-item index="/foundation/bom">BOM管理</el-menu-item>
-          <el-menu-item index="/foundation/processes">工序管理</el-menu-item>
-          <el-menu-item index="/foundation/hs-codes">HS编码/退税率</el-menu-item>
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-layer-group"/></svg>
+            <span>基础档案</span>
+          </template>
+          <el-menu-item index="/foundation/customers"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-user-group"/></svg>客户管理</el-menu-item>
+          <el-menu-item index="/foundation/suppliers"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-account"/></svg>供应商管理</el-menu-item>
+          <el-menu-item index="/foundation/materials"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-box"/></svg>原辅材料</el-menu-item>
+          <el-menu-item index="/foundation/products"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-applicationgroup"/></svg>产品档案</el-menu-item>
+          <el-menu-item index="/foundation/bom"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-Directory-tree"/></svg>BOM管理</el-menu-item>
+          <el-menu-item index="/foundation/processes"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-switch"/></svg>工序管理</el-menu-item>
+          <el-menu-item index="/foundation/hs-codes"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file-SQL"/></svg>HS编码/退税率</el-menu-item>
         </el-sub-menu>
 
         <!-- 2. 销售管理 -->
         <el-sub-menu index="sales">
-          <template #title><el-icon><Sell /></el-icon><span>销售管理</span></template>
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-exchange"/></svg>
+            <span>销售管理</span>
+          </template>
           <el-menu-item index="/sales/orders">销售订单</el-menu-item>
           <el-menu-item index="/sales/deliveries">销售发货</el-menu-item>
           <el-menu-item index="/sales/invoices">销售发票</el-menu-item>
@@ -49,16 +62,21 @@
 
         <!-- 3. 生产管理 -->
         <el-sub-menu index="production">
-          <template #title><el-icon><Setting /></el-icon><span>生产管理</span></template>
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>
+            <span>生产管理</span>
+          </template>
           <el-menu-item index="/production/orders">生产订单</el-menu-item>
           <el-menu-item index="/production/workspace">生产工作台</el-menu-item>
           <el-menu-item index="/production/invoices">加工费发票</el-menu-item>
-          <el-menu-item index="/production/inventory">批次查询/追溯</el-menu-item>
         </el-sub-menu>
 
         <!-- 4. 采购管理 -->
         <el-sub-menu index="purchase">
-          <template #title><el-icon><ShoppingCart /></el-icon><span>采购管理</span></template>
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-inbox-in"/></svg>
+            <span>采购管理</span>
+          </template>
           <el-menu-item index="/purchase/orders">采购订单</el-menu-item>
           <el-menu-item index="/purchase/receipts">采购入库</el-menu-item>
           <el-menu-item index="/purchase/invoices">采购发票</el-menu-item>
@@ -68,14 +86,20 @@
 
         <!-- 5. 库存管理 -->
         <el-sub-menu index="inventory">
-          <template #title><el-icon><Box /></el-icon><span>库存管理</span></template>
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-database-set"/></svg>
+            <span>库存管理</span>
+          </template>
           <el-menu-item index="/inventory/management">库存收发存</el-menu-item>
           <el-menu-item index="/production/inventory">批次追溯</el-menu-item>
         </el-sub-menu>
 
         <!-- 6. 退税管理 -->
         <el-sub-menu index="tax-refund">
-          <template #title><el-icon><Coin /></el-icon><span>退税管理</span></template>
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-clouddownload"/></svg>
+            <span>退税管理</span>
+          </template>
           <el-menu-item index="/tax-refund/declarations">退税申报</el-menu-item>
         </el-sub-menu>
 

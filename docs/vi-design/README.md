@@ -5,7 +5,8 @@ docs/vi-design/
 ├── README.md              ← 本文件：文件索引与快速入门
 ├── VI-DESIGN.md           ← 完整 VI 设计规范文档（核心交付物）
 ├── mts-variables.css      ← CSS 自定义属性（可直接引入前端）
-├── logo.svg               ← 产品 Logo（圆形徽章，240×240）
+├── LOGO-dark.svg          ← 深色底色版 Logo（深蓝底 + 白色 m + 青星）
+├── LOGO-light.svg         ← 白色底色版 Logo（白底 + 蓝灰 m + 青星）
 └── mts-icons.svg          ← 26 个模块 SVG 图标 Sprite
 ```
 
@@ -14,7 +15,17 @@ docs/vi-design/
 1. **阅读** `VI-DESIGN.md` — 了解品牌调性、色彩、排版、间距等完整设计系统
 2. **引入** `mts-variables.css` — 在项目入口使用 CSS 变量
 3. **使用图标** — 加载 `mts-icons.svg` sprite，用 `<use href="#mts-xxx">` 引用
-4. **应用 Logo** — `logo.svg` 用于侧边栏、登录页、Favicon
+4. **应用 Logo** — 侧边栏/登录页用 `LOGO-dark.svg`，深色背景用 `LOGO-light.svg`
+
+## Logo 版本选择
+
+| 场景 | 使用版本 |
+|------|---------|
+| 侧边栏顶部 | `LOGO-dark.svg` |
+| 登录页 | `LOGO-dark.svg` |
+| Favicon | `LOGO-dark.svg` |
+| 浅色页面/白色背景页头 | `LOGO-dark.svg` |
+| 深色背景/弹窗/打印 | `LOGO-light.svg` |
 
 ## 模块色速查
 
@@ -34,9 +45,12 @@ docs/vi-design/
 | Token | 值 | 用途 |
 |-------|------|------|
 | `--mts-primary-500` | #3b82f6 | 主色（按钮、链接、激活态） |
-| `--mts-primary-900` | #1e3a5f | 侧边栏品牌色 |
-| `--mts-sidebar-bg-start` | #0f2847 | 侧边栏起始色 |
-| `--mts-sidebar-bg-end` | #1a3a6b | 侧边栏结束色 |
+| `--mts-primary-900` | #1e3a5f | 品牌深色 |
+| `--mts-sidebar-bg` | #103B9C | 侧边栏底色 |
+| `--mts-sidebar-bg-end` | #1a4a9c | 侧边栏渐变结束色 |
+| `--mts-logo-dark-bg` | #163E64 | 深色 Logo 背景色 |
+| `--mts-logo-light-m` | #215F9A | 浅色 Logo 文字色 |
+| `--mts-logo-star` | #14B8A6 | Logo 星点缀色 |
 | `--mts-page-bg` | #f5f7fa | 页面背景色 |
 
 ## 图标 ID 速查

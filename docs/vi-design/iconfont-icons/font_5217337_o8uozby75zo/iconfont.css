@@ -1,0 +1,311 @@
+@font-face {
+  font-family: "iconfont"; /* Project id 5217337 */
+  src: url('iconfont.woff2?t=1785318691261') format('woff2'),
+       url('iconfont.woff?t=1785318691261') format('woff'),
+       url('iconfont.ttf?t=1785318691261') format('truetype');
+}
+
+.iconfont {
+  font-family: "iconfont" !important;
+  font-size: 16px;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.icon-drag:before {
+  content: "\e769";
+}
+
+.icon-ellipsis-vertical:before {
+  content: "\e76a";
+}
+
+.icon-gallery-view:before {
+  content: "\e76b";
+}
+
+.icon-WIFI:before {
+  content: "\e76c";
+}
+
+.icon-qrcode:before {
+  content: "\e76e";
+}
+
+.icon-scan:before {
+  content: "\e76f";
+}
+
+.icon-cut:before {
+  content: "\e770";
+}
+
+.icon-link:before {
+  content: "\e772";
+}
+
+.icon-poweroff:before {
+  content: "\e774";
+}
+
+.icon-chart-area:before {
+  content: "\e78f";
+}
+
+.icon-chart-line:before {
+  content: "\e790";
+}
+
+.icon-all:before {
+  content: "\e7e6";
+}
+
+.icon-database-plus:before {
+  content: "\e7e7";
+}
+
+.icon-comment-dots:before {
+  content: "\e7ea";
+}
+
+.icon-paper-plane:before {
+  content: "\e7eb";
+}
+
+.icon-inbox-in:before {
+  content: "\e7f4";
+}
+
+.icon-box:before {
+  content: "\e7f5";
+}
+
+.icon-database-set:before {
+  content: "\e7f6";
+}
+
+.icon-layer-group:before {
+  content: "\e7f7";
+}
+
+.icon-wind-smile:before {
+  content: "\e7f9";
+}
+
+.icon-lock:before {
+  content: "\e7fb";
+}
+
+.icon-folder:before {
+  content: "\e806";
+}
+
+.icon-file-SQL:before {
+  content: "\e807";
+}
+
+.icon-file-plus:before {
+  content: "\e808";
+}
+
+.icon-file:before {
+  content: "\e809";
+}
+
+.icon-copy:before {
+  content: "\e80a";
+}
+
+.icon-headset:before {
+  content: "\e80b";
+}
+
+.icon-phone:before {
+  content: "\e80c";
+}
+
+.icon-pausecircle:before {
+  content: "\e80d";
+}
+
+.icon-stopcircle:before {
+  content: "\e80e";
+}
+
+.icon-playcircle:before {
+  content: "\e80f";
+}
+
+.icon-delete:before {
+  content: "\e810";
+}
+
+.icon-picture:before {
+  content: "\e811";
+}
+
+.icon-mail:before {
+  content: "\e812";
+}
+
+.icon-like:before {
+  content: "\e813";
+}
+
+.icon-collection:before {
+  content: "\e814";
+}
+
+.icon-user-group:before {
+  content: "\e815";
+}
+
+.icon-account-plus:before {
+  content: "\e816";
+}
+
+.icon-account:before {
+  content: "\e817";
+}
+
+.icon-cog:before {
+  content: "\e818";
+}
+
+.icon-clock:before {
+  content: "\e819";
+}
+
+.icon-calendar-alt:before {
+  content: "\e81a";
+}
+
+.icon-clouddownload:before {
+  content: "\e81b";
+}
+
+.icon-cloudupload:before {
+  content: "\e81c";
+}
+
+.icon-exchange:before {
+  content: "\e81d";
+}
+
+.icon-info-circle:before {
+  content: "\e81e";
+}
+
+.icon-question-circle:before {
+  content: "\e81f";
+}
+
+.icon-exclamation-circle:before {
+  content: "\e820";
+}
+
+.icon-minus:before {
+  content: "\e828";
+}
+
+.icon-plus:before {
+  content: "\e829";
+}
+
+.icon-times:before {
+  content: "\e82a";
+}
+
+.icon-check:before {
+  content: "\e82b";
+}
+
+.icon-search-plus:before {
+  content: "\e82d";
+}
+
+.icon-search:before {
+  content: "\e82e";
+}
+
+.icon-redo:before {
+  content: "\e831";
+}
+
+.icon-arrows-alt:before {
+  content: "\e833";
+}
+
+.icon-indent:before {
+  content: "\e834";
+}
+
+.icon-outdent:before {
+  content: "\e835";
+}
+
+.icon-sort-line:before {
+  content: "\e836";
+}
+
+.icon-switch:before {
+  content: "\e837";
+}
+
+.icon-download:before {
+  content: "\e83a";
+}
+
+.icon-upload:before {
+  content: "\e83b";
+}
+
+.icon-arrow-to-bottom:before {
+  content: "\e83c";
+}
+
+.icon-arrow-to-top:before {
+  content: "\e83d";
+}
+
+.icon-long-arrow-down:before {
+  content: "\e83e";
+}
+
+.icon-long-arrow-up:before {
+  content: "\e83f";
+}
+
+.icon-arrow-right:before {
+  content: "\e840";
+}
+
+.icon-arrow-left:before {
+  content: "\e841";
+}
+
+.icon-bell:before {
+  content: "\e887";
+}
+
+.icon-diagnose:before {
+  content: "\e88e";
+}
+
+.icon-loading:before {
+  content: "\e891";
+}
+
+.icon-Directory-tree:before {
+  content: "\e892";
+}
+
+.icon-application:before {
+  content: "\e89e";
+}
+
+.icon-applicationgroup:before {
+  content: "\e89f";
+}
+

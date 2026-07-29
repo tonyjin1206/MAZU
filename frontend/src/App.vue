@@ -12,6 +12,20 @@
   --el-font-size-extra-small: 10px;
   --el-font-size-medium: 13px;
   --el-font-size-large: 14px;
+  /* Element Plus 品牌色覆盖 — MTS VI */
+  --el-color-primary: #3b82f6;
+  --el-color-primary-light-3: #60a5fa;
+  --el-color-primary-light-5: #93c5fd;
+  --el-color-primary-light-7: #bfdbfe;
+  --el-color-primary-light-8: #dbeafe;
+  --el-color-primary-light-9: #eff6ff;
+  --el-color-primary-dark-2: #2563eb;
+  --el-color-success: #67c23a;
+  --el-color-warning: #e6a23c;
+  --el-color-danger: #f56c6c;
+  --el-color-info: #909399;
+  --el-border-radius-base: 4px;
+  --el-border-radius-small: 2px;
 }
 body {
   margin: 0;

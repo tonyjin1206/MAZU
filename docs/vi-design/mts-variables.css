@@ -52,12 +52,12 @@
   /* ═══════════════════════════════════════════════
      4. 侧边栏 (Sidebar)
      ═══════════════════════════════════════════════ */
-  --mts-sidebar-bg-start: #0f2847;
-  --mts-sidebar-bg-end: #1a3a6b;
-  --mts-sidebar-text: #a8b2c8;
-  --mts-sidebar-active: #60a5fa;
-  --mts-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
-  --mts-sidebar-border: rgba(255, 255, 255, 0.07);
+  --mts-sidebar-bg-start: #103B9C;
+  --mts-sidebar-bg-end: #1a4a9c;
+  --mts-sidebar-text: rgba(255, 255, 255, 0.65);
+  --mts-sidebar-active: #ffffff;
+  --mts-sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --mts-sidebar-border: rgba(255, 255, 255, 0.06);
   --mts-sidebar-header-bg: rgba(0, 0, 0, 0.15);
 
   /* ═══════════════════════════════════════════════

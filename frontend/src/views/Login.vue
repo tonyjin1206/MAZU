@@ -1,10 +1,11 @@
 <template>
-  <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)">
+  <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #103B9C 0%, #1a4a9c 100%)">
     <el-card style="width: 400px; padding: 20px">
       <template #header>
         <div style="text-align: center">
-          <h2 style="margin: 0">📦 MTS</h2>
-          <p style="color: #909399; font-size: 13px; margin: 8px 0 0">请登录</p>
+          <img src="/LOGO-light.svg" alt="MTS" style="width: 64px; height: 64px; border-radius: 14px; margin-bottom: 8px">
+          <h2 style="margin: 0; color: #1e293b">MTS</h2>
+          <p style="color: #909399; font-size: 13px; margin: 4px 0 0">Mazu Trade System · 请登录</p>
         </div>
       </template>
       <el-form :model="form" :rules="rules" ref="formRef" @keyup.enter="login">

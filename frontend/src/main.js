@@ -5,6 +5,7 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
+import '../../docs/vi-design/mts-variables.css'
 
 // 启动时：清理无效的登录缓存
 const token = localStorage.getItem('token')

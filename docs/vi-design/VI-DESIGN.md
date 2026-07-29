@@ -51,34 +51,44 @@
 
 ## 2. Logo 系统
 
-### 2.1 主 Logo
+MTS 提供两套 Logo 版本，适应不同背景色场景。
 
-**文件**: `docs/vi-design/logo.svg`
+### 2.1 深色底色版（用于浅色背景）
+
+**文件**: `docs/vi-design/LOGO-dark.svg`
 
 **设计说明**:
-- 圆形底+抽象「M」造型（Mazu 首字母 + 船帆意象）
-- 底部海浪曲线代表海洋贸易
-- 渐变蓝配色，呼应品牌色系统
+- 圆角方形图标（squircle），深蓝底（#163E64）
+- 手写风格小写「m」，白色（#FFFFFF）
+- 四芒星点缀，青绿色（#14B8A6）
 
-**使用规范**:
-| 场景 | 使用方式 |
-|------|---------|
-| 侧边栏顶部 | 24×24px 或 32×32px，白色/亮蓝 |
-| 登录页 | 64×64px，带光晕效果 |
-| Favicon | 16×16px 或 32×32px |
-| 页面标题 | 文字标识「MTS」+ 图标 |
+### 2.2 白色底色版（用于深色背景）
 
-### 2.2 文字标识
+**文件**: `docs/vi-design/LOGO-light.svg`
+
+**设计说明**:
+- 圆角方形图标（squircle），白底（#FFFFFF）
+- 手写风格小写「m」，蓝灰色（#215F9A）
+- 四芒星点缀，青绿色（#14B8A6）
+
+### 2.3 使用规范
+
+| 场景 | 使用版本 | 大小 |
+|------|---------|------|
+| 侧边栏顶部 | `LOGO-dark.svg` | 28×28px |
+| 登录页 | `LOGO-dark.svg` | 64×64px |
+| Favicon | `LOGO-dark.svg` | 16×16px |
+| 浅色页面/白色背景页头 | `LOGO-dark.svg` | 32×32px |
+| 深色背景/弹窗/打印 | `LOGO-light.svg` | 按需 |
+
+### 2.4 文字标识
 
 ```
-┌──────────────────────┐
-│  🧭  MTS             │  ← 图标 + 文字
-│      Mazu Trade System│
-└──────────────────────┘
+   MTS  ·  Mazu Trade System
 ```
 
-**字体**: Inter / system-ui, 图标 + 「MTS」字标
-**颜色**: 侧边栏用白色 #d8dce6，亮色背景用 #1e3a5f
+**字体**: Inter / system-ui
+**颜色**: 侧边栏用白色 #d8dce6，亮色背景用 #1e3a5f / #163E64
 
 ---
 
@@ -128,11 +138,11 @@
 
 | 名称 | 色值 | 用途 |
 |------|------|------|
-| sidebar-bg | `linear-gradient(180deg, #0f2847 0%, #1a3a6b 100%)` | 侧边栏背景 |
-| sidebar-text | `#a8b2c8` | 菜单文字默认态 |
-| sidebar-active | `#60a5fa` / `#3b82f6` | 菜单文字激活态 |
-| sidebar-hover | `rgba(255,255,255,0.06)` | 菜单 hover 背景 |
-| sidebar-border | `rgba(255,255,255,0.07)` | 分割线 |
+| sidebar-bg | `linear-gradient(180deg, #103B9C 0%, #1a4a9c 100%)` | 侧边栏背景 |
+| sidebar-text | `rgba(255,255,255,0.55)` | 菜单文字默认态 |
+| sidebar-active | `#ffffff` | 菜单文字激活态 |
+| sidebar-hover | `rgba(255,255,255,0.05)` | 菜单 hover 背景 |
+| sidebar-border | `rgba(255,255,255,0.06)` | 分割线 |
 | sidebar-header-bg | `rgba(0,0,0,0.15)` | 顶部品牌区 |
 
 ### 3.5 功能模块配色 (区分模块)
@@ -538,7 +548,8 @@ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
 
 | 文件 | 路径 | 说明 |
 |------|------|------|
-| Logo | `docs/vi-design/logo.svg` | 产品主 Logo（圆形徽章） |
+| Logo 深色版 | `docs/vi-design/LOGO-dark.svg` | 深蓝底 + 白色 m + 青星（用于浅色背景） |
+| Logo 浅色版 | `docs/vi-design/LOGO-light.svg` | 白底 + 蓝灰 m + 青星（用于深色背景） |
 | 图标 Sprite | `docs/vi-design/mts-icons.svg` | 26 个自定义 SVG 图标的 Sprite 文件 |
 
 ### 图标列表速查
