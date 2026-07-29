@@ -61,7 +61,81 @@ TOOLS = [
                     "due_date": {"type": "string", "description": "计划完成日（生产单）"},
                 },
             },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_outsourcing",
+            "description": "创建委外加工单：指定工序委外给某供应商加工，同时记录发出的物料。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "production_order_no": {
+                        "type": "string",
+                        "description": "生产订单编号",
+                    },
+                    "process_name": {
+                        "type": "string",
+                        "description": "委外的工序名称",
+                    },
+                    "supplier_name": {
+                        "type": "string",
+                        "description": "委外供应商名称",
+                    },
+                    "material_name": {
+                        "type": "string",
+                        "description": "发出的物料名称",
+                    },
+                    "material_qty": {
+                        "type": "number",
+                        "description": "发出物料数量",
+                    },
+                    "outsource_qty": {
+                        "type": "number",
+                        "description": "委外加工数量",
+                    },
+                    "unit_price": {
+                        "type": "number",
+                        "description": "委外加工单价",
+                    },
+                    "due_date": {
+                        "type": "string",
+                        "description": "要求完成日期",
+                    },
+                },
+                "required": ["production_order_no", "process_name", "supplier_name", "outsource_qty"],
+            },
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "issue_materials",
+            "description": "生产领料/发料：为生产订单发出物料到生产线。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "production_order_no": {
+                        "type": "string",
+                        "description": "生产订单编号",
+                    },
+                    "material_name": {
+                        "type": "string",
+                        "description": "物料名称",
+                    },
+                    "quantity": {
+                        "type": "number",
+                        "description": "发料数量",
+                    },
+                    "warehouse_name": {
+                        "type": "string",
+                        "description": "发料仓库名称，不填用默认",
+                    },
+                },
+                "required": ["production_order_no", "material_name", "quantity"],
+            },
+        },
     },
 ]
 
