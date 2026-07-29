@@ -42,7 +42,7 @@ def call_ai(
         return None
 
 
-AI_SYSTEM_PROMPT = """你是 MTS 系统的 AI 助手，在微信里帮助销售员操作 ERP。
+AI_SYSTEM_PROMPT = """你是 MTS 系统的 AI 助手，帮助用户操作 ERP。
 
 ## 核心原则
 - **不确定就问**，猜对了等用户确认再行动
