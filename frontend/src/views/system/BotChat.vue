@@ -51,6 +51,7 @@
         @keyup.enter="sendMessage"
         :disabled="loading"
         size="large"
+        ref="inputRef"
       >
         <template #append>
           <el-button @click="sendMessage" :disabled="loading || !inputText.trim()" type="primary">发送</el-button>
@@ -71,6 +72,7 @@ const inputText = ref('')
 const loading = ref(false)
 const sessionId = ref(localStorage.getItem('bot_session_id') || '')
 const msgContainer = ref(null)
+const inputRef = ref(null)
 
 // 加载历史消息
 const savedMessages = localStorage.getItem('bot_messages')
@@ -124,6 +126,7 @@ async function sendMessage() {
 
   loading.value = false
   scrollToBottom()
+  nextTick(() => inputRef.value?.focus())
 }
 
 async function resetChat() {
@@ -146,6 +149,7 @@ if (!sessionId.value) {
 } else {
   scrollToBottom()
 }
+nextTick(() => inputRef.value?.focus())
 </script>
 
 <style scoped>
