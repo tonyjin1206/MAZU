@@ -615,7 +615,7 @@ def _call_llm(messages: list[dict], bot_config: BotConfig, tool_choice=None) -> 
     )
     payload = {
         "model": bot_config.model or "deepseek-chat",
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT}] + messages,
+        "messages": [{"role": "system", "content": bot_config.system_prompt or SYSTEM_PROMPT}] + messages,
         "temperature": bot_config.temperature or 0.1,
         "max_tokens": bot_config.max_tokens or 4096,
         "tools": TOOLS,
