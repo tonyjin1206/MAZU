@@ -11,6 +11,7 @@ from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
     ReminderConfig, ReminderLog,
 )
+from app.utils.crypto import encrypt, decrypt
 from app.schemas.system_config import (
     WecomConfigCreate, WecomConfigUpdate, WecomConfigOut,
     BotConfigCreate, BotConfigUpdate, BotConfigOut,
@@ -40,6 +41,7 @@ def create_wecom(
     admin: User = Depends(get_current_admin),
 ):
     config = WecomConfig(**data.model_dump())
+    config.secret = encrypt(config.secret)
     db.add(config)
     db.commit()
     db.refresh(config)
@@ -59,6 +61,8 @@ def update_wecom(
     update_data = data.model_dump(exclude_unset=True)
     for k, v in update_data.items():
         setattr(config, k, v)
+    if "secret" in update_data and update_data["secret"]:
+        config.secret = encrypt(update_data["secret"])
     db.commit()
     db.refresh(config)
     return WecomConfigOut.model_validate(config)
@@ -86,7 +90,14 @@ def list_bot(
     current_user: User = Depends(get_current_user),
 ):
     items = db.query(BotConfig).order_by(BotConfig.id.desc()).all()
-    return [BotConfigOut.model_validate(b) for b in items]
+    result = []
+    for b in items:
+        out = BotConfigOut.model_validate(b)
+        # 脱敏显示
+        if out.api_key and len(out.api_key) > 8:
+            out.api_key = out.api_key[:4] + "****" + out.api_key[-4:]
+        result.append(out)
+    return result
 
 
 @router.get("/bot/active", response_model=BotConfigOut | None)
@@ -97,7 +108,10 @@ def get_active_bot(
     config = db.query(BotConfig).filter(BotConfig.is_active == 1).first()
     if not config:
         return None
-    return BotConfigOut.model_validate(config)
+    out = BotConfigOut.model_validate(config)
+    if out.api_key and len(out.api_key) > 8:
+        out.api_key = out.api_key[:4] + "****" + out.api_key[-4:]
+    return out
 
 
 @router.post("/bot", response_model=BotConfigOut)
@@ -107,6 +121,7 @@ def create_bot(
     admin: User = Depends(get_current_admin),
 ):
     config = BotConfig(**data.model_dump())
+    config.api_key = encrypt(config.api_key)
     db.add(config)
     db.commit()
     db.refresh(config)
@@ -126,6 +141,8 @@ def update_bot(
     update_data = data.model_dump(exclude_unset=True)
     for k, v in update_data.items():
         setattr(config, k, v)
+    if "api_key" in update_data and update_data["api_key"]:
+        config.api_key = encrypt(update_data["api_key"])
     db.commit()
     db.refresh(config)
     return BotConfigOut.model_validate(config)

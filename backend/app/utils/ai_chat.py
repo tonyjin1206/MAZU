@@ -5,6 +5,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.models.system_config import BotConfig
+from app.utils.crypto import decrypt
 
 
 def call_ai(
@@ -76,8 +77,11 @@ AI_SYSTEM_PROMPT = """你是 MTS 系统的 AI 助手，在微信里帮助用户�
 
 
 def get_active_bot_config(db: Session) -> BotConfig | None:
-    """获取启用的 AI 配置"""
-    return db.query(BotConfig).filter(BotConfig.is_active == 1).first()
+    """获取启用的 AI 配置，并解密 API Key"""
+    config = db.query(BotConfig).filter(BotConfig.is_active == 1).first()
+    if config and config.api_key:
+        config.api_key = decrypt(config.api_key)
+    return config
 
 
 def process_with_ai(
