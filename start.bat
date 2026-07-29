@@ -8,16 +8,50 @@ echo   MTS - Mazu Trade System
 echo =========================================
 echo.
 
-:: Check Python
-python --version >nul 2>&1
-if errorlevel 1 (
-    echo [FAIL] Python not found. Install Python 3.10+ from:
+:: Detect Python (try multiple methods)
+set PYTHON=
+:: 1. Try py launcher (Windows Python Launcher)
+py --version >nul 2>&1
+if not errorlevel 1 set PYTHON=py
+
+:: 2. Try python
+if "%PYTHON%"=="" (
+    python --version >nul 2>&1
+    if not errorlevel 1 set PYTHON=python
+)
+
+:: 3. Try common install locations
+if "%PYTHON%"=="" (
+    if exist "C:\Python311\python.exe" set PYTHON=C:\Python311\python.exe
+)
+if "%PYTHON%"=="" (
+    if exist "C:\Program Files\Python311\python.exe" set PYTHON=C:\Program Files\Python311\python.exe
+)
+if "%PYTHON%"=="" (
+    if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" set PYTHON=%LOCALAPPDATA%\Programs\Python\Python311\python.exe
+)
+if "%PYTHON%"=="" (
+    if exist "%USERPROFILE%\AppData\Local\Programs\Python\Python311\python.exe" set PYTHON=%USERPROFILE%\AppData\Local\Programs\Python\Python311\python.exe
+)
+
+:: 4. Try Hermes agent venv (user's known setup)
+if "%PYTHON%"=="" (
+    if exist "%USERPROFILE%\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe" set PYTHON=%USERPROFILE%\AppData\Local\hermes\hermes-agent\venv\Scripts\python.exe
+)
+
+if "%PYTHON%"=="" (
+    echo [FAIL] Python not found after trying all locations.
+    echo.
+    echo        Install Python 3.10+ from:
     echo        https://www.python.org/downloads/
+    echo.
+    echo        Make sure to check "Add Python to PATH" during install.
     pause
     exit /b 1
 )
-for /f "tokens=2" %%i in ('python --version 2^>^&1') do set pyver=%%i
-echo [OK] Python %pyver%
+
+for /f "tokens=2" %%i in ('%PYTHON% --version 2^>^&1') do set pyver=%%i
+echo [OK] Python %pyver% (using: %PYTHON%)
 
 :: Check Node
 node --version >nul 2>&1
@@ -32,7 +66,7 @@ if errorlevel 1 (
 if not exist "backend\venv\Scripts\python.exe" (
     echo.
     echo [1/3] Creating virtual environment...
-    python -m venv backend\venv
+    %PYTHON% -m venv backend\venv
 )
 echo [1/3] Installing backend dependencies...
 backend\venv\Scripts\python -m pip install -r backend\requirements.txt -q
