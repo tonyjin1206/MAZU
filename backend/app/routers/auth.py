@@ -160,36 +160,40 @@ def delete_user(
 # 预置权限定义（按模块分组）
 PERMISSION_DEFS = [
     # 工作台
-    {"code": "dashboard:read", "name": "查看驾驶舱", "module": "工作台", "description": "查看首页工作台数据"},
-
+    {"code": "menu:dashboard", "name": "驾驶舱", "module": "工作台", "description": ""},
     # 基础档案
-    {"code": "foundation:read", "name": "查看基础档案", "module": "基础档案", "description": "查看客户/供应商/物料/产品等基础数据"},
-    {"code": "foundation:write", "name": "编辑基础档案", "module": "基础档案", "description": "增删改基础档案数据"},
-
+    {"code": "menu:customers", "name": "客户管理", "module": "基础档案", "description": ""},
+    {"code": "menu:suppliers", "name": "供应商管理", "module": "基础档案", "description": ""},
+    {"code": "menu:materials", "name": "原辅材料", "module": "基础档案", "description": ""},
+    {"code": "menu:products", "name": "产品档案", "module": "基础档案", "description": ""},
+    {"code": "menu:bom", "name": "BOM管理", "module": "基础档案", "description": ""},
+    {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
+    {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
     # 采购管理
-    {"code": "purchase:read", "name": "查看采购", "module": "采购管理", "description": "查看采购订单/入库/发票/应付等"},
-    {"code": "purchase:write", "name": "编辑采购", "module": "采购管理", "description": "增删改采购单据"},
-    {"code": "purchase:approve", "name": "审批采购", "module": "采购管理", "description": "审核/反审核采购订单"},
-
+    {"code": "menu:purchase:orders", "name": "采购订单", "module": "采购管理", "description": ""},
+    {"code": "menu:purchase:receipts", "name": "采购入库", "module": "采购管理", "description": ""},
+    {"code": "menu:purchase:invoices", "name": "采购发票", "module": "采购管理", "description": ""},
+    {"code": "menu:purchase:ap", "name": "应付账款", "module": "采购管理", "description": ""},
+    {"code": "menu:purchase:payments", "name": "付款管理", "module": "采购管理", "description": ""},
     # 销售管理
-    {"code": "sales:read", "name": "查看销售", "module": "销售管理", "description": "查看销售订单/发货/发票/应收等"},
-    {"code": "sales:write", "name": "编辑销售", "module": "销售管理", "description": "增删改销售单据"},
-    {"code": "sales:approve", "name": "审批销售", "module": "销售管理", "description": "审核/反审核销售订单"},
-
+    {"code": "menu:sales:orders", "name": "销售订单", "module": "销售管理", "description": ""},
+    {"code": "menu:sales:deliveries", "name": "销售发货", "module": "销售管理", "description": ""},
+    {"code": "menu:sales:invoices", "name": "销售发票", "module": "销售管理", "description": ""},
+    {"code": "menu:sales:customs", "name": "报关管理", "module": "销售管理", "description": ""},
+    {"code": "menu:sales:ar", "name": "应收账款", "module": "销售管理", "description": ""},
+    {"code": "menu:sales:collections", "name": "收款管理", "module": "销售管理", "description": ""},
     # 生产管理
-    {"code": "production:read", "name": "查看生产", "module": "生产管理", "description": "查看生产订单/工作台/加工费等"},
-    {"code": "production:write", "name": "编辑生产", "module": "生产管理", "description": "增删改生产单据"},
-
+    {"code": "menu:production:orders", "name": "生产订单", "module": "生产管理", "description": ""},
+    {"code": "menu:production:workspace", "name": "生产工作台", "module": "生产管理", "description": ""},
+    {"code": "menu:production:invoices", "name": "加工费发票", "module": "生产管理", "description": ""},
+    {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
     # 库存管理
-    {"code": "inventory:read", "name": "查看库存", "module": "库存管理", "description": "查看库存收发存"},
-    {"code": "inventory:write", "name": "编辑库存", "module": "库存管理", "description": "库存调整操作"},
-
+    {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},
     # 退税管理
-    {"code": "tax:read", "name": "查看退税", "module": "退税管理", "description": "查看退税申报"},
-    {"code": "tax:write", "name": "编辑退税", "module": "退税管理", "description": "增删改退税申报"},
-
+    {"code": "menu:tax", "name": "退税申报", "module": "退税管理", "description": ""},
     # 系统管理
-    {"code": "system:admin", "name": "系统管理", "module": "系统管理", "description": "用户管理/角色管理/系统设置"},
+    {"code": "menu:system:users", "name": "用户管理", "module": "系统管理", "description": ""},
+    {"code": "menu:system:roles", "name": "角色管理", "module": "系统管理", "description": ""},
 ]
 
 
@@ -212,7 +216,7 @@ def list_permissions(
         modules[mod].append(PermissionOut.model_validate(p))
 
     # 按原始定义顺序排序
-    module_order = [d["module"] for d in PERMISSION_DEFS]
+    module_order = list(dict.fromkeys(d["module"] for d in PERMISSION_DEFS))
     result = []
     seen = set()
     for mod in module_order:

@@ -15,37 +15,60 @@ from app.models.auth import User, Role, Permission, RolePermission
 def _seed_rbac_test(db):
     """测试用 RBAC 种子数据（与 main.py _seed_rbac 一致）"""
     permission_defs = [
-        {"code": "dashboard:read",    "name": "查看驾驶舱",   "module": "工作台",   "description": ""},
-        {"code": "foundation:read",   "name": "查看基础档案",  "module": "基础档案",   "description": ""},
-        {"code": "foundation:write",  "name": "编辑基础档案",  "module": "基础档案",   "description": ""},
-        {"code": "purchase:read",     "name": "查看采购",     "module": "采购管理",   "description": ""},
-        {"code": "purchase:write",    "name": "编辑采购",     "module": "采购管理",   "description": ""},
-        {"code": "purchase:approve",  "name": "审批采购",     "module": "采购管理",   "description": ""},
-        {"code": "sales:read",        "name": "查看销售",     "module": "销售管理",   "description": ""},
-        {"code": "sales:write",       "name": "编辑销售",     "module": "销售管理",   "description": ""},
-        {"code": "sales:approve",     "name": "审批销售",     "module": "销售管理",   "description": ""},
-        {"code": "production:read",   "name": "查看生产",     "module": "生产管理",   "description": ""},
-        {"code": "production:write",  "name": "编辑生产",     "module": "生产管理",   "description": ""},
-        {"code": "inventory:read",    "name": "查看库存",     "module": "库存管理",   "description": ""},
-        {"code": "inventory:write",   "name": "编辑库存",     "module": "库存管理",   "description": ""},
-        {"code": "tax:read",          "name": "查看退税",     "module": "退税管理",   "description": ""},
-        {"code": "tax:write",         "name": "编辑退税",     "module": "退税管理",   "description": ""},
-        {"code": "system:admin",      "name": "系统管理",     "module": "系统管理",   "description": ""},
+        {"code": "menu:dashboard", "name": "驾驶舱", "module": "工作台", "description": ""},
+        {"code": "menu:customers", "name": "客户管理", "module": "基础档案", "description": ""},
+        {"code": "menu:suppliers", "name": "供应商管理", "module": "基础档案", "description": ""},
+        {"code": "menu:materials", "name": "原辅材料", "module": "基础档案", "description": ""},
+        {"code": "menu:products", "name": "产品档案", "module": "基础档案", "description": ""},
+        {"code": "menu:bom", "name": "BOM管理", "module": "基础档案", "description": ""},
+        {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
+        {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
+        {"code": "menu:purchase:orders", "name": "采购订单", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:receipts", "name": "采购入库", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:invoices", "name": "采购发票", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:ap", "name": "应付账款", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:payments", "name": "付款管理", "module": "采购管理", "description": ""},
+        {"code": "menu:sales:orders", "name": "销售订单", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:deliveries", "name": "销售发货", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:invoices", "name": "销售发票", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:customs", "name": "报关管理", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:ar", "name": "应收账款", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:collections", "name": "收款管理", "module": "销售管理", "description": ""},
+        {"code": "menu:production:orders", "name": "生产订单", "module": "生产管理", "description": ""},
+        {"code": "menu:production:workspace", "name": "生产工作台", "module": "生产管理", "description": ""},
+        {"code": "menu:production:invoices", "name": "加工费发票", "module": "生产管理", "description": ""},
+        {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
+        {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},
+        {"code": "menu:tax", "name": "退税申报", "module": "退税管理", "description": ""},
+        {"code": "menu:system:users", "name": "用户管理", "module": "系统管理", "description": ""},
+        {"code": "menu:system:roles", "name": "角色管理", "module": "系统管理", "description": ""},
     ]
     for pd in permission_defs:
         if not db.query(Permission).filter(Permission.code == pd["code"]).first():
             db.add(Permission(**pd))
 
     all_codes = [p["code"] for p in permission_defs]
-    biz_codes = [c for c in all_codes if c != "system:admin"]
-    no_approve = [c for c in biz_codes if not c.endswith(":approve")]
-    read_codes = [c for c in all_codes if c.endswith(":read")]
+    foundation = [c for c in all_codes if c.startswith("menu:customers") or c.startswith("menu:suppliers")
+                  or c.startswith("menu:materials") or c.startswith("menu:products")
+                  or c.startswith("menu:bom") or c.startswith("menu:processes")
+                  or c.startswith("menu:hs-codes")]
+    purchase_all = [c for c in all_codes if c.startswith("menu:purchase:")]
+    purchase_finance = [c for c in purchase_all if c.endswith(("invoices", "ap", "payments"))]
+    sales_all = [c for c in all_codes if c.startswith("menu:sales:")]
+    sales_finance = [c for c in sales_all if c.endswith(("invoices", "ar", "collections"))]
+    production = [c for c in all_codes if c.startswith("menu:production:")]
+    inventory = ["menu:inventory", "menu:production:batch"]
+    tax = ["menu:tax"]
+    dashboard = ["menu:dashboard"]
 
     role_defs = [
         ("管理员", "admin", all_codes),
-        ("经理", "manager", biz_codes),
-        ("操作员", "operator", no_approve),
-        ("只读", "readonly", read_codes),
+        ("销售经理", "sales_manager", dashboard + sales_all),
+        ("采购经理", "purchase_manager", dashboard + purchase_all),
+        ("生产经理", "production_manager", dashboard + foundation + production + inventory),
+        ("财务经理", "finance_manager", dashboard + purchase_finance + sales_finance + inventory + tax),
+        ("库管员", "warehouse_keeper", dashboard + inventory),
+        ("只读", "readonly", dashboard),
     ]
     for name, code, perms in role_defs:
         role = db.query(Role).filter(Role.code == code).first()

@@ -1,0 +1,199 @@
+/* ════════════════════════════════════════════════════════════
+   MTS (Mazu Trade System) — Design Tokens (CSS Custom Properties)
+   Version: 1.0 | 2026-07-29
+   
+   Usage: @import './docs/vi-design/mts-variables.css'
+          or copy into App.vue <style>
+   ════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ═══════════════════════════════════════════════
+     1. 品牌主色 (Primary — Ocean Blue)
+     ═══════════════════════════════════════════════ */
+  --mts-primary-50: #eff6ff;
+  --mts-primary-100: #dbeafe;
+  --mts-primary-200: #bfdbfe;
+  --mts-primary-300: #93c5fd;
+  --mts-primary-400: #60a5fa;
+  --mts-primary-500: #3b82f6;
+  --mts-primary-600: #2563eb;
+  --mts-primary-700: #1d4ed8;
+  --mts-primary-800: #1e40af;
+  --mts-primary-900: #1e3a5f;
+
+  /* ═══════════════════════════════════════════════
+     2. 语义色 (Semantic)
+     ═══════════════════════════════════════════════ */
+  --mts-success: #22c55e;
+  --mts-success-ep: #67c23a;       /* Element Plus 兼容 */
+  --mts-warning: #f59e0b;
+  --mts-warning-ep: #e6a23c;       /* Element Plus 兼容 */
+  --mts-danger: #ef4444;
+  --mts-danger-ep: #f56c6c;        /* Element Plus 兼容 */
+  --mts-info: #3b82f6;
+  --mts-info-ep: #909399;          /* Element Plus 兼容（非强调信息） */
+  --mts-cyan: #06b6d4;
+  --mts-brand-blue: #409eff;       /* Element Plus 默认蓝色对齐 */
+
+  /* ═══════════════════════════════════════════════
+     3. 中性色 (Neutral / Gray)
+     ═══════════════════════════════════════════════ */
+  --mts-gray-50: #f9fafb;
+  --mts-gray-100: #f3f4f6;
+  --mts-gray-200: #e5e7eb;
+  --mts-gray-300: #d1d5db;
+  --mts-gray-400: #9ca3af;
+  --mts-gray-500: #6b7280;
+  --mts-gray-600: #4b5563;
+  --mts-gray-700: #374151;
+  --mts-gray-800: #1f2937;
+  --mts-gray-900: #111827;
+
+  /* ═══════════════════════════════════════════════
+     4. 侧边栏 (Sidebar)
+     ═══════════════════════════════════════════════ */
+  --mts-sidebar-bg-start: #0f2847;
+  --mts-sidebar-bg-end: #1a3a6b;
+  --mts-sidebar-text: #a8b2c8;
+  --mts-sidebar-active: #60a5fa;
+  --mts-sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+  --mts-sidebar-border: rgba(255, 255, 255, 0.07);
+  --mts-sidebar-header-bg: rgba(0, 0, 0, 0.15);
+
+  /* ═══════════════════════════════════════════════
+     5. 模块区分配色 (Module Accent)
+     ═══════════════════════════════════════════════ */
+  --mts-module-foundation: #6366f1;   /* 靛蓝 — 基础档案 */
+  --mts-module-sales: #22c55e;        /* 翠绿 — 销售管理 */
+  --mts-module-purchase: #f59e0b;     /* 琥珀 — 采购管理 */
+  --mts-module-production: #8b5cf6;   /* 紫色 — 生产管理 */
+  --mts-module-inventory: #06b6d4;    /* 青色 — 库存管理 */
+  --mts-module-tax-refund: #ec4899;   /* 粉色 — 退税管理 */
+  --mts-module-system: #6b7280;       /* 灰色 — 系统管理 */
+  --mts-module-dashboard: #3b82f6;    /* 蓝色 — 驾驶舱 */
+
+  /* ═══════════════════════════════════════════════
+     6. 排版 (Typography)
+     ═══════════════════════════════════════════════ */
+  --mts-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                     'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+                     sans-serif;
+  --mts-font-xs: 10px;
+  --mts-font-sm: 11px;
+  --mts-font-base: 12px;
+  --mts-font-md: 13px;
+  --mts-font-lg: 14px;
+  --mts-font-xl: 16px;
+  --mts-font-2xl: 20px;
+
+  --mts-weight-normal: 400;
+  --mts-weight-medium: 500;
+  --mts-weight-semibold: 600;
+  --mts-weight-bold: 700;
+
+  --mts-line-height-tight: 1.3;
+  --mts-line-height-normal: 1.5;
+  --mts-line-height-relaxed: 1.75;
+
+  /* ═══════════════════════════════════════════════
+     7. 间距 (Spacing — 4px unit)
+     ═══════════════════════════════════════════════ */
+  --mts-space-1: 4px;
+  --mts-space-2: 8px;
+  --mts-space-3: 12px;
+  --mts-space-4: 16px;
+  --mts-space-5: 20px;
+  --mts-space-6: 24px;
+  --mts-space-8: 32px;
+  --mts-space-10: 40px;
+  --mts-space-12: 48px;
+
+  /* ═══════════════════════════════════════════════
+     8. 圆角 (Border Radius)
+     ═══════════════════════════════════════════════ */
+  --mts-radius-none: 0;
+  --mts-radius-sm: 2px;
+  --mts-radius-md: 4px;
+  --mts-radius-lg: 6px;
+  --mts-radius-xl: 8px;
+  --mts-radius-full: 999px;
+
+  /* ═══════════════════════════════════════════════
+     9. 阴影 (Shadows)
+     ═══════════════════════════════════════════════ */
+  --mts-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --mts-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --mts-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  --mts-shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.15);
+
+  /* ═══════════════════════════════════════════════
+     10. 页面结构 (Layout)
+     ═══════════════════════════════════════════════ */
+  --mts-sidebar-width: 220px;
+  --mts-sidebar-width-collapsed: 64px;
+  --mts-header-height: 50px;
+  --mts-page-bg: #f5f7fa;
+  --mts-page-padding: 16px;
+  --mts-card-radius: 6px;
+  --mts-card-border: 1px solid var(--mts-gray-200);
+
+  /* ═══════════════════════════════════════════════
+     11. 过渡 (Transitions)
+     ═══════════════════════════════════════════════ */
+  --mts-transition-fast: 150ms ease;
+  --mts-transition-normal: 200ms ease-out;
+  --mts-transition-slow: 250ms ease-in-out;
+  --mts-transition-sidemenu: 250ms ease-in-out;
+}
+
+/* ═══════════════════════════════════════════════
+   12. 模块色实用类 (Utility Classes)
+   ═══════════════════════════════════════════════ */
+.mts-module-foundation { color: var(--mts-module-foundation); }
+.mts-module-sales { color: var(--mts-module-sales); }
+.mts-module-purchase { color: var(--mts-module-purchase); }
+.mts-module-production { color: var(--mts-module-production); }
+.mts-module-inventory { color: var(--mts-module-inventory); }
+.mts-module-tax-refund { color: var(--mts-module-tax-refund); }
+.mts-module-system { color: var(--mts-module-system); }
+
+/* ═══════════════════════════════════════════════
+   13. 图标辅助类
+   ═══════════════════════════════════════════════ */
+.mts-icon {
+  width: 16px;
+  height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+  fill: currentColor;
+  color: inherit;
+  transition: color var(--mts-transition-fast);
+}
+
+.mts-icon--lg { width: 18px; height: 18px; }
+.mts-icon--sm { width: 14px; height: 14px; }
+.mts-icon--xs { width: 12px; height: 12px; }
+.mts-icon--xl { width: 24px; height: 24px; }
+
+/* ═══════════════════════════════════════════════
+   14. 全局覆盖 (Global Overrides)
+   集成到 App.vue 或项目入口文件
+   ═══════════════════════════════════════════════ */
+/*
+  Element Plus 全局样式覆盖参考:
+  
+  :root {
+    --el-font-size-base: var(--mts-font-base);
+    --el-font-size-small: var(--mts-font-sm);
+    --el-font-size-extra-small: var(--mts-font-xs);
+    --el-font-size-medium: var(--mts-font-md);
+    --el-font-size-large: var(--mts-font-lg);
+    --el-color-primary: var(--mts-primary-500);
+    --el-color-success: var(--mts-success-ep);
+    --el-color-warning: var(--mts-warning-ep);
+    --el-color-danger: var(--mts-danger-ep);
+    --el-color-info: var(--mts-info-ep);
+    --el-border-radius-base: var(--mts-radius-md);
+    --el-border-radius-small: var(--mts-radius-sm);
+  }
+*/

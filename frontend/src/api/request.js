@@ -62,6 +62,17 @@ request.interceptors.response.use(
         localStorage.removeItem('permissions')
         router.push('/login')
         ElMessage.error('登录已过期，请重新登录')
+      } else if (status === 422) {
+        // Pydantic 校验错误 — 提取可读信息
+        const detail = data?.detail
+        if (Array.isArray(detail)) {
+          const msgs = detail.map(e => e.msg || e.message).join('；')
+          ElMessage.error(msgs || '请求参数校验失败')
+        } else if (typeof detail === 'string') {
+          ElMessage.error(detail)
+        } else {
+          ElMessage.error('请求失败')
+        }
       } else if (status !== 401) {
         ElMessage.error(data?.detail || '请求失败')
       }

@@ -17,29 +17,40 @@ def _seed_rbac(db):
     # ====== 权限定义 ======
     permission_defs = [
         # 工作台
-        {"code": "dashboard:read", "name": "查看驾驶舱", "module": "工作台", "description": "查看首页工作台数据"},
+        {"code": "menu:dashboard", "name": "驾驶舱", "module": "工作台", "description": "首页工作台"},
         # 基础档案
-        {"code": "foundation:read", "name": "查看基础档案", "module": "基础档案", "description": "查看客户/供应商/物料/产品等基础数据"},
-        {"code": "foundation:write", "name": "编辑基础档案", "module": "基础档案", "description": "增删改基础档案数据"},
+        {"code": "menu:customers", "name": "客户管理", "module": "基础档案", "description": ""},
+        {"code": "menu:suppliers", "name": "供应商管理", "module": "基础档案", "description": ""},
+        {"code": "menu:materials", "name": "原辅材料", "module": "基础档案", "description": ""},
+        {"code": "menu:products", "name": "产品档案", "module": "基础档案", "description": ""},
+        {"code": "menu:bom", "name": "BOM管理", "module": "基础档案", "description": ""},
+        {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
+        {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
         # 采购管理
-        {"code": "purchase:read", "name": "查看采购", "module": "采购管理", "description": "查看采购订单/入库/发票/应付等"},
-        {"code": "purchase:write", "name": "编辑采购", "module": "采购管理", "description": "增删改采购单据"},
-        {"code": "purchase:approve", "name": "审批采购", "module": "采购管理", "description": "审核/反审核采购订单"},
+        {"code": "menu:purchase:orders", "name": "采购订单", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:receipts", "name": "采购入库", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:invoices", "name": "采购发票", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:ap", "name": "应付账款", "module": "采购管理", "description": ""},
+        {"code": "menu:purchase:payments", "name": "付款管理", "module": "采购管理", "description": ""},
         # 销售管理
-        {"code": "sales:read", "name": "查看销售", "module": "销售管理", "description": "查看销售订单/发货/发票/应收等"},
-        {"code": "sales:write", "name": "编辑销售", "module": "销售管理", "description": "增删改销售单据"},
-        {"code": "sales:approve", "name": "审批销售", "module": "销售管理", "description": "审核/反审核销售订单"},
+        {"code": "menu:sales:orders", "name": "销售订单", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:deliveries", "name": "销售发货", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:invoices", "name": "销售发票", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:customs", "name": "报关管理", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:ar", "name": "应收账款", "module": "销售管理", "description": ""},
+        {"code": "menu:sales:collections", "name": "收款管理", "module": "销售管理", "description": ""},
         # 生产管理
-        {"code": "production:read", "name": "查看生产", "module": "生产管理", "description": "查看生产订单/工作台/加工费等"},
-        {"code": "production:write", "name": "编辑生产", "module": "生产管理", "description": "增删改生产单据"},
+        {"code": "menu:production:orders", "name": "生产订单", "module": "生产管理", "description": ""},
+        {"code": "menu:production:workspace", "name": "生产工作台", "module": "生产管理", "description": ""},
+        {"code": "menu:production:invoices", "name": "加工费发票", "module": "生产管理", "description": ""},
+        {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
         # 库存管理
-        {"code": "inventory:read", "name": "查看库存", "module": "库存管理", "description": "查看库存收发存"},
-        {"code": "inventory:write", "name": "编辑库存", "module": "库存管理", "description": "库存调整操作"},
+        {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},
         # 退税管理
-        {"code": "tax:read", "name": "查看退税", "module": "退税管理", "description": "查看退税申报"},
-        {"code": "tax:write", "name": "编辑退税", "module": "退税管理", "description": "增删改退税申报"},
+        {"code": "menu:tax", "name": "退税申报", "module": "退税管理", "description": ""},
         # 系统管理
-        {"code": "system:admin", "name": "系统管理", "module": "系统管理", "description": "用户管理/角色管理/系统设置"},
+        {"code": "menu:system:users", "name": "用户管理", "module": "系统管理", "description": ""},
+        {"code": "menu:system:roles", "name": "角色管理", "module": "系统管理", "description": ""},
     ]
 
     # 插入权限（不存在则创建）
@@ -50,27 +61,39 @@ def _seed_rbac(db):
 
     # ====== 角色定义 ======
     all_codes = [p["code"] for p in permission_defs]
-    read_codes = [c for c in all_codes if c.endswith(":read")]
-    biz_write_codes = [c for c in all_codes if not c.startswith("system:") and c != "dashboard:read"]
-    biz_no_approve = [c for c in biz_write_codes if not c.endswith(":approve")]
+    foundation = [c for c in all_codes if c.startswith("menu:customers") or c.startswith("menu:suppliers")
+                  or c.startswith("menu:materials") or c.startswith("menu:products")
+                  or c.startswith("menu:bom") or c.startswith("menu:processes")
+                  or c.startswith("menu:hs-codes")]
+    purchase_all = [c for c in all_codes if c.startswith("menu:purchase:")]
+    purchase_base = [c for c in purchase_all if not c.endswith(("invoices", "ap", "payments"))]
+    purchase_finance = [c for c in purchase_all if c.endswith(("invoices", "ap", "payments"))]
+    sales_all = [c for c in all_codes if c.startswith("menu:sales:")]
+    sales_base = [c for c in sales_all if not c.endswith(("invoices", "ar", "collections"))]
+    sales_finance = [c for c in sales_all if c.endswith(("invoices", "ar", "collections"))]
+    production = [c for c in all_codes if c.startswith("menu:production:")]
+    inventory = ["menu:inventory", "menu:production:batch"]
+    tax = ["menu:tax"]
+    sys_menu = [c for c in all_codes if c.startswith("menu:system:")]
+
+    dashboard = ["menu:dashboard"]
+    biz_all = [c for c in all_codes if not c.startswith("menu:system:")]
 
     role_defs = [
-        {
-            "name": "管理员", "code": "admin", "description": "系统管理员，拥有全部权限",
-            "is_system": 1, "permissions": all_codes,
-        },
-        {
-            "name": "经理", "code": "manager", "description": "业务经理，拥有所有业务权限（含审批）",
-            "is_system": 1, "permissions": [c for c in all_codes if c != "system:admin"],
-        },
-        {
-            "name": "操作员", "code": "operator", "description": "业务操作员，可增删改但不可审批",
-            "is_system": 1, "permissions": biz_no_approve,
-        },
-        {
-            "name": "只读", "code": "readonly", "description": "仅可查看所有页面",
-            "is_system": 1, "permissions": read_codes + ["dashboard:read"],
-        },
+        {"name": "管理员", "code": "admin", "description": "系统管理员，拥有全部权限",
+         "is_system": 1, "permissions": all_codes},
+        {"name": "销售经理", "code": "sales_manager", "description": "销售管理",
+         "is_system": 1, "permissions": dashboard + sales_all},
+        {"name": "采购经理", "code": "purchase_manager", "description": "采购管理",
+         "is_system": 1, "permissions": dashboard + purchase_all},
+        {"name": "生产经理", "code": "production_manager", "description": "生产管理（含基础档案和库存）",
+         "is_system": 1, "permissions": dashboard + foundation + production + inventory},
+        {"name": "财务经理", "code": "finance_manager", "description": "财务（含发票、应收应付、收款付款、库存、退税）",
+         "is_system": 1, "permissions": dashboard + purchase_finance + sales_finance + inventory + tax},
+        {"name": "库管员", "code": "warehouse_keeper", "description": "库存管理",
+         "is_system": 1, "permissions": dashboard + inventory},
+        {"name": "只读", "code": "readonly", "description": "仅可查看驾驶舱",
+         "is_system": 1, "permissions": dashboard},
     ]
 
     admin_role = None

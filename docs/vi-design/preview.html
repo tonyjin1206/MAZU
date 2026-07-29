@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTS · VI 设计预览 v3（妈祖·海洋）</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy-900: #0a1628;
+  --navy-800: #0e1f3e;
+  --navy-700: #132d4a;
+  --navy-600: #1b3a5c;
+  --navy-500: #224a6e;
+  --blue-400: #60a5fa;
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-700: #1d4ed8;
+  --teal-400: #2dd4bf;
+  --teal-500: #14b8a6;
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  /* 侧边栏 — 调亮、偏蓝 */
+  --sidebar-bg: #0e1f3e;
+  --sidebar-bg-end: #1b3a5c;
+  --sidebar-text: rgba(255,255,255,0.55);
+  --sidebar-active: #fff;
+  --sidebar-hover: rgba(255,255,255,0.05);
+  --sidebar-width: 240px;
+  --page-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: 1px solid var(--slate-200);
+  --card-radius: 10px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+  --shadow-lg: 0 8px 30px rgba(0,0,0,0.08);
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);font-size:13px;color:var(--slate-700);background:var(--slate-100);-webkit-font-smoothing:antialiased}
+.page{max-width:1200px;margin:0 auto;padding:48px 32px}
+h1{font-size:28px;font-weight:700;color:var(--slate-900);letter-spacing:-0.5px}
+h1 span{font-weight:400;color:var(--slate-400);font-size:14px;letter-spacing:normal}
+h2{font-size:15px;font-weight:600;color:var(--slate-800);margin-bottom:16px;letter-spacing:-0.2px;display:flex;align-items:center;gap:8px}
+h2:after{content:'';flex:1;height:1px;background:var(--slate-200)}
+.tagline{font-size:13px;color:var(--slate-400);margin:4px 0 36px;font-weight:400}
+.section{margin-bottom:56px}
+.card{background:var(--card-bg);border:var(--card-border);border-radius:var(--card-radius);padding:24px;box-shadow:var(--shadow-sm)}
+.card+.card{margin-top:10px}
+.card-header{font-size:13px;font-weight:600;color:var(--slate-600);margin-bottom:16px;letter-spacing:0.2px;text-transform:uppercase}
+
+/* ═══ Logo — 新版 ═══ */
+.logo-row{display:flex;align-items:center;gap:36px;flex-wrap:wrap}
+.logo-frame{width:140px;height:140px;border-radius:20px;display:flex;align-items:center;justify-content:center;background:linear-gradient(145deg,var(--navy-800),var(--navy-600));box-shadow:0 8px 32px rgba(14,31,62,0.2)}
+.logo-frame svg{width:120px;height:120px}
+.logo-frame.small{width:48px;height:48px;border-radius:12px;box-shadow:0 4px 16px rgba(14,31,62,0.15)}
+.logo-frame.small svg{width:38px;height:38px}
+.brand-detail{display:flex;flex-direction:column;gap:6px}
+.brand-name{font-size:28px;font-weight:700;color:var(--slate-900);letter-spacing:-0.8px}
+.brand-sub{font-size:13px;color:var(--slate-400);font-weight:400;line-height:1.5}
+.brand-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.brand-tags span{padding:3px 12px;border-radius:20px;font-size:11px;font-weight:500;background:var(--slate-100);color:var(--slate-500)}
+.logo-variants{display:flex;gap:20px;align-items:center;margin-top:16px;padding-top:16px;border-top:1px solid var(--slate-100)}
+.logo-variant-item{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--slate-500)}
+
+/* ═══ Colors ═══ */
+.color-section{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.color-group-title{font-size:11px;font-weight:600;color:var(--slate-500);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.3px}
+.swatch-row{display:flex;gap:4px;margin-bottom:8px}
+.swatch{height:36px;border-radius:6px;flex:1;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:rgba(255,255,255,0.85)}
+.swatch.light{color:var(--slate-600)}
+.semantic-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.semantic-tag{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:500}
+.semantic-tag .dot{width:10px;height:10px;border-radius:50%}
+.module-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.module-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--slate-50);border:1px solid var(--slate-100)}
+.module-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.module-name{font-size:12px;color:var(--slate-600);font-weight:500}
+
+/* ═══ Icons ═══ */
+.icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:4px}
+.icon-cell{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 4px 8px;border-radius:8px;cursor:default;transition:all .15s}
+.icon-cell:hover{background:var(--slate-50)}
+.icon-cell svg{width:22px;height:22px;color:var(--slate-500)}
+.icon-label{font-size:10px;color:var(--slate-400);text-align:center;line-height:1.2}
+
+/* ═══ Sidebar — 新版浅蓝 ═══ */
+.mock-layout{display:flex;border-radius:12px;overflow:hidden;border:var(--card-border);box-shadow:var(--shadow-lg);min-height:440px}
+.mock-sidebar{width:var(--sidebar-width);background:linear-gradient(180deg,var(--sidebar-bg),var(--sidebar-bg-end));padding:0;flex-shrink:0;display:flex;flex-direction:column}
+.mock-sidebar-header{padding:16px 16px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.mock-sidebar-header svg{width:28px;height:28px;flex-shrink:0}
+.mock-sidebar-header .brand{color:#fff;font-size:16px;font-weight:600;letter-spacing:-0.3px}
+.mock-sidebar-header .badge{font-size:9px;padding:2px 8px;border-radius:4px;background:rgba(59,130,246,0.2);color:var(--blue-400);font-weight:600;margin-left:auto;letter-spacing:0.3px}
+.mock-nav{flex:1;padding:8px;display:flex;flex-direction:column;gap:1px}
+.mock-nav-label{font-size:10px;font-weight:600;color:rgba(255,255,255,0.2);text-transform:uppercase;letter-spacing:1px;padding:12px 10px 6px}
+.mock-nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;font-size:13px;color:var(--sidebar-text);cursor:default;transition:all .1s}
+.mock-nav-item:hover{background:var(--sidebar-hover);color:rgba(255,255,255,0.7)}
+.mock-nav-item.active{background:rgba(59,130,246,0.15);color:var(--sidebar-active);font-weight:500}
+.mock-nav-item svg{width:18px;height:18px;color:currentColor;flex-shrink:0}
+.mock-nav-item .arrow{font-size:10px;margin-left:auto;opacity:0.25}
+.mock-nav-item .count{font-size:10px;font-weight:600;background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:4px;margin-left:auto;color:rgba(255,255,255,0.4)}
+.mock-nav-sub{padding-left:4px}
+.mock-nav-sub .mock-nav-item{padding-left:32px;font-size:12px;padding-top:6px;padding-bottom:6px}
+.mock-sidebar-footer{padding:12px 16px;border-top:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;gap:10px}
+.mock-sidebar-avatar{width:30px;height:30px;border-radius:8px;background:rgba(59,130,246,0.2);display:flex;align-items:center;justify-content:center;color:var(--blue-400);font-size:12px;font-weight:700}
+.mock-sidebar-footer .name{font-size:12px;color:rgba(255,255,255,0.65)}
+.mock-sidebar-footer .role{font-size:10px;color:rgba(255,255,255,0.25);margin-left:auto}
+
+/* ═══ Main Content ═══ */
+.mock-main{flex:1;background:var(--page-bg);display:flex;flex-direction:column}
+.mock-header{height:52px;background:rgba(255,255,255,0.8);backdrop-filter:blur(12px);border-bottom:1px solid var(--slate-200);display:flex;align-items:center;padding:0 24px;justify-content:space-between;flex-shrink:0}
+.mock-header-left{display:flex;align-items:center;gap:16px}
+.mock-breadcrumb{font-size:13px;color:var(--slate-400)}
+.mock-breadcrumb strong{color:var(--slate-700);font-weight:500}
+.mock-header-right{display:flex;align-items:center;gap:16px}
+.mock-search{width:180px;padding:6px 12px;border:1px solid var(--slate-200);border-radius:8px;font-size:12px;background:var(--slate-50);color:var(--slate-500);outline:none}
+.mock-avatar{width:32px;height:32px;border-radius:8px;background:var(--blue-500);display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:600}
+.mock-content{padding:20px 24px;flex:1;overflow:auto}
+.mock-page-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.mock-page-header h3{font-size:18px;font-weight:600;color:var(--slate-900);letter-spacing:-0.3px}
+.mock-page-header .sub{font-size:13px;color:var(--slate-400);font-weight:400;margin-left:8px}
+.mock-toolbar{display:flex;gap:6px}
+.mock-btn{padding:7px 14px;border-radius:8px;font-size:12px;font-weight:500;border:none;cursor:default;font-family:var(--font);transition:all .1s}
+.mock-btn.primary{background:var(--blue-500);color:#fff}
+.mock-btn.ghost{background:transparent;color:var(--slate-500);border:1px solid var(--slate-200)}
+.mock-filter-bar{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap}
+.mock-filter-item{display:flex;align-items:center;gap:6px;padding:6px 12px;background:#fff;border:1px solid var(--slate-200);border-radius:8px;font-size:12px;color:var(--slate-500)}
+.mock-filter-item input{border:none;outline:none;font-size:12px;color:var(--slate-700);width:100px;background:transparent;font-family:var(--font)}
+.mock-filter-item .sep{color:var(--slate-300);padding:0 4px}
+.mock-table-wrap{background:#fff;border:var(--card-border);border-radius:10px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.mock-table{width:100%;border-collapse:collapse;font-size:13px}
+.mock-table thead{background:var(--slate-50)}
+.mock-table th{padding:10px 14px;font-size:11px;font-weight:600;color:var(--slate-500);text-align:left;border-bottom:1px solid var(--slate-200);text-transform:uppercase;letter-spacing:0.4px}
+.mock-table td{padding:10px 14px;color:var(--slate-600);border-bottom:1px solid var(--slate-100)}
+.mock-table tbody tr{transition:background .1s;cursor:default}
+.mock-table tbody tr:hover{background:var(--slate-50)}
+.mock-table .right{text-align:right}
+.mock-table .center{text-align:center}
+.mock-table .mono{font-family:'Inter',monospace;font-size:12px;color:var(--slate-500)}
+.mock-table .link{color:var(--blue-500);font-weight:500}
+.status-tag{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:500}
+.status-tag.info{background:var(--slate-100);color:var(--slate-600)}
+.status-tag.primary{background:#eff6ff;color:var(--blue-700)}
+.status-tag.success{background:#ecfdf5;color:#065f46}
+.status-tag.warning{background:#fffbeb;color:#92400e}
+.status-tag.danger{background:#fef2f2;color:#991b1b}
+.mock-table-actions{display:flex;gap:8px;font-size:12px;color:var(--slate-400)}
+.mock-table-actions span{cursor:default;transition:color .1s}
+.mock-table-actions span:hover{color:var(--blue-500)}
+.mock-pagination{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-top:1px solid var(--slate-100);font-size:12px;color:var(--slate-400)}
+.mock-pages{display:flex;gap:4px}
+.mock-pages span{padding:4px 10px;border-radius:6px;cursor:default;transition:all .1s}
+.mock-pages span:hover{background:var(--slate-50)}
+.mock-pages span.active{background:var(--blue-500);color:#fff}
+
+/* ═══ Dashboard ═══ */
+.mock-kpi-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.mock-kpi{background:#fff;border:var(--card-border);border-radius:10px;padding:16px;box-shadow:var(--shadow-sm)}
+.mock-kpi-header{font-size:12px;font-weight:500;color:var(--slate-400);margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.mock-kpi-header .trend{font-size:11px;font-weight:600;margin-left:auto}
+.mock-kpi-value{font-size:22px;font-weight:700;color:var(--slate-900);letter-spacing:-0.5px;margin-bottom:8px}
+.mock-mini-bars{display:flex;align-items:flex-end;gap:4px;height:48px}
+.mock-mini-bar{flex:1;border-radius:3px;min-height:4px}
+.type-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.type-demo{display:flex;flex-direction:column;gap:6px}
+.type-row{display:flex;align-items:baseline;gap:16px;padding:6px 0;border-bottom:1px solid var(--slate-100)}
+.type-label{width:70px;font-size:10px;color:var(--slate-400);text-align:right;flex-shrink:0;font-weight:500;text-transform:uppercase;letter-spacing:0.3px}
+.type-sample{flex:1;color:var(--slate-800)}
+.flex-demo{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.radius-sample{width:48px;height:48px;background:var(--slate-50);border:1px solid var(--slate-200);display:flex;align-items:center;justify-content:center;font-size:9px;color:var(--slate-400);font-weight:500}
+.shadow-sample{width:90px;height:48px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--slate-400);font-weight:500}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+</style>
+</head>
+<body>
+
+<!-- ═══ SVG Sprite ═══ -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <g id="mts-dashboard"><rect x="3" y="3" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.9"/><rect x="15" y="3" width="9" height="5" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="15" y="11" width="9" height="13" rx="1.5" fill="currentColor" opacity="0.7"/><rect x="3" y="15" width="9" height="9" rx="1.5" fill="currentColor" opacity="0.5"/></g>
+    <g id="mts-foundation"><path d="M12 3L3 8v8l9 5 9-5V8l-9-5z" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5"/><rect x="9" y="11" width="6" height="8" rx="1" fill="currentColor" opacity="0.7"/><circle cx="12" cy="7" r="2" fill="currentColor" opacity="0.8"/></g>
+    <g id="mts-sales"><path d="M20 12c0 4.5-3.5 8-8 8s-8-3.5-8-8 3.5-8 8-8 8 3.5 8 8z" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1.5"/><path d="M9 16l6-8M11 9h4v4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="1.5" fill="currentColor" opacity="0.6"/></g>
+    <g id="mts-purchase"><rect x="4" y="6" width="16" height="12" rx="2" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1.5"/><path d="M8 10l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M12 14V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></g>
+    <g id="mts-production"><rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1.5"/><path d="M8 8h3v3H8z" fill="currentColor" opacity="0.6"/><path d="M13 8h3v3h-3z" fill="currentColor" opacity="0.4"/><path d="M8 13h3v3H8z" fill="currentColor" opacity="0.5"/><path d="M13 13h3v3h-3z" fill="currentColor" opacity="0.3"/></g>
+    <g id="mts-inventory"><rect x="3" y="5" width="7" height="14" rx="1.5" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/><rect x="14" y="3" width="7" height="16" rx="1.5" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="5" width="7" height="4" rx="1" fill="currentColor" opacity="0.6"/><rect x="14" y="3" width="7" height="4" rx="1" fill="currentColor" opacity="0.5"/><path d="M8 13h-2M8 16h-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M19 11h-2M19 14h-2M19 17h-2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></g>
+    <g id="mts-tax-refund"><path d="M6 4h12l2 3v13a2 2 0 01-2 2H6a2 2 0 01-2-2V7l2-3z" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1.5"/><path d="M12 10v8M8 14l4-4 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="mts-system"><circle cx="12" cy="12" r="3" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1l2.1-2.1M17 7l2.1-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/></g>
+    <g id="mts-customer"><circle cx="12" cy="8" r="4" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5"/><path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="8" r="2.5" fill="currentColor" opacity="0.7"/></g>
+    <g id="mts-supplier"><rect x="4" y="6" width="16" height="12" rx="2" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/><path d="M8 12h8M8 16h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="12" cy="9" r="1.5" fill="currentColor" opacity="0.6"/></g>
+    <g id="mts-material"><path d="M5 8l7-4 7 4v8l-7 4-7-4V8z" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5" fill="currentColor" opacity="0.6"/><path d="M12 6v3M12 15v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></g>
+    <g id="mts-product"><rect x="5" y="4" width="14" height="16" rx="2" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.5"/><rect x="8" y="7" width="8" height="3" rx="1" fill="currentColor" opacity="0.6"/><path d="M8 13h8M8 16h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></g>
+    <g id="mts-bom"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.6"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.4"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.5"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="currentColor" opacity="0.3"/><path d="M10 6.5h3M10 17.5h3M18 10v3M6 10v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></g>
+    <g id="mts-process"><circle cx="7" cy="12" r="3" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5"/><circle cx="17" cy="7" r="3" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5"/><circle cx="17" cy="17" r="3" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.5"/><path d="M9.5 10.5l4.5-3M9.5 13.5l4.5 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="7" cy="12" r="1.5" fill="currentColor" opacity="0.7"/><circle cx="17" cy="7" r="1.5" fill="currentColor" opacity="0.7"/><circle cx="17" cy="17" r="1.5" fill="currentColor" opacity="0.7"/></g>
+    <g id="mts-order"><rect x="5" y="3" width="14" height="18" rx="2" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1.5"/><path d="M8 7h8M8 11h8M8 15h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></g>
+    <g id="mts-invoice"><rect x="5" y="3" width="14" height="18" rx="2" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1.5"/><path d="M9 14l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="8" y="6" width="8" height="3" rx="1" fill="currentColor" opacity="0.4"/></g>
+    <g id="mts-payment"><rect x="3" y="8" width="18" height="10" rx="2" fill="currentColor" opacity="0.1" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="13" r="3" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.2"/><circle cx="12" cy="13" r="1.5" fill="currentColor" opacity="0.6"/><path d="M5 6l7-3 7 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></g>
+    <g id="mts-shipping"><path d="M4 17c0-2 2-4 8-4s8 2 8 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M8 17v-4M16 17v-4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M5 14l2-3h10l2 3" fill="currentColor" opacity="0.15" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><circle cx="12" cy="9" r="2" fill="currentColor" opacity="0.2" stroke="currentColor" stroke-width="1.2"/></g>
+  </defs>
+</svg>
+
+<div class="page">
+  <h1>MTS Visual Identity <span>v3 — 妈祖 · 海洋</span></h1>
+  <p class="tagline">Mazu Trade System · 轻量化外贸 ERP · 品牌视觉规范预览</p>
+
+  <!-- ═══ 1. Logo 新版 ═══ -->
+  <div class="section">
+    <h2>Logo · 妈祖保佑 · 出海平安</h2>
+    <div class="card">
+      <div class="logo-row">
+        <div class="logo-frame">
+          <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 28,140 C 28,140 40,75 65,55 C 85,39 100,45 100,45 C 100,45 115,39 135,55 C 160,75 172,140 172,140 C 172,140 135,110 100,95 C 65,110 28,140 28,140 Z" fill="url(#logoGrad)" opacity="0.92"/>
+            <circle cx="100" cy="68" r="22" fill="url(#innerGrad)" opacity="0.12"/>
+            <circle cx="100" cy="68" r="22" stroke="url(#innerGrad)" stroke-width="2" opacity="0.35"/>
+            <g transform="translate(100,68)">
+              <path d="M0,-9 L6,0 L0,9 L-6,0 Z" fill="url(#starGrad)"/>
+              <path d="M6,0 L14,0" stroke="url(#starGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+              <path d="M-6,0 L-14,0" stroke="url(#starGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+              <path d="M0,6 L0,14" stroke="url(#starGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+              <path d="M0,-6 L0,-14" stroke="url(#starGrad)" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+            </g>
+            <path d="M 12,148 Q 40,138 65,148 Q 90,158 115,148 Q 140,138 165,148 Q 180,153 188,148" stroke="url(#waveLineGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.5"/>
+            <defs>
+              <linearGradient id="logoGrad" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0%" stop-color="#132d4a"/><stop offset="35%" stop-color="#1e40af"/><stop offset="65%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#06b6d4"/>
+              </linearGradient>
+              <linearGradient id="innerGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient>
+              <linearGradient id="starGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#06b6d4"/><stop offset="100%" stop-color="#14b8a6"/></linearGradient>
+              <linearGradient id="waveLineGrad" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0"/><stop offset="30%" stop-color="#3b82f6" stop-opacity="0.6"/><stop offset="50%" stop-color="#06b6d4" stop-opacity="0.8"/><stop offset="70%" stop-color="#3b82f6" stop-opacity="0.6"/><stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="brand-detail">
+          <div class="brand-name">MTS</div>
+          <div class="brand-sub">Mazu Trade System · 妈祖贸易系统</div>
+          <div style="font-size:12px;color:var(--slate-500);line-height:1.6;max-width:360px;margin-top:4px">
+            两股波浪相拥 = 妈祖保佑出海平安 · 菱形星 = 指路星/罗盘<br>
+            底部水纹 = 海上贸易之路 · 蓝→青渐变 = 深海到晴空
+          </div>
+          <div class="logo-variants">
+            <div class="logo-variant-item">
+              <div class="logo-frame small">
+                <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M 28,140 C 28,140 40,75 65,55 C 85,39 100,45 100,45 C 100,45 115,39 135,55 C 160,75 172,140 172,140 C 172,140 135,110 100,95 C 65,110 28,140 28,140 Z" fill="url(#logoGrad)" opacity="0.92"/>
+                  <circle cx="100" cy="68" r="22" fill="url(#innerGrad)" opacity="0.12"/>
+                  <circle cx="100" cy="68" r="22" stroke="url(#innerGrad)" stroke-width="2" opacity="0.35"/>
+                  <g transform="translate(100,68)"><path d="M0,-9 L6,0 L0,9 L-6,0 Z" fill="url(#starGrad)"/></g>
+                  <path d="M 12,148 Q 40,138 65,148 Q 90,158 115,148 Q 140,138 165,148 Q 180,153 188,148" stroke="url(#waveLineGrad)" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.5"/>
+                </svg>
+              </div>
+              <span>侧边栏 38px</span>
+            </div>
+            <div class="logo-variant-item">
+              <div style="width:18px;height:18px;border-radius:4px;background:linear-gradient(145deg,var(--navy-800),var(--navy-600));display:flex;align-items:center;justify-content:center">
+                <svg viewBox="0 0 200 200" style="width:14px;height:14px"><path d="M 28,140 C 28,140 40,75 65,55 C 85,39 100,45 100,45 C 100,45 115,39 135,55 C 160,75 172,140 172,140 C 172,140 135,110 100,95 C 65,110 28,140 28,140 Z" fill="#3b82f6"/><path d="M0,-9 L6,0 L0,9 L-6,0 Z" fill="#14b8a6" transform="translate(100,68)"/></svg>
+              </div>
+              <span>Favicon 16px</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 2. Colors ═══ -->
+  <div class="section">
+    <h2>Color System</h2>
+    <div class="card">
+      <div class="color-section">
+        <div class="color-group">
+          <div class="color-group-title">Primary · Ocean Blue</div>
+          <div style="display:flex;gap:4px">
+            <div><div class="swatch" style="background:#eff6ff;color:#1e293b">50</div></div>
+            <div><div class="swatch" style="background:#dbeafe;color:#1e293b">100</div></div>
+            <div><div class="swatch" style="background:#bfdbfe;color:#1e293b">200</div></div>
+            <div><div class="swatch" style="background:#93c5fd">300</div></div>
+            <div><div class="swatch" style="background:#60a5fa">400</div></div>
+            <div><div class="swatch" style="background:#3b82f6">500</div></div>
+            <div><div class="swatch" style="background:#2563eb">600</div></div>
+            <div><div class="swatch" style="background:#1d4ed8">700</div></div>
+            <div><div class="swatch" style="background:#1e40af">800</div></div>
+            <div><div class="swatch" style="background:#1e3a5f">900</div></div>
+          </div>
+          <div class="color-group-title" style="margin-top:12px">Neutral · Slate</div>
+          <div style="display:flex;gap:4px">
+            <div><div class="swatch" style="background:#f8fafc;color:#1e293b">50</div></div>
+            <div><div class="swatch" style="background:#f1f5f9;color:#1e293b">100</div></div>
+            <div><div class="swatch" style="background:#e2e8f0;color:#1e293b">200</div></div>
+            <div><div class="swatch" style="background:#cbd5e1;color:#1e293b">300</div></div>
+            <div><div class="swatch" style="background:#94a3b8">400</div></div>
+            <div><div class="swatch" style="background:#64748b">500</div></div>
+            <div><div class="swatch" style="background:#475569">600</div></div>
+            <div><div class="swatch" style="background:#334155">700</div></div>
+            <div><div class="swatch" style="background:#1e293b">800</div></div>
+            <div><div class="swatch" style="background:#0f172a">900</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="color-group">
+            <div class="color-group-title">Semantic Colors</div>
+            <div class="semantic-row">
+              <span class="semantic-tag" style="background:#ecfdf5;color:#065f46"><span class="dot" style="background:#10b981"></span>Success #10b981</span>
+              <span class="semantic-tag" style="background:#fffbeb;color:#92400e"><span class="dot" style="background:#f59e0b"></span>Warning #f59e0b</span>
+              <span class="semantic-tag" style="background:#fef2f2;color:#991b1b"><span class="dot" style="background:#ef4444"></span>Danger #ef4444</span>
+              <span class="semantic-tag" style="background:#f0fdfa;color:#115e59"><span class="dot" style="background:#14b8a6"></span>Teal #14b8a6</span>
+            </div>
+          </div>
+          <div class="color-group" style="margin-top:16px">
+            <div class="color-group-title">Sidebar · Deep Blue（调亮偏蓝）</div>
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <div><div class="swatch" style="background:#0a1628">#0a1628</div></div>
+              <div><div class="swatch" style="background:#0e1f3e">#0e1f3e</div></div>
+              <div><div class="swatch" style="background:#132d4a">#132d4a</div></div>
+              <div><div class="swatch" style="background:#1b3a5c">#1b3a5c</div></div>
+              <div><div class="swatch" style="background:#224a6e">#224a6e</div></div>
+            </div>
+            <div style="font-size:10px;color:var(--slate-400);margin-top:4px">渐变：<code>#0e1f3e → #1b3a5c</code>（之前是近乎黑色 #0b1219）</div>
+          </div>
+          <div class="color-group" style="margin-top:16px">
+            <div class="color-group-title">Module Accents</div>
+            <div class="module-grid">
+              <div class="module-item"><div class="module-dot" style="background:#6366f1"></div><span class="module-name">基础档案</span></div>
+              <div class="module-item"><div class="module-dot" style="background:#22c55e"></div><span class="module-name">销售管理</span></div>
+              <div class="module-item"><div class="module-dot" style="background:#f59e0b"></div><span class="module-name">采购管理</span></div>
+              <div class="module-item"><div class="module-dot" style="background:#8b5cf6"></div><span class="module-name">生产管理</span></div>
+              <div class="module-item"><div class="module-dot" style="background:#06b6d4"></div><span class="module-name">库存管理</span></div>
+              <div class="module-item"><div class="module-dot" style="background:#ec4899"></div><span class="module-name">退税管理</span></div>
+              <div class="module-item"><div class="module-dot" style="background:#6b7280"></div><span class="module-name">系统管理</span></div>
+              <div class="module-item"><div class="module-dot" style="background:#3b82f6"></div><span class="module-name">驾驶舱</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 3. Icons ═══ -->
+  <div class="section">
+    <h2>Icons</h2>
+    <div class="card" style="padding:16px"><div class="icon-grid" id="iconGrid"></div></div>
+  </div>
+
+  <!-- ═══ 4. Layout Mockup ═══ -->
+  <div class="section">
+    <h2>Layout · 采购订单列表</h2>
+    <div class="mock-layout">
+      <!-- Sidebar 新版浅蓝 -->
+      <div class="mock-sidebar">
+        <div class="mock-sidebar-header">
+          <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M 28,140 C 28,140 40,75 65,55 C 85,39 100,45 100,45 C 100,45 115,39 135,55 C 160,75 172,140 172,140 C 172,140 135,110 100,95 C 65,110 28,140 28,140 Z" fill="url(#logoGrad)" opacity="0.92"/>
+            <circle cx="100" cy="68" r="22" fill="url(#innerGrad)" opacity="0.12"/>
+            <circle cx="100" cy="68" r="22" stroke="url(#innerGrad)" stroke-width="2" opacity="0.35"/>
+            <g transform="translate(100,68)"><path d="M0,-9 L6,0 L0,9 L-6,0 Z" fill="url(#starGrad)"/></g>
+            <defs>
+              <linearGradient id="logoGrad" x1="0" y1="1" x2="1" y2="0"><stop offset="0%" stop-color="#132d4a"/><stop offset="35%" stop-color="#1e40af"/><stop offset="65%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient>
+              <linearGradient id="innerGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#06b6d4"/></linearGradient>
+              <linearGradient id="starGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#06b6d4"/><stop offset="100%" stop-color="#14b8a6"/></linearGradient>
+            </defs>
+          </svg>
+          <span class="brand">MTS</span>
+          <span class="badge">v1.2</span>
+        </div>
+        <div class="mock-nav">
+          <div class="mock-nav-label">Main</div>
+          <div class="mock-nav-item active"><svg><use href="#mts-dashboard"/></svg>工作台</div>
+          <div class="mock-nav-item"><svg><use href="#mts-foundation"/></svg>基础档案<span class="arrow">▸</span></div>
+          <div class="mock-nav-sub">
+            <div class="mock-nav-item"><svg><use href="#mts-customer"/></svg>客户管理</div>
+            <div class="mock-nav-item"><svg><use href="#mts-supplier"/></svg>供应商管理</div>
+            <div class="mock-nav-item"><svg><use href="#mts-material"/></svg>原辅材料</div>
+          </div>
+          <div class="mock-nav-item"><svg><use href="#mts-sales"/></svg>销售管理<span class="arrow">▸</span></div>
+          <div class="mock-nav-item"><svg><use href="#mts-purchase"/></svg>采购管理<span class="count">5</span></div>
+          <div class="mock-nav-item"><svg><use href="#mts-production"/></svg>生产管理<span class="arrow">▸</span></div>
+          <div class="mock-nav-item"><svg><use href="#mts-inventory"/></svg>库存管理<span class="arrow">▸</span></div>
+          <div class="mock-nav-label" style="margin-top:auto">System</div>
+          <div class="mock-nav-item"><svg><use href="#mts-tax-refund"/></svg>退税管理</div>
+          <div class="mock-nav-item"><svg><use href="#mts-system"/></svg>系统管理<span class="arrow">▸</span></div>
+        </div>
+        <div class="mock-sidebar-footer">
+          <div class="mock-sidebar-avatar">A</div>
+          <span class="name">Tony Jin</span>
+          <span class="role">管理员</span>
+        </div>
+      </div>
+
+      <!-- Main -->
+      <div class="mock-main">
+        <div class="mock-header">
+          <div class="mock-header-left"><span class="mock-breadcrumb">采购管理 / <strong>采购订单</strong></span></div>
+          <div class="mock-header-right">
+            <input class="mock-search" placeholder="搜索订单...">
+            <div class="mock-avatar">T</div>
+          </div>
+        </div>
+        <div class="mock-content">
+          <div class="mock-page-header">
+            <h3>采购订单 <span class="sub">共 24 笔</span></h3>
+            <div class="mock-toolbar">
+              <button class="mock-btn primary">+ 新建订单</button>
+              <button class="mock-btn ghost">导出</button>
+            </div>
+          </div>
+          <div class="mock-filter-bar">
+            <div class="mock-filter-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              <input placeholder="订单号 / 供应商">
+            </div>
+            <div class="mock-filter-item"><span>📅</span><input placeholder="开始日期" style="width:90px"><span class="sep">—</span><input placeholder="结束日期" style="width:90px"></div>
+            <div class="mock-filter-item"><span>💰</span><input placeholder="最小" style="width:80px"><span class="sep">~</span><input placeholder="最大" style="width:80px"></div>
+            <button class="mock-btn ghost" style="padding:6px 14px">重置</button>
+          </div>
+          <div class="mock-table-wrap">
+            <table class="mock-table">
+              <thead><tr><th>订单号</th><th>供应商</th><th>日期</th><th class="right">含税金额</th><th class="right">未入库</th><th class="right">未付款</th><th>状态</th><th class="right">操作</th></tr></thead>
+              <tbody>
+                <tr><td class="link">PO-20260728-001</td><td>宁波纺织有限公司</td><td class="mono">2026-07-28</td><td class="right" style="font-weight:500">¥56,800</td><td class="right" style="color:var(--warning);font-weight:500">¥56,800</td><td class="right">¥56,800</td><td><span class="status-tag info">待审核</span></td><td class="right"><div class="mock-table-actions" style="justify-content:flex-end"><span>审核</span><span>编辑</span><span style="color:var(--danger)">删除</span></div></td></tr>
+                <tr><td class="link">PO-20260727-002</td><td>广州辅料贸易</td><td class="mono">2026-07-27</td><td class="right" style="font-weight:500">¥12,340</td><td class="right" style="color:var(--slate-400)">—</td><td class="right">¥12,340</td><td><span class="status-tag primary">已审核</span></td><td class="right"><div class="mock-table-actions" style="justify-content:flex-end"><span>入库</span><span>取消审核</span></div></td></tr>
+                <tr><td class="link">PO-20260725-001</td><td>上海国际物流</td><td class="mono">2026-07-25</td><td class="right" style="font-weight:500">¥89,200</td><td class="right" style="color:var(--warning);font-weight:500">¥12,340</td><td class="right">¥45,600</td><td><span class="status-tag warning">部分入库</span></td><td class="right"><div class="mock-table-actions" style="justify-content:flex-end"><span>入库</span><span>详情</span></div></td></tr>
+                <tr><td class="link">PO-20260722-001</td><td>汕头锦亨实业</td><td class="mono">2026-07-22</td><td class="right" style="font-weight:500">¥158,900</td><td class="right" style="color:var(--slate-400)">—</td><td class="right" style="color:var(--slate-400)">—</td><td><span class="status-tag success">已付款</span></td><td class="right"><div class="mock-table-actions" style="justify-content:flex-end"><span>详情</span></div></td></tr>
+                <tr><td class="link">PO-20260720-001</td><td>深圳远洋纺织</td><td class="mono">2026-07-20</td><td class="right" style="font-weight:500">¥23,450</td><td class="right" style="color:var(--slate-400)">—</td><td class="right" style="color:var(--warning);font-weight:500">¥11,725</td><td><span class="status-tag warning">部分付款</span></td><td class="right"><div class="mock-table-actions" style="justify-content:flex-end"><span>付款</span><span>详情</span></div></td></tr>
+              </tbody>
+            </table>
+            <div class="mock-pagination">
+              <span>显示 5 / 24 条</span>
+              <div class="mock-pages"><span style="opacity:0.3">‹</span><span class="active">1</span><span>2</span><span>3</span><span>⋯</span><span>5</span><span style="opacity:0.3">›</span></div>
+              <span>20 条 / 页</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 5. Dashboard ═══ -->
+  <div class="section">
+    <h2>Dashboard · 驾驶舱</h2>
+    <div class="card" style="padding:16px">
+      <div class="mock-kpi-row" id="kpiRow">
+        <div class="mock-kpi"><div class="mock-kpi-header">现金收入 <span class="trend" style="color:var(--success)">↑ 12.3%</span></div><div class="mock-kpi-value">¥872,460</div><div class="mock-mini-bars" id="cashBar"></div></div>
+        <div class="mock-kpi"><div class="mock-kpi-header">现金支付 <span class="trend" style="color:var(--danger)">↑ 8.7%</span></div><div class="mock-kpi-value">¥643,180</div><div class="mock-mini-bars" id="payBar"></div></div>
+        <div class="mock-kpi"><div class="mock-kpi-header">现金净收支 <span class="trend" style="color:var(--success)">正数</span></div><div class="mock-kpi-value" style="color:var(--success)">+¥229,280</div><div class="mock-mini-bars" id="netBar"></div></div>
+      </div>
+      <table class="mock-table" style="border:var(--card-border);border-radius:10px;overflow:hidden">
+        <thead><tr><th>订单号</th><th>客户</th><th>产品</th><th class="right">收入</th><th class="right">成本</th><th class="right">毛利</th><th class="center">毛利率</th></tr></thead>
+        <tbody>
+          <tr><td class="link">SD-20260728-001</td><td>Abby &amp; Co</td><td>棉质衬衫</td><td class="right" style="font-weight:500">¥12,800</td><td class="right">¥9,340</td><td class="right" style="color:var(--success);font-weight:600">¥3,460</td><td class="center"><span class="status-tag success">27%</span></td></tr>
+          <tr><td class="link">SD-20260727-003</td><td>美邦服饰</td><td>牛仔面料</td><td class="right" style="font-weight:500">¥45,000</td><td class="right">¥33,750</td><td class="right" style="color:var(--success);font-weight:600">¥11,250</td><td class="center"><span class="status-tag success">25%</span></td></tr>
+          <tr><td class="link">SD-20260726-001</td><td>J&amp;K Trading</td><td>丝绸围巾</td><td class="right" style="font-weight:500">¥22,400</td><td class="right">¥19,040</td><td class="right" style="color:var(--warning);font-weight:600">¥3,360</td><td class="center"><span class="status-tag warning">15%</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ═══ 6. Typography ═══ -->
+  <div class="section">
+    <h2>Typography · Inter</h2>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">Type Scale</div>
+        <div class="type-demo">
+          <div class="type-row"><span class="type-label" style="width:100px">10px · xs</span><span class="type-sample" style="font-size:10px">辅助 · 标签 · Caption</span></div>
+          <div class="type-row"><span class="type-label" style="width:100px">11px · sm</span><span class="type-sample" style="font-size:11px;color:var(--slate-500)">次要文字 · 表格</span></div>
+          <div class="type-row"><span class="type-label" style="width:100px;font-weight:600">** 13px · base **</span><span class="type-sample" style="font-size:13px;font-weight:500">正文 · 表格 · 表单</span></div>
+          <div class="type-row"><span class="type-label" style="width:100px">15px · lg</span><span class="type-sample" style="font-size:15px;font-weight:600">卡片标题 · 菜单</span></div>
+          <div class="type-row"><span class="type-label" style="width:100px">18px · xl</span><span class="type-sample" style="font-size:18px;font-weight:600">页面标题</span></div>
+          <div class="type-row"><span class="type-label" style="width:100px">28px · 2xl</span><span class="type-sample" style="font-size:28px;font-weight:700;letter-spacing:-0.8px">品牌名称 · Hero</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">Font Stack</div>
+        <div style="font-size:13px;color:var(--slate-500);line-height:1.8">
+          <code style="display:block;padding:12px;background:var(--slate-50);border-radius:8px;font-size:12px;color:var(--slate-700);margin-bottom:12px">
+            'Inter', -apple-system, 'PingFang SC',<br>
+            'Microsoft YaHei', sans-serif
+          </code>
+          <p>字重: 400 Regular · 500 Medium · 600 Semibold · 700 Bold</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 7. Components ═══ -->
+  <div class="section">
+    <h2>Components</h2>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header">Buttons &amp; Tags</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="mock-btn primary" style="padding:8px 18px;font-size:13px">Primary</button>
+          <button class="mock-btn ghost" style="padding:8px 18px;font-size:13px">Secondary</button>
+          <button style="padding:8px 14px;border:none;background:none;color:var(--blue-500);font-size:13px;font-weight:500;font-family:var(--font);cursor:default">Text</button>
+          <button class="mock-btn" style="padding:8px 18px;font-size:13px;background:var(--danger);color:#fff;border:none">Delete</button>
+        </div>
+        <div style="margin-top:16px">
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="status-tag info">Info</span>
+            <span class="status-tag primary">Primary</span>
+            <span class="status-tag success">Success</span>
+            <span class="status-tag warning">Warning</span>
+            <span class="status-tag danger">Danger</span>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">Form Elements</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div><label style="font-size:12px;font-weight:500;color:var(--slate-700);display:block;margin-bottom:4px">客户名称 <span style="font-weight:400;color:var(--slate-400)">*</span></label>
+            <input placeholder="请输入客户名称" style="width:100%;padding:8px 12px;border:1px solid var(--slate-200);border-radius:8px;font-size:13px;outline:none;font-family:var(--font);transition:border .15s" onfocus="this.style.borderColor='#3b82f6';this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)'" onblur="this.style.borderColor='';this.style.boxShadow=''">
+          </div>
+          <div style="display:flex;gap:12px">
+            <div style="flex:1"><label style="font-size:12px;font-weight:500;color:var(--slate-700);display:block;margin-bottom:4px">联系人</label><input placeholder="姓名" style="width:100%;padding:8px 12px;border:1px solid var(--slate-200);border-radius:8px;font-size:13px;outline:none;font-family:var(--font)" onfocus="this.style.borderColor='#3b82f6';this.style.boxShadow='0 0 0 3px rgba(59,130,246,0.1)'" onblur="this.style.borderColor='';this.style.boxShadow=''"></div>
+            <div style="flex:1"><label style="font-size:12px;font-weight:500;color:var(--slate-700);display:block;margin-bottom:4px">邮箱 <span style="font-weight:400;color:var(--slate-400)">(选填)</span></label>
+              <input value="invalid-email" style="width:100%;padding:8px 12px;border:1px solid var(--danger);border-radius:8px;font-size:13px;outline:none;font-family:var(--font);box-shadow:0 0 0 3px rgba(239,68,68,0.08)">
+              <span style="font-size:11px;color:var(--danger);margin-top:2px;display:block">请输入有效的邮箱地址</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ 8. Files ═══ -->
+  <div class="section">
+    <h2>交付文件</h2>
+    <div class="card" style="padding:0">
+      <table class="mock-table" style="border:none">
+        <thead><tr><th>文件</th><th>路径</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td style="font-weight:500;color:var(--slate-800)">VI-DESIGN.md</td><td style="color:var(--blue-500)">docs/vi-design/VI-DESIGN.md</td><td style="color:var(--slate-400)">完整设计规范 · AI 可读</td></tr>
+          <tr><td style="font-weight:500;color:var(--slate-800)">mts-variables.css</td><td style="color:var(--blue-500)">docs/vi-design/mts-variables.css</td><td style="color:var(--slate-400)">CSS 设计令牌 · 可直接引入</td></tr>
+          <tr><td style="font-weight:500;color:var(--slate-800)">logo.svg</td><td style="color:var(--blue-500)">docs/vi-design/logo.svg</td><td style="color:var(--slate-400)">产品 Logo（妈祖海浪）</td></tr>
+          <tr><td style="font-weight:500;color:var(--slate-800)">mts-icons.svg</td><td style="color:var(--blue-500)">docs/vi-design/mts-icons.svg</td><td style="color:var(--slate-400)">24 图标 Sprite</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const icons=[
+  ['mts-dashboard','Dashboard'],['mts-foundation','Foundation'],['mts-customer','Customer'],
+  ['mts-supplier','Supplier'],['mts-material','Material'],['mts-product','Product'],
+  ['mts-bom','BOM'],['mts-process','Process'],['mts-sales','Sales'],
+  ['mts-purchase','Purchase'],['mts-production','Production'],['mts-inventory','Inventory'],
+  ['mts-tax-refund','Tax Refund'],['mts-system','System'],['mts-order','Order'],
+  ['mts-invoice','Invoice'],['mts-payment','Payment'],['mts-shipping','Shipping'],
+  ['mts-finance','Finance'],['mts-report','Report'],['mts-approve','Approve']
+];
+const grid=document.getElementById('iconGrid');
+icons.forEach(([id,label])=>{const c=document.createElement('div');c.className='icon-cell';c.innerHTML=`<svg width="22" height="22"><use href="#${id}"/></svg><span class="icon-label">${label}</span>`;grid.appendChild(c)});
+function miniBar(el,vals,color){const m=Math.max(...vals,1);vals.forEach(v=>{const b=document.createElement('div');b.className='mock-mini-bar';b.style.height=Math.max(4,(v/m)*44)+'px';b.style.background=color;el.appendChild(b)})}
+miniBar(document.getElementById('cashBar'),[65,48,72,55,80,68],'linear-gradient(180deg,#3b82f6,#60a5fa)');
+miniBar(document.getElementById('payBar'),[55,62,48,70,58,65],'linear-gradient(180deg,#f59e0b,#fbbf24)');
+miniBar(document.getElementById('netBar'),[10,14,24,15,22,3],'linear-gradient(180deg,#10b981,#34d399)');
+</script>
+</body>
+</html>
