@@ -132,7 +132,7 @@ async function resetChat() {
   }
   messages.value = [{
     role: 'bot',
-    content: '你好！我是 MTS Bot 🤖\n我可以帮你创建以下单据：\n\n1️⃣ **采购订单** — 说「采购」或「下单」\n2️⃣ **销售订单** — 说「销售」或「出货」\n3️⃣ **生产订单** — 说「生产」或「工单」\n\n你想做什么？',
+    content: '你好！我是 MTS Bot 🤖\n\n📋 **创建单据**\n  「采购PCB板100片」— 采购订单\n  「销售产品A给美国客户」— 销售订单\n  「生产工单」— 生产订单\n\n🔍 **查询档案**\n  「查一下客户深圳」— 查客户\n  「找供应商编码」— 查供应商\n  「查物料名称」— 查物料\n\n你想做什么？',
   }]
   sessionId.value = ''
   localStorage.removeItem('bot_session_id')
