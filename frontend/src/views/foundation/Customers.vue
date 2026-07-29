@@ -81,6 +81,9 @@
         <el-form-item label="账期(天)" prop="account_period">
           <el-input type="number" v-model="form.account_period" :min="0" :step="15" style="width: 100%" />
         </el-form-item>
+        <el-form-item label="地址" prop="address">
+          <el-input v-model="form.address" type="textarea" :rows="2" />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -117,7 +120,8 @@ const formRef = ref(null)
 
 const form = reactive({
   id: null, code: '', name_cn: '', name_en: '', country: '',
-  contact_person: '', phone: '', tax_id: '', payment_terms: 'TT', account_period: 30,
+  contact_person: '', phone: '', email: '', tax_id: '',
+  payment_terms: 'TT', account_period: 30, address: '',
 })
 
 const rules = {
@@ -156,7 +160,8 @@ function resetSearch() {
 function resetForm() {
   Object.assign(form, {
     id: null, code: '', name_cn: '', name_en: '', country: '',
-    contact_person: '', phone: '', tax_id: '', payment_terms: 'TT', account_period: 30,
+    contact_person: '', phone: '', email: '', tax_id: '',
+    payment_terms: 'TT', account_period: 30, address: '',
   })
 }
 
@@ -170,7 +175,9 @@ function openDialog(mode, row) {
     form.country = row.country || ''
     form.contact_person = row.contact_person || ''
     form.phone = row.phone || ''
+    form.email = row.email || ''
     form.tax_id = row.tax_id || ''
+    form.address = row.address || ''
     form.payment_terms = row.payment_terms || 'TT'
     form.account_period = row.account_period ?? 30
   } else {
