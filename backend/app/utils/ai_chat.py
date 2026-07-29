@@ -437,9 +437,9 @@ TOOL_EXECUTORS = {k: globals()[f"_execute_{k}"] for k in
 
 # ==================== AI 调用 ====================
 
-def _call_llm(messages: list[dict], bot_config: BotConfig) -> dict | None:
+def _call_llm(messages: list[dict], bot_config: BotConfig, api_key: str) -> dict | None:
     headers = {
-        "Authorization": f"Bearer {bot_config.api_key}",
+        "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
     base_url = (bot_config.base_url or "").rstrip("/") or (
@@ -449,15 +449,20 @@ def _call_llm(messages: list[dict], bot_config: BotConfig) -> dict | None:
         "model": bot_config.model or "deepseek-chat",
         "messages": [{"role": "system", "content": bot_config.system_prompt or SYSTEM_PROMPT}] + messages,
         "temperature": bot_config.temperature or 0.1,
-        "max_tokens": bot_config.max_tokens or 4096,
+        "max_tokens": bot_config.max_tokens or 8192,
         "tools": TOOLS,
         "tool_choice": "auto",
     }
     try:
-        with httpx.Client(timeout=60) as client:
+        with httpx.Client(timeout=120) as client:
             resp = client.post(f"{base_url}/v1/chat/completions", headers=headers, json=payload)
             resp.raise_for_status()
             return resp.json()
+    except httpx.HTTPStatusError as e:
+        import logging
+        detail = e.response.text[:500] if e.response else str(e)
+        logging.getLogger("ai_chat").error(f"LLM 400: {detail}")
+        return None
     except Exception as e:
         import logging
         logging.getLogger("ai_chat").error(f"LLM call failed: {e}")
@@ -470,14 +475,17 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
     config = _get_config(db)
     if not config:
         return {"reply": "AI 未配置", "state": "error", "history": history or []}
+    api_key = _get_api_key(config)
+    if not api_key:
+        return {"reply": "API Key 未配置或解密失败", "state": "error", "history": history or []}
 
     messages = list(history or [])
     messages.append({"role": "user", "content": message})
 
     for _ in range(3):
-        result = _call_llm(messages, config)
+        result = _call_llm(messages, config, api_key)
         if not result:
-            return {"reply": "AI 调用失败", "state": "error", "history": history or []}
+            return {"reply": "AI 调用失败，请稍后重试或检查 AI 模型配置", "state": "error", "history": history or []}
 
         choice = result["choices"][0]
         msg = choice["message"]
@@ -489,7 +497,12 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
                 name = fn["name"]
                 try: args = json.loads(fn["arguments"])
                 except: args = {}
-                messages.append({"role": "assistant", "tool_calls": [{"id": tc["id"], "type": "function", "function": {"name": name, "arguments": fn["arguments"]}}]})
+                # 保留原始 content（DeepSeek 同时返回 content 和 tool_calls）
+                assistant_msg = {"role": "assistant", "tool_calls": [{"id": tc["id"], "type": "function", "function": {"name": name, "arguments": fn["arguments"]}}]}
+                if msg.get("content"):
+                    assistant_msg["content"] = msg["content"]
+                messages.append(assistant_msg)
+
                 executor = TOOL_EXECUTORS.get(name)
                 tool_result = executor(args, db) if executor else f"未知工具：{name}"
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": tool_result})
@@ -497,15 +510,20 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
 
         if msg.get("content"):
             messages.append({"role": "assistant", "content": msg["content"]})
-            if len(messages) > 20: messages = messages[-20:]
+            if len(messages) > 12: messages = messages[-12:]
             return {"reply": msg["content"], "state": "idle", "history": messages}
 
         break
 
     return {"reply": "抱歉，我暂时无法处理", "state": "error", "history": history or []}
 
-
 def _get_config(db: Session) -> BotConfig | None:
-    config = db.query(BotConfig).filter(BotConfig.is_active == 1).first()
-    if config and config.api_key: config.api_key = decrypt(config.api_key)
-    return config
+    """获取启用的 AI 配置"""
+    return db.query(BotConfig).filter(BotConfig.is_active == 1).first()
+
+
+def _get_api_key(config: BotConfig) -> str:
+    """解密 API Key，不修改原对象"""
+    if config and config.api_key:
+        return decrypt(config.api_key)
+    return ""
