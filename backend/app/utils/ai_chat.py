@@ -485,8 +485,20 @@ def _call_llm(messages: list[dict], bot_config: BotConfig, api_key: str) -> dict
             return resp.json()
     except httpx.HTTPStatusError as e:
         import logging
+        logger = logging.getLogger("ai_chat")
         detail = e.response.text[:500] if e.response else str(e)
-        logging.getLogger("ai_chat").error(f"LLM 400: {detail}")
+        # 调试：打印当前 messages 中的 tool 角色数量
+        tool_msgs = [m for m in messages if m.get("role") == "tool"]
+        toolcall_msgs = [m for m in messages if m.get("tool_calls")]
+        logger.error(f"LLM 400: {detail}")
+        logger.error(f"DEBUG: tool_msgs={len(tool_msgs)}, toolcall_msgs={len(toolcall_msgs)}, total_msgs={len(messages)}")
+        if tool_msgs and toolcall_msgs:
+            last_tc = toolcall_msgs[-1]
+            last_tool = tool_msgs[-1]
+            tc_ids = [tc["id"] for tc in last_tc.get("tool_calls", [])]
+            logger.error(f"DEBUG: last assistant tool_call ids={tc_ids}, last tool id={last_tool.get('tool_call_id')}")
+            if last_tool.get("tool_call_id") not in tc_ids:
+                logger.error("DEBUG: ⚠️ MISMATCH — tool_call_id not in preceding assistant tool_calls!")
         return None
     except Exception as e:
         import logging
@@ -550,7 +562,29 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
 
         if msg.get("content"):
             messages.append({"role": "assistant", "content": msg["content"]})
-            if len(messages) > 12: messages = messages[-12:]
+            # 安全截断：保留完整对话轮次，不拆分 tool_calls↔tool 配对
+            if len(messages) > 12:
+                # 找到第12条消息的位置
+                cutoff = len(messages) - 12
+                # 检查从 cutoff 开始的第一个消息如果是 tool，需要把 preceding tool_calls 也包含进来
+                for i in range(cutoff, len(messages)):
+                    m = messages[i]
+                    if m.get("role") == "tool":
+                        # 这条 tool 没有对应的 tool_calls 了，需要往前找
+                        offset = i
+                        # 从 offset 往前找最近的 assistant(tool_calls)
+                        for j in range(offset - 1, -1, -1):
+                            if messages[j].get("tool_calls"):
+                                cutoff = j
+                                break
+                        break
+                    elif m.get("tool_calls"):
+                        # 如果从 cutoff 开始就是 tool_calls，保留这条及其后的所有 tool
+                        break
+                    else:
+                        # user 或 assistant(content)，跳过
+                        pass
+                messages = messages[cutoff:]
             return {"reply": msg["content"], "state": "idle", "history": messages}
 
         break
