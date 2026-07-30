@@ -43,20 +43,44 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_order",
-            "description": "创建采购订单或销售订单。必须先确认所有字段后再调用。",
+            "description": "创建采购订单或销售订单，支持多个明细行一次创建。必须先确认所有字段后再调用。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "order_type": {"type": "string", "enum": ["purchase_order", "sales_order"], "description": "单据类型"},
                     "supplier_name": {"type": "string", "description": "供应商名称（采购单必填）"},
                     "customer_name": {"type": "string", "description": "客户名称（销售单必填）"},
-                    "product_name": {"type": "string", "description": "产品名称（销售单必填）"},
-                    "material_name": {"type": "string", "description": "物料名称（采购单必填）"},
-                    "quantity": {"type": "number", "description": "数量"},
-                    "unit_price": {"type": "number", "description": "单价"},
+                    "items": {
+                        "type": "array",
+                        "description": "订单明细行，支持多行一次创建",
+                        "items": {
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "description": "采购明细：物料名称+数量+单价",
+                                    "properties": {
+                                        "material_name": {"type": "string", "description": "物料名称"},
+                                        "quantity": {"type": "number", "description": "数量"},
+                                        "unit_price": {"type": "number", "description": "单价"},
+                                    },
+                                    "required": ["material_name", "quantity", "unit_price"],
+                                },
+                                {
+                                    "type": "object",
+                                    "description": "销售明细：产品名称+数量+单价",
+                                    "properties": {
+                                        "product_name": {"type": "string", "description": "产品名称"},
+                                        "quantity": {"type": "number", "description": "数量"},
+                                        "unit_price": {"type": "number", "description": "单价"},
+                                    },
+                                    "required": ["product_name", "quantity", "unit_price"],
+                                },
+                            ],
+                        },
+                    },
                     "order_date": {"type": "string", "description": "日期，默认为今天"},
                 },
-                "required": ["order_type"],
+                "required": ["order_type", "items"],
             },
         }
     },
@@ -287,35 +311,62 @@ def _execute_create_order(args: dict, db: Session) -> str:
     from app.models.foundation import Supplier, Customer, Material, Product
     from app.utils.batch_no import generate_doc_no
     try:
+        items = args.get("items", [])
+        if not items:
+            return "❌ 订单明细为空"
+
         if args["order_type"] == "purchase_order":
             from app.models.purchase import PurchaseOrder, PurchaseOrderItem
             sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
             if not sup: return f"未找到供应商「{args['supplier_name']}」"
-            mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
-            if not mat: return f"未找到物料「{args['material_name']}」"
-            qty, pr = float(args.get("quantity",0)), float(args.get("unit_price",0))
+
             no = generate_doc_no(db, "PO")
+            total_amt = 0
             po = PurchaseOrder(order_no=no, supplier_id=sup.id, order_date=_parse_date(args.get("order_date","")),
-                               status="待审批", total_amount=round(qty*pr,2), tax_rate=13, remark="AI", created_by="AI")
+                               status="待审批", total_amount=0, tax_rate=13, remark="AI", created_by="AI")
             db.add(po); db.flush()
-            db.add(PurchaseOrderItem(order_id=po.id, material_id=mat.id, quantity=qty, unit_price=pr, total_amount=round(qty*pr,2), tax_rate=13))
+
+            lines = []
+            for item in items:
+                mat = db.query(Material).filter(Material.name.like(f"%{item['material_name']}%")).first()
+                if not mat: return f"未找到物料「{item['material_name']}」"
+                qty, pr = float(item.get("quantity",0)), float(item.get("unit_price",0))
+                amt = round(qty * pr, 2)
+                total_amt += amt
+                db.add(PurchaseOrderItem(order_id=po.id, material_id=mat.id, quantity=qty, unit_price=pr, total_amount=amt, tax_rate=13))
+                lines.append(f"  {mat.name} × {qty}{mat.unit} @ ¥{pr:.2f} = ¥{amt:,.2f}")
+
+            po.total_amount = total_amt
             db.commit()
-            return f"✅ 采购订单 {no} 已创建！状态：待审批"
-        else:
+            return f"✅ 采购订单 {no} 已创建！共 {len(items)} 项\n" + "\n".join(lines)
+
+        elif args["order_type"] == "sales_order":
             from app.models.sales import SalesOrder, SalesOrderItem
             cust = db.query(Customer).filter(Customer.name_cn.like(f"%{args['customer_name']}%")).first()
             if not cust: cust = db.query(Customer).filter(Customer.name_en.like(f"%{args['customer_name']}%")).first()
             if not cust: return f"未找到客户「{args['customer_name']}」"
-            prod = db.query(Product).filter(Product.name_cn.like(f"%{args['product_name']}%")).first()
-            if not prod: return f"未找到产品「{args['product_name']}」"
-            qty, pr = float(args.get("quantity",0)), float(args.get("unit_price",0))
+
             no = generate_doc_no(db, "SO")
+            total_amt = 0
             so = SalesOrder(order_no=no, customer_id=cust.id, order_date=_parse_date(args.get("order_date","")),
-                            status="待审核", total_amount=round(qty*pr,2), currency_id=1, exchange_rate=1, remark="AI", created_by="AI")
+                            status="待审核", total_amount=0, currency_id=1, exchange_rate=1, remark="AI", created_by="AI")
             db.add(so); db.flush()
-            db.add(SalesOrderItem(order_id=so.id, product_id=prod.id, quantity=qty, unit_price=pr, total_amount=round(qty*pr,2), tax_rate=13))
+
+            lines = []
+            for item in items:
+                prod = db.query(Product).filter(Product.name_cn.like(f"%{item['product_name']}%")).first()
+                if not prod: return f"未找到产品「{item['product_name']}」"
+                qty, pr = float(item.get("quantity",0)), float(item.get("unit_price",0))
+                amt = round(qty * pr, 2)
+                total_amt += amt
+                db.add(SalesOrderItem(order_id=so.id, product_id=prod.id, quantity=qty, unit_price=pr, total_amount=amt, tax_rate=13))
+                lines.append(f"  {prod.name_cn} × {qty}{prod.unit} @ ¥{pr:.2f} = ¥{amt:,.2f}")
+
+            so.total_amount = total_amt
             db.commit()
-            return f"✅ 销售订单 {no} 已创建！状态：待审核"
+            return f"✅ 销售订单 {no} 已创建！共 {len(items)} 项\n" + "\n".join(lines)
+
+        return "❌ 未知订单类型"
     except Exception as e: db.rollback(); return f"❌ 创建失败：{e}"
 
 
