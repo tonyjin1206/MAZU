@@ -56,6 +56,9 @@ def register_crud(
         page: int = Query(1, ge=1),
         page_size: int = Query(50, ge=1, le=200),
         keyword: str = Query("", description="搜索关键词"),
+        code: str = Query("", description="按编码模糊搜索"),
+        name: str = Query("", description="按名称模糊搜索"),
+        hs_code: str = Query("", description="按HS编码模糊搜索"),
         is_active: int | None = Query(None, description="启用状态"),
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
@@ -63,15 +66,22 @@ def register_crud(
         """分页查询"""
         query = db.query(model)
 
+        from sqlalchemy import or_
+        conditions = []
         if keyword and search_fields:
-            from sqlalchemy import or_
-            conditions = []
             for field in search_fields:
                 column = getattr(model, field, None)
                 if column is not None:
                     conditions.append(column.like(f"%{keyword}%"))
             if conditions:
                 query = query.filter(or_(*conditions))
+        else:
+            if code and hasattr(model, 'code'):
+                query = query.filter(model.code.like(f"%{code}%"))
+            if name and hasattr(model, 'name'):
+                query = query.filter(model.name.like(f"%{name}%"))
+            if hs_code and hasattr(model, 'hs_code'):
+                query = query.filter(model.hs_code.like(f"%{hs_code}%"))
 
         if is_active is not None:
             query = query.filter(model.is_active == is_active)

@@ -11,13 +11,13 @@
       </template>
       <el-form :model="searchForm" inline>
         <el-form-item label="编码">
-          <el-input v-model="searchForm.code" placeholder="编码" clearable style="width: 140px" />
+          <el-input v-model="searchForm.code" placeholder="编码" clearable style="width: 140px" @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item label="名称">
-          <el-input v-model="searchForm.name" placeholder="名称" clearable style="width: 160px" />
+          <el-input v-model="searchForm.name" placeholder="名称" clearable style="width: 160px" @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item label="联系人">
-          <el-input v-model="searchForm.contact_person" placeholder="联系人" clearable style="width: 120px" />
+          <el-input v-model="searchForm.contact_person" placeholder="联系人" clearable style="width: 120px" @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="searchForm.supplier_type" placeholder="类型" clearable style="width: 120px">
@@ -31,16 +31,16 @@
 
     <!-- 底部卡片：边框表格 -->
     <el-card>
-      <el-table :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name" label="名称" min-width="150" />
-        <el-table-column prop="contact_person" label="联系人" width="110" />
-        <el-table-column prop="phone" label="电话" width="140" />
-        <el-table-column prop="tax_id" label="税号" width="150" />
-        <el-table-column prop="payment_terms" label="付款条件" width="100" />
-        <el-table-column prop="account_period" label="账期(天)" width="90" />
-        <el-table-column prop="rating" label="评级" width="80" align="center" />
-        <el-table-column prop="supplier_type" label="类型" width="90" />
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="code" label="编码" width="120" sortable column-key="code" :filters="codeFilters" :filter-method="filterCode" />
+        <el-table-column prop="name" label="名称" min-width="150" sortable column-key="name" :filters="nameFilters" :filter-method="filterName" />
+        <el-table-column prop="contact_person" label="联系人" width="110" sortable column-key="contact" :filters="contactFilters" :filter-method="filterContact" />
+        <el-table-column prop="phone" label="电话" width="140" sortable />
+        <el-table-column prop="tax_id" label="税号" width="150" sortable />
+        <el-table-column prop="payment_terms" label="付款条件" width="100" sortable />
+        <el-table-column prop="account_period" label="账期(天)" width="90" sortable />
+        <el-table-column prop="rating" label="评级" width="80" align="center" sortable />
+        <el-table-column prop="supplier_type" label="类型" width="100" sortable column-key="supplier_type" :filters="typeFilters" :filter-method="filterType" />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -48,7 +48,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
+      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增供应商' : '编辑供应商'" width="600px">
@@ -95,7 +95,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { foundationApi } from '../../api/foundation'
 
@@ -103,7 +103,7 @@ const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(100)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const saving = ref(false)
@@ -116,8 +116,32 @@ const searchForm = reactive({
   supplier_type: '',
 })
 
+// 列筛选
+const codeFilters = ref([])
+const nameFilters = ref([])
+const contactFilters = ref([])
+const typeFilters = ref([])
+const filterCodeVal = ref('')
+const filterNameVal = ref('')
+const filterContactVal = ref('')
+const filterTypeVal = ref('')
+
+const filteredList = computed(() => {
+  let items = tableData.value
+  if (filterCodeVal.value) items = items.filter(r => r.code === filterCodeVal.value)
+  if (filterNameVal.value) items = items.filter(r => r.name === filterNameVal.value)
+  if (filterContactVal.value) items = items.filter(r => r.contact_person === filterContactVal.value)
+  if (filterTypeVal.value) items = items.filter(r => r.supplier_type === filterTypeVal.value)
+  return items
+})
+function filterCode(val, row) { filterCodeVal.value = val; return true }
+function filterName(val, row) { filterNameVal.value = val; return true }
+function filterContact(val, row) { filterContactVal.value = val; return true }
+function filterType(val, row) { filterTypeVal.value = val; return true }
+
 function resetSearch() {
   Object.assign(searchForm, { code: '', name: '', contact_person: '', supplier_type: '' })
+  filterCodeVal.value = ''; filterNameVal.value = ''; filterContactVal.value = ''; filterTypeVal.value = ''
   page.value = 1
   fetchData()
 }
@@ -149,6 +173,11 @@ async function fetchData() {
     })
     tableData.value = res.items || []
     total.value = res.total || 0
+    // 更新列筛选
+    codeFilters.value = [...new Set(tableData.value.map(r => r.code).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nameFilters.value = [...new Set(tableData.value.map(r => r.name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    contactFilters.value = [...new Set(tableData.value.map(r => r.contact_person).filter(Boolean))].map(v => ({ text: v, value: v }))
+    typeFilters.value = [...new Set(tableData.value.map(r => r.supplier_type).filter(Boolean))].map(v => ({ text: v, value: v }))
   } finally {
     loading.value = false
   }

@@ -34,12 +34,11 @@ router = APIRouter()
 @router.post("/quotes", tags=["销售管理"])
 def create_quote(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """创建报价单"""
-    today = date.today().strftime("%Y%m%d")
-    count_q = db.query(SalesQuote).filter(
-        SalesQuote.quote_no.like(f"QT-{today}%")
-    ).count()
+    from app.utils.batch_no import generate_doc_no
+    from app.models.sales import SalesQuote
+    quote_no = generate_doc_no(db, "QT", SalesQuote, "quote_no")
     quote = SalesQuote(
-        quote_no=f"QT-{today}-{count_q+1:03d}",
+        quote_no=quote_no,
         customer_id=data["customer_id"],
         product_id=data["product_id"],
         quantity=data["quantity"],
@@ -78,9 +77,9 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
     from datetime import date, timedelta    # 汇率换算
     currency_id = data.get("currency_id") or 1
 
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(SalesOrder).filter(SalesOrder.order_no.like(f"SO-{today_str}%")).count()
-    order_no = f"SO-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.sales import SalesOrder
+    order_no = generate_doc_no(db, "SO", SalesOrder, "order_no")
 
     exchange_rate = data.get("exchange_rate") or 1
     # 汇总明细行金额
@@ -163,7 +162,7 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
 
 @router.get("/orders", tags=["销售管理"])
 def list_sales_orders(
-    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=200),
+    page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
     status: str = Query(""), keyword: str = Query(""),
     date_from: str = Query(""), date_to: str = Query(""),
     amount_min: float = Query(None), amount_max: float = Query(None),
@@ -251,7 +250,8 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
              "total_amount": item.total_amount,
              "tax_rate": item.tax_rate, "tax_amount": item.tax_amount,
              "total_amount_excl_tax": item.total_amount_excl_tax,
-             "delivered_qty": item.delivered_qty or 0}
+             "delivered_qty": item.delivered_qty or 0,
+             "production_status": item.production_status or "未生产"}
             for item in order.items
         ],
     }
@@ -270,6 +270,79 @@ def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_use
     return {"message": "销售订单已删除"}
 
 
+@router.put("/orders/{order_id}", tags=["销售管理"])
+def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """修改销售订单（仅待审核状态允许）"""
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "订单不存在")
+    if order.status != "待审核":
+        raise HTTPException(400, "仅待审核状态的订单允许修改")
+    for k in ("customer_id", "currency_id", "trade_term_id", "payment_terms", "remark"):
+        if k in data:
+            setattr(order, k, data[k])
+    if "order_date" in data and data["order_date"]:
+        order.order_date = _parse_date(data["order_date"])
+    if "delivery_date" in data and data["delivery_date"]:
+        order.delivery_date = _parse_date(data["delivery_date"])
+    if "exchange_rate" in data:
+        order.exchange_rate = float(data["exchange_rate"])
+    # 更新明细行
+    items_data = data.get("items", [])
+    sent_ids = set()
+    for item_data in items_data:
+        item_id = item_data.get("id")
+        if item_id:
+            # 更新已有行
+            item = db.query(SalesOrderItem).filter(
+                SalesOrderItem.id == item_id,
+                SalesOrderItem.order_id == order_id,
+            ).first()
+            if not item:
+                continue
+            # 仅未生产状态允许修改
+            if item.production_status not in (None, "", "未生产"):
+                continue
+        else:
+            # 新增行
+            item = SalesOrderItem(
+                order_id=order_id,
+                production_status="未生产",
+            )
+            db.add(item)
+        if "quantity" in item_data:
+            item.quantity = float(item_data["quantity"])
+        if "unit_price" in item_data:
+            item.unit_price = float(item_data["unit_price"])
+        if "tax_rate" in item_data:
+            item.tax_rate = float(item_data["tax_rate"])
+        if "product_id" in item_data and item_data["product_id"]:
+            item.product_id = item_data["product_id"]
+        if "remark" in item_data:
+            item.remark = item_data.get("remark", "")
+        # 新行先 flush 获取 id
+        if not item_id:
+            db.flush()
+        # 重算金额
+        qty = item.quantity or 0
+        price = item.unit_price or 0
+        rate = item.tax_rate or 13
+        item.total_amount = round(qty * price, 2)
+        item.total_amount_excl_tax = round(item.total_amount / (1 + rate / 100), 2)
+        item.tax_amount = round(item.total_amount - item.total_amount_excl_tax, 2)
+        sent_ids.add(item.id)
+    # 删除前端没传回的行（即被用户删除的行），仅限未生产状态
+    existing = db.query(SalesOrderItem).filter(
+        SalesOrderItem.order_id == order_id,
+    ).all()
+    for ex in existing:
+        if ex.id not in sent_ids and ex.production_status in (None, "", "未生产"):
+            db.delete(ex)
+    db.commit()
+    db.refresh(order)
+    return {"message": "销售订单已更新"}
+
+
 @router.post("/orders/{order_id}/approve", tags=["销售管理"])
 def approve_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """审核销售订单并生成生产订单"""
@@ -282,16 +355,15 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db), current_us
 
     # 遍历明细行，每个产品生成一个生产订单
     from app.models.production import ProductionOrder
-    from datetime import date, timedelta
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(ProductionOrder).filter(
-        ProductionOrder.order_no.like(f"MO-{today_str}%")).count()
+    from app.utils.batch_no import generate_doc_no
     mo_nos = []
     for item in order.items:
-        count += 1
+        # 初始化明细行生产状态
+        item.production_status = "未生产"
         prod = ProductionOrder(
-            order_no=f"MO-{today_str}-{count:03d}",
+            order_no=generate_doc_no(db, "MO", ProductionOrder, "order_no"),
             sales_order_id=order.id,
+            sales_order_item_id=item.id,
             product_id=item.product_id,
             quantity=item.quantity,
             due_date=order.delivery_date,
@@ -299,9 +371,50 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db), current_us
             created_by=current_user.display_name or current_user.username,
         )
         db.add(prod)
+        db.flush()  # 立即写入，确保下一个编号的 MAX 查询能识别
         mo_nos.append(prod.order_no)
     db.commit()
     return {"message": f"订单已审核，已生成{len(mo_nos)}个生产订单", "production_order_nos": mo_nos}
+
+
+@router.post("/orders/{order_id}/items/{item_id}/re-produce", tags=["销售管理"])
+def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """重发生产 — 为指定明细行重新生成生产订单（仅已删除生产订单的明细行）"""
+    from app.models.production import ProductionOrder
+    from app.utils.batch_no import generate_doc_no
+    # 实时查最新状态
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id,
+        SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "明细行不存在")
+    if item.production_status != "未生产":
+        raise HTTPException(400, f"该明细行当前生产状态为「{item.production_status}」，不允许重发生产")
+    # 检查是否已有活跃的生产订单
+    existing = db.query(ProductionOrder).filter(
+        ProductionOrder.sales_order_item_id == item_id,
+        ProductionOrder.status.in_(["待排产", "已排产", "生产中", "已完成", "部分入库", "已入库"]),
+    ).first()
+    if existing:
+        raise HTTPException(400, f"该明细行已有活跃生产订单（{existing.order_no}），不允许重复生成")
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "销售订单不存在")
+    prod = ProductionOrder(
+        order_no=generate_doc_no(db, "MO", ProductionOrder, "order_no"),
+        sales_order_id=order.id,
+        sales_order_item_id=item.id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        due_date=order.delivery_date,
+        status="待排产",
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(prod)
+    db.commit()
+    db.refresh(prod)
+    return {"id": prod.id, "order_no": prod.order_no, "message": f"已重新生成生产订单 {prod.order_no}"}
 
 
 # ==================== 销售发货（批次出库） ====================
@@ -330,10 +443,9 @@ def create_delivery(data: dict, db: Session = Depends(get_db), current_user: Use
     if qty_to_ship > remaining:
         raise HTTPException(400, f"发货数量{qty_to_ship}超过未发数量{remaining}")
 
-    from datetime import date, timedelta
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(SalesDelivery).filter(SalesDelivery.delivery_no.like(f"SD-{today_str}%")).count()
-    delivery_no = f"SD-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.sales import SalesDelivery
+    delivery_no = generate_doc_no(db, "SD", SalesDelivery, "delivery_no")
 
     # 检查批次库存是否足够
     product_id = order_item.product_id
@@ -572,11 +684,9 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
     due_days = customer.account_period if customer else 30
     due_date = (invoice.invoice_date or date.today()) + timedelta(days=due_days)
-    today_str = date.today().strftime("%Y%m%d")
-    ar_count = db.query(sa_func.count(AccountsReceivable.id)).filter(
-        AccountsReceivable.ar_no.like(f"AR-{today_str}%")
-    ).scalar() or 0
-    ar_no_str = f"AR-{today_str}-{ar_count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.sales import AccountsReceivable
+    ar_no_str = generate_doc_no(db, "AR", AccountsReceivable, "ar_no")
     ar = AccountsReceivable(
         ar_no=ar_no_str,
         source_type="sales_invoice",
@@ -776,10 +886,9 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
     for k in ["amount", "amount_fc"]:
         if k in data and data[k] is not None:
             data[k] = float(data[k])
-    from datetime import date, timedelta
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(Collection).filter(Collection.collection_no.like(f"CR-{today_str}%")).count()
-    coll_no = f"CR-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.sales import Collection
+    coll_no = generate_doc_no(db, "CR", Collection, "collection_no")
 
     collection = Collection(
         collection_no=coll_no,
@@ -918,3 +1027,97 @@ def delete_collection(collection_id: int, db: Session = Depends(get_db), current
     db.delete(c)
     db.commit()
     return {"message": "收款单已删除，应收已回滚"}
+
+
+# ==================== 销售订单明细行 ====================
+
+@router.get("/order-items", tags=["销售管理"])
+def list_order_items(
+    page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
+    production_status: str = Query(""), keyword: str = Query(""),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """按销售明细行查询（含生产状态）"""
+    q = db.query(SalesOrderItem).join(SalesOrder).join(Customer)
+    if production_status:
+        q = q.filter(SalesOrderItem.production_status == production_status)
+    if keyword:
+        q = q.filter(
+            SalesOrder.order_no.like(f"%{keyword}%")
+            | Customer.name_cn.like(f"%{keyword}%")
+            | Product.name_cn.like(f"%{keyword}%")
+        )
+    total = q.count()
+    items = q.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    # 查询每个明细行是否有活跃的生产订单
+    from app.models.production import ProductionOrder
+    item_ids = [item.id for item in items]
+    active_mo_items = set()
+    if item_ids:
+        rows = db.query(ProductionOrder.sales_order_item_id).filter(
+            ProductionOrder.sales_order_item_id.in_(item_ids),
+            ProductionOrder.status.in_(["待排产", "已排产", "生产中", "已完成", "部分入库", "已入库"]),
+        ).all()
+        active_mo_items = {r[0] for r in rows}
+    return {"total": total, "page": page, "page_size": page_size, "items": [
+        {
+            "id": item.id, "order_id": item.order_id,
+            "order_no": item.order.order_no if item.order else "",
+            "order_date": str(item.order.order_date) if item.order and item.order.order_date else "",
+            "customer_id": item.order.customer_id if item.order else None,
+            "customer_name": item.order.customer.name_cn if item.order and item.order.customer else "",
+            "product_id": item.product_id,
+            "product_name": item.product.name_cn if item.product else "",
+            "product_code": item.product.code if item.product else "",
+            "quantity": item.quantity,
+            "unit_price": item.unit_price,
+            "total_amount": item.total_amount,
+            "delivered_qty": item.delivered_qty or 0,
+            "production_status": item.production_status or "未生产",
+            "has_active_mo": item.id in active_mo_items,
+        }
+        for item in items
+    ]}
+
+
+@router.put("/orders/{order_id}/items/{item_id}", tags=["销售管理"])
+def update_order_item(
+    order_id: int, item_id: int, data: dict,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """修改销售订单明细行（仅未生产状态允许）"""
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id,
+        SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "明细行不存在")
+    if item.production_status not in (None, "", "未生产"):
+        raise HTTPException(400, f"该明细行生产状态为「{item.production_status}」，不允许修改")
+    # 删除关联的待排产生产订单
+    from app.models.production import ProductionOrder
+    pending_mos = db.query(ProductionOrder).filter(
+        ProductionOrder.sales_order_item_id == item_id,
+        ProductionOrder.status == "待排产",
+    ).all()
+    for mo in pending_mos:
+        db.delete(mo)
+    # 更新明细行
+    if "product_id" in data:
+        item.product_id = data["product_id"]
+    if "quantity" in data:
+        item.quantity = float(data["quantity"])
+        item.total_amount = item.quantity * (item.unit_price or 0)
+    if "unit_price" in data:
+        item.unit_price = float(data["unit_price"])
+        item.total_amount = (item.quantity or 0) * item.unit_price
+    if "tax_rate" in data:
+        item.tax_rate = float(data["tax_rate"])
+    if "remark" in data:
+        item.remark = data["remark"]
+    # 重新计算金额
+    tax_rate_val = item.tax_rate or 13
+    item.total_amount_excl_tax = round((item.total_amount or 0) / (1 + tax_rate_val / 100), 2)
+    item.tax_amount = round((item.total_amount or 0) - (item.total_amount_excl_tax or 0), 2)
+    db.commit()
+    return {"message": "明细行已修改，关联待排产生产订单已删除"}

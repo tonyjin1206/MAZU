@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.0.1** | A Lightweight Trade Management Platform
+> **v2.1.0** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
@@ -216,7 +216,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | 工具 | 函数 | 参数 | 说明 |
 |------|------|------|------|
 | query_entities | `_execute_query_entities` | entity_type, keyword | 查询客户/供应商/物料/产品/应收/应付/发票清单（模糊搜索+全部列出）|
-| create_order | `_execute_create_order` | order_type, supplier_name, customer_name, material_name, product_name, quantity, unit_price, order_date | 创建采购订单/销售订单 |
+| create_order | `_execute_create_order` | order_type, supplier_name, customer_name, items[], order_date | 创建采购订单/销售订单（支持多明细行一次创建） |
 | create_collection | `_execute_create_collection` | customer_name, amount, collection_date, payment_method | 收款单 + 自动核销应收 |
 | create_payment | `_execute_create_payment` | supplier_name, amount, payment_date, payment_method | 付款单 + 自动核销应付 |
 | create_purchase_invoice | `_execute_create_purchase_invoice` | order_no, invoice_no, amount, invoice_date | 录入采购发票（关联采购单）|
@@ -332,3 +332,24 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 
 ### 测试流程
 1. 重置DB → 验证后端API → 验证前端页面 → 验证 AI 助手
+
+---
+
+## 十三、版本变更记录
+
+### v2.1.0 (2026-07-30)
+- **新功能**: AI 采购/销售订单支持多明细行一次创建 — `create_order` 工具参数从单行字段升级为 `items` 数组，AI 可一句指令创建含多种物料的采购单或含多种产品的销售单
+- **架构**: `create_order` 函数参数从 `material_name`/`product_name`/`quantity`/`unit_price` 独立字段升级为 `items[]` 数组（每个元素含名称+数量+单价）
+- **UI**: 无前端变更
+
+### v2.0.1 (2026-07-29)
+- **新功能**: AI 助手查询字段扩展（支持客户/供应商/物料/产品多字段模糊搜索）
+- **修复**: DeepSeek `tool_calls` 格式兼容 + 历史截断防孤立 tool 消息
+- **基础设施**: `seed_foundation.py` 重写 + `init_all.py` 优化
+
+### v2.0.0 (2026-07-27)
+- **新功能**: AI 智能助手 Matsu — 基于 Function Calling Agent 的自然语言对话式操作
+- **新功能**: 支持 9 个工具（查询/创建订单/收款/付款/发票/委外/发料/入库）
+- **UI**: 新增 BotChat.vue 聊天界面，支持 Markdown 表格渲染
+- **UI**: 产品文档三件套（产品概述/操作手册/一页纸营销页）
+- **基础设施**: API Key Fernet 加密存储，自定义提示词支持

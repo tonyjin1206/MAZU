@@ -15,6 +15,7 @@ class ProductionOrder(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     order_no = Column(String(64), unique=True, nullable=False, comment="生产订单号: MO-YYYYMMDD-NNN")
     sales_order_id = Column(Integer, ForeignKey("so_order.id"), comment="关联销售订单")
+    sales_order_item_id = Column(Integer, ForeignKey("so_order_item.id"), comment="关联销售订单明细行")
     product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False, comment="产品")
     quantity = Column(Float, nullable=False, comment="生产数量")
     bom_id = Column(Integer, comment="使用的BOM ID")

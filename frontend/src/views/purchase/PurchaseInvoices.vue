@@ -24,20 +24,20 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="invoice_no" label="发票号" width="160" />
-        <el-table-column prop="supplier_name" label="供应商" min-width="150" />
-        <el-table-column prop="order_no" label="采购单号" width="140" />
-        <el-table-column label="不含税金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column label="税额" width="100" align="right"><template #default="{ row }">{{ $fm(row.tax_amount) }}</template></el-table-column>
-        <el-table-column label="价税合计" width="120" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-        <el-table-column prop="invoice_date" label="发票日期" width="120" />
-        <el-table-column prop="status" label="状态" width="90">
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="invoice_no" label="发票号" width="160" sortable />
+        <el-table-column prop="supplier_name" label="供应商" min-width="150" column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" sortable />
+        <el-table-column prop="order_no" label="采购单号" width="140" sortable />
+        <el-table-column label="不含税金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+        <el-table-column label="税额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.tax_amount) }}</template></el-table-column>
+        <el-table-column label="价税合计" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
+        <el-table-column prop="invoice_date" label="发票日期" width="120" column-key="invoice_date" :filters="dateFilters" :filter-method="filterDate" sortable />
+        <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus" sortable>
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip sortable />
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -51,7 +51,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -107,7 +107,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api/request'
 
@@ -118,9 +118,9 @@ const editMode = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(100)
 const total = ref(0)
-
+// 搜索条件
 const searchForm = reactive({
   keyword: '',
   dateRange: null,
@@ -129,12 +129,33 @@ const searchForm = reactive({
   status: '',
 })
 
+// 列筛选
+const dateFilters = ref([])
+const supplierFilters = ref([])
+const statusFilters = ref([])
+const filterDateVal = ref('')
+const filterSupplierVal = ref('')
+const filterStatusVal = ref('')
+
+const filteredList = computed(() => {
+  let items = list.value
+  if (filterDateVal.value) items = items.filter(r => r.invoice_date === filterDateVal.value)
+  if (filterSupplierVal.value) items = items.filter(r => r.supplier_name === filterSupplierVal.value)
+  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
+  return items
+})
+
+function filterDate(val, row) { filterDateVal.value = val; return true }
+function filterSupplier(val, row) { filterSupplierVal.value = val; return true }
+function filterStatus(val, row) { filterStatusVal.value = val; return true }
+
 function resetSearch() {
   searchForm.keyword = ''
   searchForm.dateRange = null
   searchForm.amountMin = null
   searchForm.amountMax = null
   searchForm.amountMin = null; searchForm.amountMax = null; searchForm.status = ''
+  filterDateVal.value = ''; filterSupplierVal.value = ''; filterStatusVal.value = ''
   page.value = 1
   fetchList()
 }
@@ -182,6 +203,10 @@ async function fetchList() {
     const res = await request.get('/purchase/invoices', { params })
     list.value = res.items || res.list || []
     total.value = res.total || 0
+    // 更新列筛选
+    dateFilters.value = [...new Set(list.value.map(r => r.invoice_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
+    supplierFilters.value = [...new Set(list.value.map(r => r.supplier_name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    statusFilters.value = [...new Set(list.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch {
     ElMessage.error('加载失败')
   } finally {

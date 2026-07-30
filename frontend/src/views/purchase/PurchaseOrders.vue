@@ -25,32 +25,32 @@
 
     <el-card>
       <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column label="日期" width="90" column-key="order_date" :filters="dateFilters" :filter-method="filterDate">
+        <el-table-column label="日期" width="115" column-key="order_date" :filters="dateFilters" :filter-method="filterDate" sortable>
           <template #default="{ row }">{{ row.order_date }}</template>
         </el-table-column>
-        <el-table-column prop="order_no" label="订单号" width="130" />
-        <el-table-column prop="supplier_name" label="供应商" width="100" show-overflow-tooltip column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" />
-        <el-table-column prop="item_count" label="明细" width="50" align="center" />
-        <el-table-column label="含税金额" align="right" width="100"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-        <el-table-column label="已入库" align="right" width="90"><template #default="{ row }">{{ $fm(row.received_amount) }}</template></el-table-column>
-        <el-table-column label="未入库" align="right" width="90">
+        <el-table-column prop="order_no" label="订单号" width="130" sortable />
+        <el-table-column prop="supplier_name" label="供应商" width="100" show-overflow-tooltip column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" sortable />
+        <el-table-column prop="item_count" label="明细" width="70" align="center" sortable />
+        <el-table-column label="含税金额" align="right" width="100" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
+        <el-table-column label="已入库" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.received_amount) }}</template></el-table-column>
+        <el-table-column label="未入库" align="right" width="90" sortable>
           <template #default="{ row }">
             <span :style="{ color: (row.unreceived_amount || 0) > 0 ? '#e6a23c' : '#909399' }">{{ $fm(row.unreceived_amount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="已开票" align="right" width="90"><template #default="{ row }">{{ $fm(row.invoiced_amount) }}</template></el-table-column>
-        <el-table-column label="未开票" align="right" width="90">
+        <el-table-column label="已开票" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.invoiced_amount) }}</template></el-table-column>
+        <el-table-column label="未开票" align="right" width="90" sortable>
           <template #default="{ row }">
             <span :style="{ color: (row.uninvoiced_amount || 0) > 0 ? '#e6a23c' : '#909399' }">{{ $fm(row.uninvoiced_amount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="已付款" align="right" width="90"><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
-        <el-table-column label="未付款" align="right" width="90">
+        <el-table-column label="已付款" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
+        <el-table-column label="未付款" align="right" width="90" sortable>
           <template #default="{ row }">
             <span :style="{ color: (row.unpaid_amount || 0) > 0 ? '#e6a23c' : '#909399' }">{{ $fm(row.unpaid_amount) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" min-width="60">
+        <el-table-column prop="status" label="状态" min-width="60" sortable>
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
@@ -69,9 +69,9 @@
 
       <el-pagination
         v-model:current-page="queryParams.page"
-        v-model:page-size="queryParams.pageSize"
+        v-model:page-size="queryParams.page_size"
         :total="total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @change="fetchData"
         style="margin-top: 16px"
@@ -151,7 +151,7 @@ const router = useRouter()
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
-const queryParams = reactive({ page: 1, pageSize: 20 })
+const queryParams = reactive({ page: 1, page_size: 100 })
 
 // 搜索条件
 const searchForm = reactive({
@@ -307,7 +307,7 @@ async function loadMaterials() {
 async function fetchData() {
   loading.value = true
   try {
-    const params = { page: queryParams.page, page_size: queryParams.pageSize }
+    const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.dateRange) {
       params.date_from = searchForm.dateRange[0]

@@ -65,13 +65,25 @@ def create_material(data: MaterialCreate, db: Session = Depends(get_db),
 
 @router.get("/materials", tags=["基础档案-材料"])
 def list_materials(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-                   keyword: str = Query(""), db: Session = Depends(get_db),
+                   keyword: str = Query(""), code: str = Query(""),
+                   name: str = Query(""), spec: str = Query(""),
+                   category: str = Query(""),
+                   db: Session = Depends(get_db),
                    current_user: User = Depends(get_current_user)):
     query = db.query(Material)
     if keyword:
         from sqlalchemy import or_
         query = query.filter(or_(Material.code.like(f"%{keyword}%"),
                                  Material.name.like(f"%{keyword}%")))
+    else:
+        if code:
+            query = query.filter(Material.code.like(f"%{code}%"))
+        if name:
+            query = query.filter(Material.name.like(f"%{name}%"))
+        if spec:
+            query = query.filter(Material.spec.like(f"%{spec}%"))
+    if category:
+        query = query.filter(Material.category == category)
     total = query.count()
     items = query.order_by(Material.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,
@@ -144,7 +156,9 @@ def create_product_with_hs(
 @router.get("/products", tags=["基础档案-产品"])
 def list_products(
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-    keyword: str = Query(""), is_active: int | None = None,
+    keyword: str = Query(""), code: str = Query(""),
+    name_cn: str = Query(""), spec: str = Query(""),
+    is_active: int | None = None,
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
     query = db.query(Product)
@@ -153,6 +167,13 @@ def list_products(
         query = query.filter(or_(Product.code.like(f"%{keyword}%"),
                                  Product.name_cn.like(f"%{keyword}%"),
                                  Product.name_en.like(f"%{keyword}%")))
+    else:
+        if code:
+            query = query.filter(Product.code.like(f"%{code}%"))
+        if name_cn:
+            query = query.filter(Product.name_cn.like(f"%{name_cn}%"))
+        if spec:
+            query = query.filter(Product.spec.like(f"%{spec}%"))
     if is_active is not None:
         query = query.filter(Product.is_active == is_active)
     total = query.count()
@@ -280,7 +301,9 @@ def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
 
 @router.get("/customers", tags=["基础档案-客户"])
 def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-                   keyword: str = Query(""), db: Session = Depends(get_db),
+                   keyword: str = Query(""), code: str = Query(""),
+                   name_cn: str = Query(""), contact_person: str = Query(""),
+                   db: Session = Depends(get_db),
                    current_user: User = Depends(get_current_user)):
     query = db.query(Customer)
     if keyword:
@@ -288,6 +311,13 @@ def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
         query = query.filter(or_(Customer.code.like(f"%{keyword}%"),
                                  Customer.name_cn.like(f"%{keyword}%"),
                                  Customer.name_en.like(f"%{keyword}%")))
+    else:
+        if code:
+            query = query.filter(Customer.code.like(f"%{code}%"))
+        if name_cn:
+            query = query.filter(Customer.name_cn.like(f"%{name_cn}%"))
+        if contact_person:
+            query = query.filter(Customer.contact_person.like(f"%{contact_person}%"))
     total = query.count()
     items = query.order_by(Customer.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,
@@ -340,13 +370,22 @@ def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
 
 @router.get("/suppliers", tags=["基础档案-供应商"])
 def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
-                   keyword: str = Query(""), db: Session = Depends(get_db),
+                   keyword: str = Query(""), code: str = Query(""),
+                   name: str = Query(""), contact_person: str = Query(""),
+                   db: Session = Depends(get_db),
                    current_user: User = Depends(get_current_user)):
     query = db.query(Supplier)
     if keyword:
         from sqlalchemy import or_
         query = query.filter(or_(Supplier.code.like(f"%{keyword}%"),
                                  Supplier.name.like(f"%{keyword}%")))
+    else:
+        if code:
+            query = query.filter(Supplier.code.like(f"%{code}%"))
+        if name:
+            query = query.filter(Supplier.name.like(f"%{name}%"))
+        if contact_person:
+            query = query.filter(Supplier.contact_person.like(f"%{contact_person}%"))
     total = query.count()
     items = query.order_by(Supplier.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,

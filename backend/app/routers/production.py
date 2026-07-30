@@ -61,6 +61,41 @@ def _calc_material_issued_amount(prod_id: int, material_id: int, db: Session) ->
     return round(total, 2)
 
 
+def _update_sales_item_status(prod: ProductionOrder, status: str, db: Session):
+    """更新关联的销售订单明细行生产状态"""
+    if not prod.sales_order_item_id:
+        return
+    from app.models.sales import SalesOrderItem
+    item = db.query(SalesOrderItem).filter(SalesOrderItem.id == prod.sales_order_item_id).first()
+    if item:
+        item.production_status = status
+
+
+def _sync_sales_order_status(sales_order_id: int, db: Session):
+    """聚合销售订单下所有明细行的生产状态，更新销售订单头部状态"""
+    if not sales_order_id:
+        return
+    from app.models.sales import SalesOrder, SalesOrderItem
+    so = db.query(SalesOrder).filter(SalesOrder.id == sales_order_id).first()
+    if not so:
+        return
+    # 如果有发货记录，不干涉
+    if so.status in ("部分发货", "已发货", "已完成", "已关闭"):
+        return
+    items = db.query(SalesOrderItem).filter(SalesOrderItem.order_id == sales_order_id).all()
+    if not items:
+        return
+    has_producing = any(it.production_status == "生产中" for it in items)
+    has_done = all(it.production_status in ("已生产", "未生产") for it in items)
+    all_idle = all(it.production_status == "未生产" for it in items)
+    if has_producing and so.status == "已审":
+        so.status = "生产中"
+    elif has_producing and so.status in ("已审",):
+        so.status = "生产中"
+    elif all_idle and so.status == "生产中":
+        so.status = "已审"
+
+
 router = APIRouter()
 
 
@@ -161,6 +196,7 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
     processes = db.query(ProductionProcess).filter(ProductionProcess.production_id == prod_id).order_by(ProductionProcess.seq).all()
     return {
         "id": p.id, "order_no": p.order_no, "sales_order_id": p.sales_order_id,
+        "sales_order_item_id": p.sales_order_item_id,
         "product_id": p.product_id, "product_name": p.product.name_cn if p.product else "",
         "quantity": p.quantity, "status": p.status,
         "total_material_cost": p.total_material_cost or 0,
@@ -324,6 +360,12 @@ def release_production_new(prod_id: int, db: Session = Depends(get_db), current_
     db.query(ProductionProcess).filter(ProductionProcess.production_id == prod_id).update(
         {"status": "待发料"}
     )
+    # 更新明细行生产状态
+    _update_sales_item_status(prod, "生产中", db)
+    db.flush()  # 确保状态写入
+    # 同步销售订单头状态
+    if prod.sales_order_id:
+        _sync_sales_order_status(prod.sales_order_id, db)
     db.commit()
     return {"message": "派产成功，生产订单已转为已排产状态"}
 
@@ -336,7 +378,31 @@ def delete_production(prod_id: int, db: Session = Depends(get_db), current_user:
         raise HTTPException(404, "生产订单不存在")
     if prod.status != "待排产":
         raise HTTPException(400, "仅待排产状态的订单允许删除")
+    prod_id_sales = prod.sales_order_id
+    prod_id_item = prod.sales_order_item_id
     db.delete(prod)
+    # 联动更新明细行生产状态
+    if prod_id_item:
+        from app.models.sales import SalesOrderItem
+        item = db.query(SalesOrderItem).filter(SalesOrderItem.id == prod_id_item).first()
+        if item:
+            item.production_status = "未生产"
+    # 检查该销售订单下是否还有生产订单
+    if prod_id_sales:
+        db.flush()  # 确保删除已被刷新到数据库
+        remaining = db.query(ProductionOrder).filter(
+            ProductionOrder.sales_order_id == prod_id_sales,
+        ).count()
+        if remaining == 0:
+            from app.models.sales import SalesOrder
+            so = db.query(SalesOrder).filter(SalesOrder.id == prod_id_sales).first()
+            if so and so.status in ("已审", "生产中"):
+                # 重新查询明细行判断是否全部回到未生产
+                from app.models.sales import SalesOrderItem as SOI
+                items = db.query(SOI).filter(SOI.order_id == prod_id_sales).all()
+                all_idle = all(it.production_status == "未生产" for it in items) if items else True
+                if all_idle:
+                    so.status = "待审核"
     db.commit()
     return {"message": "生产订单已删除"}
 
@@ -384,6 +450,20 @@ def unrelease_production(prod_id: int, db: Session = Depends(get_db), current_us
     db.query(ProductionProcess).filter(ProductionProcess.production_id == prod_id).update(
         {"status": "待排产"}
     )
+    # 检查该销售订单明细行是否还有其他已排产的生产订单
+    if prod.sales_order_item_id:
+        other_released = db.query(ProductionOrder).filter(
+            ProductionOrder.sales_order_item_id == prod.sales_order_item_id,
+            ProductionOrder.id != prod_id,
+            ProductionOrder.status.in_(["已排产", "生产中", "已完成", "部分入库", "已入库"]),
+        ).first()
+        if not other_released:
+            _update_sales_item_status(prod, "未生产", db)
+            db.flush()  # 确保状态写入
+    # 同步销售订单头状态
+    if prod.sales_order_id:
+        db.flush()
+        _sync_sales_order_status(prod.sales_order_id, db)
     db.commit()
     return {"message": "已反派产，生产订单回到待排产状态"}
 
@@ -421,11 +501,9 @@ def issue_material_to_process(
     inventory.quantity -= qty
     inventory.total_cost = round(inventory.quantity * inv_unit_cost, 2)
 
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(sa_func.count(MaterialIssueItem.id)).filter(
-        MaterialIssueItem.issue_no.like(f"MI-{today_str}%")
-    ).scalar() or 0
-    issue_no = f"MI-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.production import MaterialIssueItem
+    issue_no = generate_doc_no(db, "MI", MaterialIssueItem, "issue_no")
 
     issue = MaterialIssueItem(
         issue_no=issue_no,
@@ -764,11 +842,9 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     if new_proc_total > (prod.total_process_cost or 0) + 0.01:
         raise HTTPException(400, f"加工费转出合计 {new_proc_total:.2f} 超出总投入 {prod.total_process_cost:.2f}")
 
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(sa_func.count(ProductionReceipt.id)).filter(
-        ProductionReceipt.receipt_no.like(f"FG-{today_str}%")
-    ).scalar() or 0
-    receipt_no = f"FG-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.production import ProductionReceipt
+    receipt_no = generate_doc_no(db, "FG", ProductionReceipt, "receipt_no")
     batch_no = generate_batch_no(db, prefix="FG")
 
     unit_cost = round((material_cost + process_cost) / qty, 2) if qty else 0
@@ -828,6 +904,12 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     prod.transferred_material_cost = new_mat_total
     prod.transferred_process_cost = new_proc_total
     prod.status = "已入库" if (prod.received_qty or 0) >= prod.quantity else "部分入库"
+
+    # 如果全部入库，更新关联销售订单明细行状态
+    if prod.status == "已入库":
+        _update_sales_item_status(prod, "已生产", db)
+        if prod.sales_order_id:
+            _sync_sales_order_status(prod.sales_order_id, db)
 
     db.commit()
     return {
@@ -902,6 +984,13 @@ def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db),
             prod.status = "已完成"
     else:
         prod.status = "已入库" if (prod.received_qty or 0) >= prod.quantity else "部分入库"
+
+    # 同步销售订单明细行状态
+    if prod.sales_order_item_id:
+        if remaining == 0 or prod.status != "已入库":
+            _update_sales_item_status(prod, "生产中", db)
+        if prod.sales_order_id:
+            _sync_sales_order_status(prod.sales_order_id, db)
 
     db.commit()
     return {"message": f"入库已取消，批次 {batch_no} 已退回"}
@@ -1122,11 +1211,9 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
 
     total_amount = sum(p.process_amount or 0 for p in processes)
 
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(sa_func.count(ProcessingInvoice.id)).filter(
-        ProcessingInvoice.invoice_no.like(f"PI-{today_str}%")
-    ).scalar() or 0
-    invoice_no = f"PI-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.production import ProcessingInvoice
+    invoice_no = generate_doc_no(db, "PI", ProcessingInvoice, "invoice_no")
 
     inv = ProcessingInvoice(
         invoice_no=invoice_no,
@@ -1149,11 +1236,9 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
     db.flush()
 
     # 生成应付账款
-    today_str = date.today().strftime("%Y%m%d")
-    ap_count = db.query(sa_func.count(AccountsPayable.id)).filter(
-        AccountsPayable.ap_no.like(f"AP-{today_str}%")
-    ).scalar() or 0
-    ap_no_str = f"AP-{today_str}-{ap_count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.purchase import AccountsPayable
+    ap_no_str = generate_doc_no(db, "AP", AccountsPayable, "ap_no")
     ap = AccountsPayable(
         ap_no=ap_no_str,
         source_type="processing_invoice",

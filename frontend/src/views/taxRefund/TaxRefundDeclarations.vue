@@ -51,7 +51,7 @@
       <el-pagination
         style="margin-top: 12px"
         v-model:current-page="page" v-model:page-size="pageSize"
-        :total="total" :page-sizes="[10, 20, 50]"
+        :total="total" :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList" @size-change="fetchList"
       />
@@ -182,7 +182,7 @@ const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(100)
 const createDialog = ref(false)
 const editDialog = ref(false)
 const selectInvoiceDialog = ref(false)

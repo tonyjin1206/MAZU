@@ -4,19 +4,19 @@
       <el-button type="primary" @click="openCreate">新建委外工单</el-button>
     </el-card>
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe>
-        <el-table-column prop="outsource_no" label="委外工单号" width="160" />
-        <el-table-column prop="outsourcer_name" label="委外商" min-width="150" />
-        <el-table-column prop="product_name" label="产品" min-width="150" />
-        <el-table-column label="数量" width="80" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-        <el-table-column label="单价" width="100" align="right"><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
-        <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-        <el-table-column prop="status" label="状态" width="100">
+      <el-table :data="filteredList" v-loading="loading" stripe>
+        <el-table-column prop="outsource_no" label="委外工单号" width="160" sortable />
+        <el-table-column prop="outsourcer_name" label="委外商" min-width="150" sortable />
+        <el-table-column prop="product_name" label="产品" min-width="150" sortable />
+        <el-table-column label="数量" width="80" align="right" sortable><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
+        <el-table-column label="单价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
+        <el-table-column label="金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
+        <el-table-column prop="status" label="状态" width="115" column-key="status" :filters="statusFilters" :filter-method="filterStatus">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="due_date" label="交期" width="110" />
+        <el-table-column prop="due_date" label="交期" width="110" sortable column-key="due_date" :filters="dateFilters" :filter-method="filterDate" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <div style="display: flex; gap: 4px; white-space: nowrap">
@@ -28,7 +28,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @size-change="fetchList" @current-change="fetchList" style="margin-top: 12px" />
+      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchList" @current-change="fetchList" style="margin-top: 12px" />
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新建委外工单' : '编辑委外工单'" width="600px">
@@ -70,7 +70,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { productionApi } from '@/api/business'
 import { foundationApi } from '@/api/foundation'
@@ -86,11 +86,27 @@ const dialogMode = ref('create')
 const submitting = ref(false)
 const formRef = ref(null)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(100)
 const total = ref(0)
 const outsourcerList = ref([])
 const productList = ref([])
 const processList = ref([])
+
+// 列筛选
+const statusFilters = ref([])
+const dateFilters = ref([])
+const filterStatusVal = ref('')
+const filterDateVal = ref('')
+
+const filteredList = computed(() => {
+  let items = list.value
+  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
+  if (filterDateVal.value) items = items.filter(r => r.due_date === filterDateVal.value)
+  return items
+})
+
+function filterStatus(val, row) { filterStatusVal.value = val; return true }
+function filterDate(val, row) { filterDateVal.value = val; return true }
 
 const form = reactive({
   supplier_id: null, product_id: route.query.product_id ? parseInt(route.query.product_id) : null,
@@ -117,6 +133,9 @@ async function fetchList() {
     const res = await productionApi.outsourcings.list(params)
     list.value = res.items || []
     total.value = res.total || 0
+    // 更新列筛选
+    statusFilters.value = [...new Set(list.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
+    dateFilters.value = [...new Set(list.value.map(r => r.due_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
   } finally {
     loading.value = false
   }

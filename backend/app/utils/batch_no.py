@@ -1,23 +1,24 @@
-"""批次号生成工具"""
+"""批次号与单据编号生成工具"""
 
 from datetime import date, datetime
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-
-from app.models.inventory import StockTransaction
+from typing import Type, Any
 
 
 def generate_batch_no(db: Session, prefix: str = "") -> str:
     """
     生成批次号：YYYYMMDD-NNN
-    同一天从 001 开始递增
+    同一天从 001 开始递增（使用 MAX+1 避免冲突）
     prefix: 可选前缀，如 RA-(原料) FG-(成品)
     """
     today = date.today()
     date_str = today.strftime("%Y%m%d")
     prefix_str = f"{prefix}-" if prefix else ""
 
-    # 查询当天最大的序号
+    from app.models.inventory import StockTransaction
+
+    # 使用 MAX+1 而非 COUNT+1 — 避免并发冲突和删除后编号复用
     max_batch = (
         db.query(func.max(StockTransaction.batch_no))
         .filter(
@@ -28,7 +29,6 @@ def generate_batch_no(db: Session, prefix: str = "") -> str:
     )
 
     if max_batch:
-        # 提取序号部分并 +1
         parts = max_batch.rsplit("-", 1)
         seq = int(parts[1]) + 1
     else:
@@ -37,13 +37,67 @@ def generate_batch_no(db: Session, prefix: str = "") -> str:
     return f"{prefix_str}{date_str}-{seq:03d}"
 
 
-def generate_doc_no(db: Session, prefix: str) -> str:
-    """生成单据编号：前缀 + YYYYMMDD + NNN"""
+def generate_doc_no(db: Session, prefix: str, model: Type[Any] = None,
+                    field_name: str = None) -> str:
+    """
+    生成单据编号：前缀 + YYYYMMDD + NNN
+
+    使用 MAX+1 而非 COUNT+1，避免：
+    - 并发请求同时查询到相同 count 导致编号冲突
+    - 删除记录后 count 减少导致编号重复
+
+    Args:
+        db: 数据库会话
+        prefix: 单据前缀（如 'SO', 'PO', 'AR', 'ST' 等）
+        model: SQLAlchemy 模型类。若不传，默认使用 StockTransaction
+        field_name: 要查询的字段名。若不传，基于 prefix 自动识别
+    """
     today = date.today()
     date_str = today.strftime("%Y%m%d")
-    from sqlalchemy import func
-    from app.models.inventory import StockTransaction
-    count = db.query(func.count(StockTransaction.id)).filter(
-        StockTransaction.trans_no.like(f"{prefix}-{date_str}%")
-    ).scalar() or 0
-    return f"{prefix}-{date_str}-{count+1:03d}"
+
+    if model is None:
+        from app.models.inventory import StockTransaction
+        model = StockTransaction
+        field_name = "trans_no"
+    elif field_name is None:
+        # 根据模型自动推断字段名
+        field_name = _infer_field_name(prefix, model)
+
+    field = getattr(model, field_name)
+
+    # 查询当天最大的单据编号
+    max_no = (
+        db.query(func.max(field))
+        .filter(field.like(f"{prefix}-{date_str}%"))
+        .scalar()
+    )
+
+    if max_no:
+        # 提取序号部分并 +1
+        parts = max_no.rsplit("-", 1)
+        seq = int(parts[1]) + 1
+    else:
+        seq = 1
+
+    return f"{prefix}-{date_str}-{seq:03d}"
+
+
+def _infer_field_name(prefix: str, model: Type[Any]) -> str:
+    """根据单据前缀推断模型中的字段名"""
+    prefix_field_map = {
+        "SO": "order_no",       # SalesOrder
+        "QT": "quote_no",       # SalesQuote
+        "SD": "delivery_no",    # SalesDelivery
+        "MO": "order_no",       # ProductionOrder
+        "MI": "issue_no",       # MaterialIssueItem
+        "AR": "ar_no",          # AccountsReceivable
+        "CR": "collection_no",  # Collection
+        "PO": "order_no",       # PurchaseOrder
+        "PR": "receipt_no",     # PurchaseReceipt
+        "PM": "payment_no",     # Payment
+        "AP": "payable_no",     # AccountsPayable
+        "PI": "invoice_no",    # ProcessingInvoice (加工费发票)
+        "FG": "receipt_no",    # ProductionReceipt (完工入库)
+        "ST": "trans_no",       # StockTransaction
+    }
+    return prefix_field_map.get(prefix, "trans_no")

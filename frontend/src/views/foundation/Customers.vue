@@ -10,24 +10,30 @@
         </div>
       </template>
       <el-form :inline="true" :model="searchForm">
-        <el-form-item label="关键词">
-          <el-input v-model="searchForm.keyword" placeholder="编码/名称/联系人" clearable style="width: 200px" @keyup.enter="fetchData" />
+        <el-form-item label="编码">
+          <el-input v-model="searchForm.code" placeholder="编码" clearable style="width: 140px" @keyup.enter="fetchData" />
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="searchForm.name_cn" placeholder="名称" clearable style="width: 160px" @keyup.enter="fetchData" />
+        </el-form-item>
+        <el-form-item label="联系人">
+          <el-input v-model="searchForm.contact_person" placeholder="联系人" clearable style="width: 120px" @keyup.enter="fetchData" />
         </el-form-item>
       </el-form>
     </el-card>
 
     <!-- 底部：数据表格卡片 -->
     <el-card>
-      <el-table :data="tableData" v-loading="loading" border stripe size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name_cn" label="中文名" min-width="150" />
-        <el-table-column prop="name_en" label="英文名" min-width="150" />
-        <el-table-column prop="country" label="国家" width="100" />
-        <el-table-column prop="contact_person" label="联系人" width="120" />
-        <el-table-column prop="phone" label="电话" width="140" />
-        <el-table-column prop="tax_id" label="税号" width="150" />
-        <el-table-column prop="payment_terms" label="结算方式" width="100" />
-        <el-table-column prop="account_period" label="账期(天)" width="100" />
+      <el-table :data="filteredList" v-loading="loading" border stripe size="small" style="width: 100%">
+        <el-table-column prop="code" label="编码" width="120" sortable column-key="code" :filters="codeFilters" :filter-method="filterCode" />
+        <el-table-column prop="name_cn" label="中文名" min-width="150" sortable column-key="name_cn" :filters="nameFilters" :filter-method="filterName" />
+        <el-table-column prop="name_en" label="英文名" min-width="150" sortable />
+        <el-table-column prop="country" label="国家" width="100" sortable column-key="country" :filters="countryFilters" :filter-method="filterCountry" />
+        <el-table-column prop="contact_person" label="联系人" width="120" sortable column-key="contact_person" :filters="contactFilters" :filter-method="filterContact" />
+        <el-table-column prop="phone" label="电话" width="140" sortable />
+        <el-table-column prop="tax_id" label="税号" width="150" sortable />
+        <el-table-column prop="payment_terms" label="结算方式" width="100" sortable />
+        <el-table-column prop="account_period" label="账期(天)" width="100" sortable />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -36,11 +42,11 @@
         </el-table-column>
       </el-table>
       <el-pagination
-        style="margin-top: 16px; justify-content: flex-end"
+        style="margin-top: 16px"
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.pageSize"
         :total="pagination.total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @size-change="fetchData"
         @current-change="fetchData"
@@ -94,7 +100,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { foundationApi } from '../../api/foundation'
 
@@ -109,9 +115,32 @@ const countryList = [
 
 const loading = ref(false)
 const tableData = ref([])
-const pagination = ref({ page: 1, pageSize: 20, total: 0 })
+const pagination = ref({ page: 1, pageSize: 100, total: 0 })
 
-const searchForm = reactive({ keyword: '' })
+// 列筛选
+const codeFilters = ref([])
+const nameFilters = ref([])
+const countryFilters = ref([])
+const contactFilters = ref([])
+const filterCodeVal = ref('')
+const filterNameVal = ref('')
+const filterCountryVal = ref('')
+const filterContactVal = ref('')
+
+const filteredList = computed(() => {
+  let items = tableData.value
+  if (filterCodeVal.value) items = items.filter(r => r.code === filterCodeVal.value)
+  if (filterNameVal.value) items = items.filter(r => r.name_cn === filterNameVal.value)
+  if (filterCountryVal.value) items = items.filter(r => r.country === filterCountryVal.value)
+  if (filterContactVal.value) items = items.filter(r => r.contact_person === filterContactVal.value)
+  return items
+})
+function filterCode(val, row) { filterCodeVal.value = val; return true }
+function filterName(val, row) { filterNameVal.value = val; return true }
+function filterCountry(val, row) { filterCountryVal.value = val; return true }
+function filterContact(val, row) { filterContactVal.value = val; return true }
+
+const searchForm = reactive({ code: '', name_cn: '', contact_person: '' })
 
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
@@ -139,11 +168,18 @@ async function fetchData() {
     const params = {
       page: pagination.value.page,
       page_size: pagination.value.pageSize,
-      keyword: searchForm.keyword || undefined,
+      code: searchForm.code || undefined,
+      name_cn: searchForm.name_cn || undefined,
+      contact_person: searchForm.contact_person || undefined,
     }
     const res = await foundationApi.customers.list(params)
     tableData.value = res.items || res.data?.items || []
     pagination.value.total = res.total || res.data?.total || 0
+    // 更新列筛选
+    codeFilters.value = [...new Set(tableData.value.map(r => r.code).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nameFilters.value = [...new Set(tableData.value.map(r => r.name_cn).filter(Boolean))].map(v => ({ text: v, value: v }))
+    countryFilters.value = [...new Set(tableData.value.map(r => r.country).filter(Boolean))].map(v => ({ text: v, value: v }))
+    contactFilters.value = [...new Set(tableData.value.map(r => r.contact_person).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch (e) {
     ElMessage.error('加载失败')
   } finally {
@@ -152,7 +188,10 @@ async function fetchData() {
 }
 
 function resetSearch() {
-  searchForm.keyword = ''
+  searchForm.code = ''
+  searchForm.name_cn = ''
+  searchForm.contact_person = ''
+  filterCodeVal.value = ''; filterNameVal.value = ''; filterCountryVal.value = ''; filterContactVal.value = ''
   pagination.value.page = 1
   fetchData()
 }
