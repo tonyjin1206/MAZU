@@ -201,10 +201,10 @@ def _execute_query_entities(args: dict, db: Session) -> str:
     etype, keyword = args.get("entity_type"), (args.get("keyword") or "").strip()
 
     if etype in {"supplier", "customer", "material", "product"}:
-        FM = {"supplier": (Supplier, Supplier.name, ["name", "code", "contact_person", "phone"]),
-              "customer": (Customer, Customer.name_cn, ["name_cn", "code", "contact_person", "phone"]),
-              "material": (Material, Material.name, ["name", "code", "unit", "spec"]),
-              "product": (Product, Product.name_cn, ["name_cn", "code", "spec"])}
+        FM = {"supplier": (Supplier, Supplier.name, ["name", "code", "contact_person", "phone", "tax_id", "payment_terms", "supplier_type"]),
+              "customer": (Customer, Customer.name_cn, ["name_cn", "code", "contact_person", "phone", "email", "tax_id", "address", "payment_terms", "account_period"]),
+              "material": (Material, Material.name, ["name", "code", "unit", "spec", "purchase_price"]),
+              "product": (Product, Product.name_cn, ["name_cn", "code", "spec", "unit", "sale_price"])}
         mc, nc, fs = FM[etype]
         q = db.query(mc).filter(mc.is_active == 1)
         if keyword: q = q.filter(nc.like(f"%{keyword}%"))
@@ -213,8 +213,33 @@ def _execute_query_entities(args: dict, db: Session) -> str:
         if not items: return f"未找到{label}" + (f"「{keyword}」" if keyword else "")
         lines = [f"📋 找到 {len(items)} 个{label}："]
         for it in items:
-            parts = [f"**{getattr(it, fs[0], '')}**"] + [f"`{getattr(it, f, '')}`" if f == "code" else str(getattr(it, f, "") or "") for f in fs[1:]]
+            parts = [f"**{getattr(it, fs[0], '')}**"]
+            for f in fs[1:]:
+                val = getattr(it, f, "") or ""
+                if f == "code":
+                    parts.append(f"`{val}`")
+                elif isinstance(val, int) and f == "account_period":
+                    parts.append(f"账期{val}天")
+                elif isinstance(val, float):
+                    parts.append(f"¥{val:,.2f}")
+                else:
+                    parts.append(str(val))
             lines.append("  " + "｜".join(parts))
+        # 单条精确命中时展示更多详情
+        if len(items) == 1 and keyword:
+            it = items[0]
+            extra = []
+            if etype == "customer":
+                extra.append(f"  付款条件: {it.payment_terms or '-'} | 账期: {it.account_period or 0}天 | 信用额度: ¥{it.credit_limit or 0:,.2f}")
+                extra.append(f"  税号: {it.tax_id or '-'} | 地址: {it.address or '-'}")
+            elif etype == "supplier":
+                extra.append(f"  付款条件: {it.payment_terms or '-'} | 账期: {it.account_period or 0}天 | 供应范围: {it.supply_range or '-'}")
+                extra.append(f"  税号: {it.tax_id or '-'} | 地址: {it.address or '-'}")
+            elif etype == "material":
+                extra.append(f"  价格: ¥{it.purchase_price or 0:,.2f} | 型号: {it.model or '-'}")
+            elif etype == "product":
+                extra.append(f"  价格: ¥{it.sale_price or 0:,.2f} | 型号: {it.model or '-'}")
+            lines.extend(extra)
         return "\n".join(lines)
 
     if etype == "receivable":
@@ -492,16 +517,31 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
 
         # 优先处理 tool_calls（DeepSeek 可能同时返回 content + tool_calls）
         if msg.get("tool_calls"):
+            # 构建一条 assistant 消息，包含本次返回的全部 tool_calls
+            tool_calls_sanitized = []
+            for tc in msg["tool_calls"]:
+                tc_sanitized = {
+                    "id": tc["id"],
+                    "type": "function",
+                    "function": {
+                        "name": tc["function"]["name"],
+                        "arguments": tc["function"]["arguments"],
+                    },
+                }
+                tool_calls_sanitized.append(tc_sanitized)
+            assistant_msg = {"role": "assistant", "tool_calls": tool_calls_sanitized}
+            if msg.get("content"):
+                assistant_msg["content"] = msg["content"]
+            messages.append(assistant_msg)
+
+            # 逐个执行工具，追加 tool 结果
             for tc in msg["tool_calls"]:
                 fn = tc["function"]
                 name = fn["name"]
-                try: args = json.loads(fn["arguments"])
-                except: args = {}
-                # 保留原始 content（DeepSeek 同时返回 content 和 tool_calls）
-                assistant_msg = {"role": "assistant", "tool_calls": [{"id": tc["id"], "type": "function", "function": {"name": name, "arguments": fn["arguments"]}}]}
-                if msg.get("content"):
-                    assistant_msg["content"] = msg["content"]
-                messages.append(assistant_msg)
+                try:
+                    args = json.loads(fn["arguments"])
+                except:
+                    args = {}
 
                 executor = TOOL_EXECUTORS.get(name)
                 tool_result = executor(args, db) if executor else f"未知工具：{name}"

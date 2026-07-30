@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.0.0** | A Lightweight Trade Management Platform
+> **v2.0.1** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**

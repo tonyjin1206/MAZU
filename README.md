@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS)
 
-> **v2.0.0** — Mazu Trade System — A Lightweight Trade Management Platform  
+> **v2.0.1** — Mazu Trade System — A Lightweight Trade Management Platform  
 > 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化  
 > **支持 AI 智能助手对话式操作**
 
