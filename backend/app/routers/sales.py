@@ -87,6 +87,30 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
     if not items_data:
         raise HTTPException(400, "订单至少包含一行明细")
 
+    # 校验客户存在（外键保护）
+    from app.models.foundation import Customer
+    customer = db.query(Customer).filter(Customer.id == data["customer_id"]).first()
+    if not customer:
+        raise HTTPException(400, f"客户不存在: {data['customer_id']}")
+    # 校验产品存在 + 数量合法性
+    from app.models.foundation import Product
+    for item in items_data:
+        if not item.get("product_id"):
+            raise HTTPException(400, "明细缺少产品")
+        if not db.query(Product).filter(Product.id == item["product_id"]).first():
+            raise HTTPException(400, f"产品不存在: {item['product_id']}")
+        try:
+            qty = float(item.get("quantity", 0) or 0)
+        except (ValueError, TypeError):
+            raise HTTPException(400, f"产品 {item['product_id']} 数量必须是数字")
+        if qty <= 0:
+            raise HTTPException(400, f"产品 {item['product_id']} 数量必须大于 0")
+        try:
+            price = float(item.get("unit_price", 0) or 0)
+        except (ValueError, TypeError):
+            raise HTTPException(400, f"产品 {item['product_id']} 单价必须是数字")
+        if price < 0:
+            raise HTTPException(400, f"产品 {item['product_id']} 单价不能为负数")
     total_amount_fc = 0
     for item in items_data:
         item_qty_safe = float(item.get("quantity", 0) or 0)

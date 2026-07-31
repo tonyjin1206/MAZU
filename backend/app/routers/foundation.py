@@ -297,6 +297,9 @@ def _next_code(db, model, prefix: str, field="code"):
 def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     code = data.code or _next_code(db, Customer, "CU")
+    # 编码唯一性校验（避免唯一约束冲突 → 500）
+    if db.query(Customer).filter(Customer.code == code).first():
+        raise HTTPException(409, f"客户编码已存在: {code}")
     c = Customer(code=code, name_cn=data.name_cn, name_en=data.name_en or "",
                  country=data.country or "", contact_person=data.contact_person or "",
                  phone=data.phone or "", email=data.email or "", tax_id=data.tax_id or "",
@@ -424,6 +427,9 @@ def delete_supplier(item_id: int, db: Session = Depends(get_db),
 def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     code = data.code or _next_code(db, Supplier, "SU")
+    # 编码唯一性校验（避免唯一约束冲突 → 500）
+    if db.query(Supplier).filter(Supplier.code == code).first():
+        raise HTTPException(409, f"供应商编码已存在: {code}")
     s = Supplier(code=code, name=data.name, country=data.country or "",
                  contact_person=data.contact_person or "",
                  phone=data.phone or "", email=data.email or "", tax_id=data.tax_id or "",
@@ -522,6 +528,19 @@ def create_bom_item(
     current_user: User = Depends(get_current_user),
 ):
     """创建 BOM 明细"""
+    # 校验产品和材料存在（外键保护）
+    product = db.query(Product).filter(Product.id == data.product_id).first()
+    if not product:
+        raise HTTPException(status_code=400, detail=f"产品不存在: {data.product_id}")
+    material = db.query(Material).filter(Material.id == data.material_id).first()
+    if not material:
+        raise HTTPException(status_code=400, detail=f"材料不存在: {data.material_id}")
+    if data.process_id:
+        process = db.query(Process).filter(Process.id == data.process_id).first()
+        if not process:
+            raise HTTPException(status_code=400, detail=f"工序不存在: {data.process_id}")
+    if data.quantity is not None and data.quantity <= 0:
+        raise HTTPException(status_code=400, detail="BOM 用量必须大于 0")
     item = BomItem(**data.model_dump())
     db.add(item)
     db.commit()
