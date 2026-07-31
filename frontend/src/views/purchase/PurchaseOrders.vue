@@ -24,34 +24,28 @@
     </el-card>
 
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column label="日期" width="115" column-key="order_date" :filters="dateFilters" :filter-method="filterDate" sortable>
-          <template #default="{ row }">{{ row.order_date }}</template>
-        </el-table-column>
-        <el-table-column prop="order_no" label="订单号" width="130" sortable />
-        <el-table-column prop="supplier_name" label="供应商" width="100" show-overflow-tooltip column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" sortable />
-        <el-table-column prop="item_count" label="明细" width="70" align="center" sortable />
-        <el-table-column label="含税金额" align="right" width="100" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-        <el-table-column label="已入库" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.received_amount) }}</template></el-table-column>
-        <el-table-column label="未入库" align="right" width="90" sortable>
-          <template #default="{ row }">
+      <el-table :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'supplier_name'">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
+          <template v-else-if="col.prop === 'received_amount'" #default="{ row }">{{ $fm(row.received_amount) }}</template>
+          <template v-else-if="col.prop === 'unreceived_amount'" #default="{ row }">
             <span :style="{ color: (row.unreceived_amount || 0) > 0 ? '#e6a23c' : '#909399' }">{{ $fm(row.unreceived_amount) }}</span>
           </template>
-        </el-table-column>
-        <el-table-column label="已开票" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.invoiced_amount) }}</template></el-table-column>
-        <el-table-column label="未开票" align="right" width="90" sortable>
-          <template #default="{ row }">
+          <template v-else-if="col.prop === 'invoiced_amount'" #default="{ row }">{{ $fm(row.invoiced_amount) }}</template>
+          <template v-else-if="col.prop === 'uninvoiced_amount'" #default="{ row }">
             <span :style="{ color: (row.uninvoiced_amount || 0) > 0 ? '#e6a23c' : '#909399' }">{{ $fm(row.uninvoiced_amount) }}</span>
           </template>
-        </el-table-column>
-        <el-table-column label="已付款" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
-        <el-table-column label="未付款" align="right" width="90" sortable>
-          <template #default="{ row }">
+          <template v-else-if="col.prop === 'paid_amount'" #default="{ row }">{{ $fm(row.paid_amount) }}</template>
+          <template v-else-if="col.prop === 'unpaid_amount'" #default="{ row }">
             <span :style="{ color: (row.unpaid_amount || 0) > 0 ? '#e6a23c' : '#909399' }">{{ $fm(row.unpaid_amount) }}</span>
           </template>
-        </el-table-column>
-        <el-table-column prop="status" label="状态" min-width="60" sortable>
-          <template #default="{ row }">
+          <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
@@ -139,14 +133,33 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { purchaseApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
 const router = useRouter()
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_purchase_order_columns'
+const defaultColumns = [
+  { prop: 'order_date', label: '日期', width: 115, sortable: true },
+  { prop: 'order_no', label: '订单号', width: 130, sortable: true },
+  { prop: 'supplier_name', label: '供应商', width: 100, sortable: true },
+  { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true },
+  { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true },
+  { prop: 'received_amount', label: '已入库', width: 90, align: 'right', sortable: true },
+  { prop: 'unreceived_amount', label: '未入库', width: 90, align: 'right', sortable: true },
+  { prop: 'invoiced_amount', label: '已开票', width: 90, align: 'right', sortable: true },
+  { prop: 'uninvoiced_amount', label: '未开票', width: 90, align: 'right', sortable: true },
+  { prop: 'paid_amount', label: '已付款', width: 90, align: 'right', sortable: true },
+  { prop: 'unpaid_amount', label: '未付款', width: 90, align: 'right', sortable: true },
+  { prop: 'status', label: '状态', minWidth: 60, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const dataList = ref([])
@@ -158,28 +171,11 @@ const searchForm = reactive({
   keyword: '', dateRange: null, amountMin: '', amountMax: '',
 })
 
-// 列筛选
-const dateFilters = ref([])
-const supplierFilters = ref([])
-const filterDateVal = ref('')
-const filterSupplierVal = ref('')
-
-const filteredList = computed(() => {
-  let items = dataList.value
-  if (filterDateVal.value) items = items.filter(r => r.order_date === filterDateVal.value)
-  if (filterSupplierVal.value) items = items.filter(r => r.supplier_name === filterSupplierVal.value)
-  return items
-})
-
 function resetSearch() {
   searchForm.keyword = ''; searchForm.dateRange = null
   searchForm.amountMin = ''; searchForm.amountMax = ''
-  filterDateVal.value = ''; filterSupplierVal.value = ''
   queryParams.page = 1; fetchData()
 }
-
-function filterDate(val, row) { filterDateVal.value = val; return true }
-function filterSupplier(val, row) { filterSupplierVal.value = val; return true }
 
 const dialogVisible = ref(false)
 const viewMode = ref(false)
@@ -318,10 +314,7 @@ async function fetchData() {
     const res = await purchaseApi.orders.list(params)
     dataList.value = res.items || res.list || res.data || []
     total.value = res.total || dataList.value.length
-    // 更新列筛选
-    dateFilters.value = [...new Set(dataList.value.map(r => r.order_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    supplierFilters.value = [...new Set(dataList.value.map(r => r.supplier_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-  } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false }
+  } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 async function handleSubmit() {

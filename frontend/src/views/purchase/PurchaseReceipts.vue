@@ -25,18 +25,18 @@
     </el-card>
 
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-      <el-table-column prop="receipt_no" label="入库单号" width="160" sortable />
-      <el-table-column prop="order_no" label="关联订单" width="160" sortable />
-      <el-table-column prop="warehouse_name" label="仓库" min-width="120" sortable />
-      <el-table-column prop="total_qty" label="总数量" width="100" align="right" sortable />
-      <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus" sortable>
-        <template #default="{ row }">
-          <el-tag type="success" size="small">{{ row.status }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="item_count" label="明细项" width="80" align="center" sortable />
-      <el-table-column prop="receipt_date" label="入库日期" width="120" column-key="receipt_date" :filters="dateFilters" :filter-method="filterDate" sortable />
+      <el-table :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'status'" #default="{ row }">
+            <el-tag type="success" size="small">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">详情</el-button>
@@ -159,6 +159,7 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { purchaseApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
@@ -166,6 +167,19 @@ import request from '../../api/request'
 const route = useRoute()
 
 const autoFillMode = ref(false)
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_purchase_receipt_columns'
+const defaultColumns = [
+  { prop: 'receipt_no', label: '入库单号', width: 160, sortable: true },
+  { prop: 'order_no', label: '关联订单', width: 160, sortable: true },
+  { prop: 'warehouse_name', label: '仓库', minWidth: 120, sortable: true },
+  { prop: 'total_qty', label: '总数量', width: 100, align: 'right', sortable: true },
+  { prop: 'status', label: '状态', width: 100, sortable: true },
+  { prop: 'item_count', label: '明细项', width: 80, align: 'center', sortable: true },
+  { prop: 'receipt_date', label: '入库日期', width: 120, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const dataList = ref([])
@@ -179,27 +193,10 @@ const searchForm = reactive({
   status: '',
 })
 
-// 列筛选
-const dateFilters = ref([])
-const statusFilters = ref([])
-const filterDateVal = ref('')
-const filterStatusVal = ref('')
-
-const filteredList = computed(() => {
-  let items = dataList.value
-  if (filterDateVal.value) items = items.filter(r => r.receipt_date === filterDateVal.value)
-  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
-  return items
-})
-
-function filterDate(val, row) { filterDateVal.value = val; return true }
-function filterStatus(val, row) { filterStatusVal.value = val; return true }
-
 function resetSearch() {
   searchForm.keyword = ''
   searchForm.dateRange = null
   searchForm.status = ''
-  filterDateVal.value = ''; filterStatusVal.value = ''
   queryParams.page = 1
   fetchData()
 }
@@ -293,13 +290,11 @@ async function fetchData() {
     const res = await purchaseApi.receipts.list(queryParams)
     dataList.value = res.items || res.list || res.data || []
     total.value = res.total || dataList.value.length
-    // 更新列筛选
-    dateFilters.value = [...new Set(dataList.value.map(r => r.receipt_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    statusFilters.value = [...new Set(dataList.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch (e) {
     ElMessage.error('加载数据失败')
   } finally {
     loading.value = false
+    nextTick(initColumnDrag)
   }
 }
 

@@ -9,15 +9,18 @@
               <el-input v-model="searchKeyword" placeholder="输入供应商名称查询" clearable style="width: 260px" @input="filterSummary" />
             </el-form-item>
           </el-form>
-          <el-table :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
-            <el-table-column prop="supplier_name" label="供应商" min-width="180">
-              <template #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.supplier_name }}</span></template>
-            </el-table-column>
-            <el-table-column label="应付笔数" width="80" align="center"><template #default="{ row }">{{ row.count }}</template></el-table-column>
-            <el-table-column label="应付金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-            <el-table-column label="已付金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_paid) }}</template></el-table-column>
-            <el-table-column label="余额" width="130" align="right">
-              <template #default="{ row }">
+          <el-table class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
+            <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'supplier_name'" #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.supplier_name }}</span></template>
+              <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
+              <template v-else-if="col.prop === 'total_paid'" #default="{ row }">{{ $fm(row.total_paid) }}</template>
+              <template v-else-if="col.prop === 'balance'" #default="{ row }">
                 <span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span>
               </template>
             </el-table-column>
@@ -25,16 +28,19 @@
         </el-tab-pane>
 
         <el-tab-pane label="明细" name="detail">
-          <el-table :data="paymentDetailList" border stripe v-loading="pdLoading" style="width: 100%" :summary-method="pdTotal" show-summary>
-            <el-table-column prop="supplier_name" label="供应商" min-width="140" />
-            <el-table-column prop="ap_date" label="应付日期" width="110" />
-            <el-table-column prop="ap_no" label="应付单号" width="160" />
-            <el-table-column label="应付金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ap_amount) }}</template></el-table-column>
-            <el-table-column prop="pm_date" label="付款日期" width="110" />
-            <el-table-column prop="payment_no" label="付款单号" width="160" />
-            <el-table-column label="付款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
-            <el-table-column label="余额" width="110" align="right">
-              <template #default="{ row }"><span :style="{ color: (row.ap_amount - row.paid_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ap_amount - row.paid_amount) }}</span></template>
+          <el-table class="drag-table-detail" :key="pdColumnVersion" :data="paymentDetailList" border stripe v-loading="pdLoading" style="width: 100%" :summary-method="pdTotal" show-summary>
+            <el-table-column v-for="col in pdColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'ap_amount'" #default="{ row }">{{ $fm(row.ap_amount) }}</template>
+              <template v-else-if="col.prop === 'paid_amount'" #default="{ row }">{{ $fm(row.paid_amount) }}</template>
+              <template v-else-if="col.prop === 'balance'" #default="{ row }">
+                <span :style="{ color: (row.ap_amount - row.paid_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ap_amount - row.paid_amount) }}</span>
+              </template>
             </el-table-column>
             <el-table-column label="操作" width="120" align="center" fixed="right">
               <template #default="{ row }">
@@ -93,9 +99,34 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '../../api/request'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_ap_summary_columns'
+const defaultColumns = [
+  { prop: 'supplier_name', label: '供应商', minWidth: 180 },
+  { prop: 'count', label: '应付笔数', width: 80, align: 'center' },
+  { prop: 'total_amount', label: '应付金额', width: 130, align: 'right' },
+  { prop: 'total_paid', label: '已付金额', width: 130, align: 'right' },
+  { prop: 'balance', label: '余额', width: 130, align: 'right' },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
+
+const PD_STORAGE_KEY = 'mazu_ap_detail_columns'
+const defaultPdColumns = [
+  { prop: 'supplier_name', label: '供应商', minWidth: 140 },
+  { prop: 'ap_date', label: '应付日期', width: 110 },
+  { prop: 'ap_no', label: '应付单号', width: 160 },
+  { prop: 'ap_amount', label: '应付金额', width: 120, align: 'right' },
+  { prop: 'pm_date', label: '付款日期', width: 110 },
+  { prop: 'payment_no', label: '付款单号', width: 160 },
+  { prop: 'paid_amount', label: '付款金额', width: 120, align: 'right' },
+  { prop: 'balance', label: '余额', width: 110, align: 'right' },
+]
+const { columns: pdColumns, columnVersion: pdColumnVersion, initColumnDrag: initPdColumnDrag } = useColumnDrag(defaultPdColumns, PD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
 
 const activeTab = ref('summary')
 const loading = ref(false)
@@ -189,7 +220,7 @@ async function fetchData() {
     const res = await request.get('/purchase/ap', { params: { page: 1, page_size: 100 } })
     list.value = res.items || []
     total.value = res.total || 0
-  } finally { loading.value = false }
+  } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 watch(activeTab, (tab) => { if (tab === 'detail') { if (!pdFilter.value) pdFilter.value = ' '; fetchPaymentDetails() } })
@@ -199,7 +230,7 @@ async function fetchPaymentDetails() {
   try {
     const res = await request.get('/purchase/ap/payment-detail')
     pdList.value = res.items || []
-  } finally { pdLoading.value = false }
+  } finally { pdLoading.value = false; nextTick(initPdColumnDrag) }
 }
 
 function openPayment(row) {
