@@ -9,21 +9,24 @@
         </div>
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
-        <el-form-item label="关键词">
-          <el-input v-model="searchForm.keyword" placeholder="编码/名称" clearable style="width: 200px" @keyup.enter="fetchData" />
+        <el-form-item label="HS编码">
+          <el-input v-model="searchForm.hs_code" placeholder="HS编码" clearable style="width: 160px" @keyup.enter="fetchData" />
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="searchForm.name" placeholder="商品名称" clearable style="width: 180px" @keyup.enter="fetchData" />
         </el-form-item>
       </el-form>
-      <el-table :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="hs_code" label="HS编码" width="130" />
-        <el-table-column prop="name" label="商品名称" min-width="200" />
-        <el-table-column prop="unit" label="单位" width="80" />
-        <el-table-column prop="refund_rate" label="退税率%" width="100">
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="hs_code" label="HS编码" width="130" sortable column-key="hs_code" :filters="hsCodeFilters" :filter-method="filterHsCode" />
+        <el-table-column prop="name" label="商品名称" min-width="200" sortable column-key="name" :filters="nameFilters" :filter-method="filterName" />
+        <el-table-column prop="unit" label="单位" width="100" sortable column-key="unit" :filters="unitFilters" :filter-method="filterUnit" />
+        <el-table-column prop="refund_rate" label="退税率%" width="100" sortable>
           <template #default="{ row }">{{ row.refund_rate }}%</template>
         </el-table-column>
-        <el-table-column prop="tax_rate" label="增值税率%" width="100">
+        <el-table-column prop="tax_rate" label="增值税率%" width="100" sortable>
           <template #default="{ row }">{{ row.tax_rate }}%</template>
         </el-table-column>
-        <el-table-column prop="effective_date" label="生效日期" width="120" />
+        <el-table-column prop="effective_date" label="生效日期" width="120" sortable />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -31,7 +34,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 16px; justify-content: flex-end" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
+      <el-pagination style="margin-top: 16px" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增HS编码' : '编辑HS编码'" width="550px">
@@ -72,7 +75,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { foundationApi } from '../../api/foundation'
 
@@ -80,12 +83,31 @@ const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(100)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const saving = ref(false)
 const formRef = ref(null)
-const searchForm = reactive({ keyword: '' })
+const searchForm = reactive({ hs_code: '', name: '' })
+
+// 列筛选
+const hsCodeFilters = ref([])
+const nameFilters = ref([])
+const unitFilters = ref([])
+const filterHsCodeVal = ref('')
+const filterNameVal = ref('')
+const filterUnitVal = ref('')
+
+const filteredList = computed(() => {
+  let items = tableData.value
+  if (filterHsCodeVal.value) items = items.filter(r => r.hs_code === filterHsCodeVal.value)
+  if (filterNameVal.value) items = items.filter(r => r.name === filterNameVal.value)
+  if (filterUnitVal.value) items = items.filter(r => r.unit === filterUnitVal.value)
+  return items
+})
+function filterHsCode(val, row) { filterHsCodeVal.value = val; return true }
+function filterName(val, row) { filterNameVal.value = val; return true }
+function filterUnit(val, row) { filterUnitVal.value = val; return true }
 
 const form = reactive({
   id: null, hs_code: '', name: '', unit: '个',
@@ -105,17 +127,23 @@ async function fetchData() {
     const res = await foundationApi.hsCodes.list({
       page: page.value,
       page_size: pageSize.value,
-      keyword: searchForm.keyword || undefined,
+      hs_code: searchForm.hs_code || undefined,
+      name: searchForm.name || undefined,
     })
     tableData.value = res.items || []
     total.value = res.total || 0
+    // 更新列筛选
+    hsCodeFilters.value = [...new Set(tableData.value.map(r => r.hs_code).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nameFilters.value = [...new Set(tableData.value.map(r => r.name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    unitFilters.value = [...new Set(tableData.value.map(r => r.unit).filter(Boolean))].map(v => ({ text: v, value: v }))
   } finally {
     loading.value = false
   }
 }
 
 function resetSearch() {
-  searchForm.keyword = ''
+  searchForm.hs_code = ''
+  searchForm.name = ''
   page.value = 1
   fetchData()
 }

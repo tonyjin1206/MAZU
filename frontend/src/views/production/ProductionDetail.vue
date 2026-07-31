@@ -8,13 +8,13 @@
             <el-row :gutter="16">
               <el-col :span="8"><el-form-item label="订单号"><el-input :model-value="order.order_no" disabled /></el-form-item></el-col>
               <el-col :span="8"><el-form-item label="产品"><el-input :model-value="order.product_name" disabled /></el-form-item></el-col>
-              <el-col :span="8"><el-form-item label="生产数量"><el-input type="number" v-model="order.quantity" :disabled="order.status !== '待排产'" /></el-form-item></el-col>
+              <el-col :span="8"><el-form-item label="生产数量"><el-input type="number" v-model="order.quantity" :disabled="viewOnly || order.status !== '待排产'" /></el-form-item></el-col>
             </el-row>
             <el-row :gutter="16">
               <el-col :span="8"><el-form-item label="状态"><el-tag :type="statusType(order.status)">{{ order.status }}</el-tag></el-form-item></el-col>
               <el-col :span="8"><el-form-item label="交期" required>
                 <el-date-picker v-model="order.due_date" type="date" value-format="YYYY-MM-DD"
-                  placeholder="选择交期" style="width: 100%" :disabled="order.status !== '待排产'" />
+                  placeholder="选择交期" style="width: 100%" :disabled="viewOnly || order.status !== '待排产'" />
               </el-form-item></el-col>
               <el-col :span="8"><el-form-item label="创建日期"><el-input :model-value="order.created_at" disabled /></el-form-item></el-col>
             </el-row>
@@ -24,15 +24,15 @@
               <el-col :span="8"><el-form-item label="转出材料成本"><el-input :model-value="$fm(order.transferred_material_cost || 0)" disabled /></el-form-item></el-col>
             </el-row>
             <el-row :gutter="16">
-              <el-col :span="24"><el-form-item label="备注"><el-input v-model="order.remark" type="textarea" :rows="2" :disabled="order.status !== '待排产'" /></el-form-item></el-col>
+              <el-col :span="24"><el-form-item label="备注"><el-input v-model="order.remark" type="textarea" :rows="2" :disabled="viewOnly || order.status !== '待排产'" /></el-form-item></el-col>
             </el-row>
           </el-form>
-          <div v-if="order.status === '待排产'" style="margin-top: 12px; display: flex; gap: 8px">
+          <div v-if="!viewOnly && order.status === '待排产'" style="margin-top: 12px; display: flex; gap: 8px">
             <el-button type="primary" @click="saveOrder" :loading="saveLoading">保存</el-button>
             <el-button type="primary" @click="expandBom" :loading="bomLoading">展开BOM</el-button>
             <el-button type="success" @click="releaseOrder" :loading="releaseLoading">派产</el-button>
           </div>
-          <div v-if="order.status === '已排产' || order.status === '生产中'" style="margin-top: 12px">
+          <div v-if="!viewOnly && (order.status === '已排产' || order.status === '生产中')" style="margin-top: 12px">
             <el-button type="warning" @click="unreleaseOrder" :loading="unreleaseLoading">反派产</el-button>
           </div>
 
@@ -182,7 +182,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { productionApi } from '../../api/business'
@@ -190,6 +190,7 @@ import { foundationApi } from '../../api/foundation'
 
 const route = useRoute()
 const activeTab = ref('info')
+const viewOnly = computed(() => route.query.tab === 'view')
 const order = reactive({ id: null, order_no: '', product_name: '', quantity: 0, status: '', total_material_cost: 0, total_process_cost: 0, transferred_material_cost: 0, due_date: '', remark: '', created_at: '' })
 const materials = ref([])
 const processes = ref([])

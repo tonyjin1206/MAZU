@@ -25,18 +25,18 @@
     </el-card>
 
     <el-card>
-      <el-table :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
-      <el-table-column prop="receipt_no" label="入库单号" width="160" />
-      <el-table-column prop="order_no" label="关联订单" width="160" />
-      <el-table-column prop="warehouse_name" label="仓库" min-width="120" />
-      <el-table-column prop="total_qty" label="总数量" width="100" align="right" />
-      <el-table-column prop="status" label="状态" width="100">
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
+      <el-table-column prop="receipt_no" label="入库单号" width="160" sortable />
+      <el-table-column prop="order_no" label="关联订单" width="160" sortable />
+      <el-table-column prop="warehouse_name" label="仓库" min-width="120" sortable />
+      <el-table-column prop="total_qty" label="总数量" width="100" align="right" sortable />
+      <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus" sortable>
         <template #default="{ row }">
           <el-tag type="success" size="small">{{ row.status }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="item_count" label="明细项" width="80" align="center" />
-      <el-table-column prop="receipt_date" label="入库日期" width="120" />
+      <el-table-column prop="item_count" label="明细项" width="80" align="center" sortable />
+      <el-table-column prop="receipt_date" label="入库日期" width="120" column-key="receipt_date" :filters="dateFilters" :filter-method="filterDate" sortable />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">详情</el-button>
@@ -49,7 +49,7 @@
         v-model:current-page="queryParams.page"
         v-model:page-size="queryParams.pageSize"
         :total="total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @change="fetchData"
         style="margin-top: 16px"
@@ -170,7 +170,7 @@ const autoFillMode = ref(false)
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
-const queryParams = reactive({ page: 1, pageSize: 20 })
+const queryParams = reactive({ page: 1, pageSize: 100 })
 
 // 搜索条件
 const searchForm = reactive({
@@ -179,10 +179,27 @@ const searchForm = reactive({
   status: '',
 })
 
+// 列筛选
+const dateFilters = ref([])
+const statusFilters = ref([])
+const filterDateVal = ref('')
+const filterStatusVal = ref('')
+
+const filteredList = computed(() => {
+  let items = dataList.value
+  if (filterDateVal.value) items = items.filter(r => r.receipt_date === filterDateVal.value)
+  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
+  return items
+})
+
+function filterDate(val, row) { filterDateVal.value = val; return true }
+function filterStatus(val, row) { filterStatusVal.value = val; return true }
+
 function resetSearch() {
   searchForm.keyword = ''
   searchForm.dateRange = null
   searchForm.status = ''
+  filterDateVal.value = ''; filterStatusVal.value = ''
   queryParams.page = 1
   fetchData()
 }
@@ -276,6 +293,9 @@ async function fetchData() {
     const res = await purchaseApi.receipts.list(queryParams)
     dataList.value = res.items || res.list || res.data || []
     total.value = res.total || dataList.value.length
+    // 更新列筛选
+    dateFilters.value = [...new Set(dataList.value.map(r => r.receipt_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
+    statusFilters.value = [...new Set(dataList.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch (e) {
     ElMessage.error('加载数据失败')
   } finally {

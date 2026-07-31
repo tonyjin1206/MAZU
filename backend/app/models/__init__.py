@@ -34,6 +34,10 @@ from app.models.tax_refund import (
     TaxRefundInputInvoice, TaxRefundDeclaration,
     TaxRefundDetail, TaxRefundProgress,
 )
+from app.models.system_config import (
+    WecomConfig, BotConfig, BotConversation,
+    ReminderConfig, ReminderLog,
+)
 
 __all__ = [
     "BaseMixin",
@@ -57,4 +61,6 @@ __all__ = [
     "AccountsReceivable", "Collection", "CollectionAllocation",
     "TaxRefundInputInvoice", "TaxRefundDeclaration",
     "TaxRefundDetail", "TaxRefundProgress",
+    "WecomConfig", "BotConfig", "BotConversation",
+    "ReminderConfig", "ReminderLog",
 ]

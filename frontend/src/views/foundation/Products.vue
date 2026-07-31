@@ -9,19 +9,25 @@
         </div>
       </template>
       <el-form :inline="true" :model="searchForm">
-        <el-form-item label="关键词">
-          <el-input v-model="searchForm.keyword" placeholder="编码/名称" clearable style="width: 160px" @keyup.enter="fetchData" />
+        <el-form-item label="编码">
+          <el-input v-model="searchForm.code" placeholder="编码" clearable style="width: 140px" @keyup.enter="fetchData" />
+        </el-form-item>
+        <el-form-item label="名称">
+          <el-input v-model="searchForm.name_cn" placeholder="名称" clearable style="width: 160px" @keyup.enter="fetchData" />
+        </el-form-item>
+        <el-form-item label="规格">
+          <el-input v-model="searchForm.spec" placeholder="规格" clearable style="width: 140px" @keyup.enter="fetchData" />
         </el-form-item>
       </el-form>
     </el-card>
     <el-card>
-      <el-table :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="140" />
-        <el-table-column prop="name_cn" label="中文名" min-width="160" />
-        <el-table-column prop="name_en" label="英文名" min-width="180" />
-        <el-table-column prop="spec" label="规格" min-width="140" />
-        <el-table-column prop="unit" label="单位" width="80" align="center" />
-        <el-table-column label="销售价" width="100" align="right"><template #default="{ row }">{{ $fm(row.sale_price) }}</template></el-table-column>
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="code" label="编码" width="140" sortable column-key="code" :filters="codeFilters" :filter-method="filterCode" />
+        <el-table-column prop="name_cn" label="中文名" min-width="160" sortable column-key="name_cn" :filters="nameFilters" :filter-method="filterName" />
+        <el-table-column prop="name_en" label="英文名" min-width="180" sortable />
+        <el-table-column prop="spec" label="规格" min-width="140" sortable column-key="spec" :filters="specFilters" :filter-method="filterSpec" />
+        <el-table-column prop="unit" label="单位" width="100" align="center" sortable column-key="unit" :filters="unitFilters" :filter-method="filterUnit" />
+        <el-table-column label="销售价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.sale_price) }}</template></el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -29,7 +35,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 16px; justify-content: flex-end" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
+      <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="500px">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
@@ -72,14 +78,37 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { foundationApi } from '../../api/foundation'
 
 const loading = ref(false)
 const tableData = ref([])
-const pagination = ref({ page: 1, pageSize: 10, total: 0 })
-const searchForm = reactive({ keyword: '' })
+const pagination = ref({ page: 1, pageSize: 100, total: 0 })
+const searchForm = reactive({ code: '', name_cn: '', spec: '' })
+
+// 列筛选
+const codeFilters = ref([])
+const nameFilters = ref([])
+const specFilters = ref([])
+const unitFilters = ref([])
+const filterCodeVal = ref('')
+const filterNameVal = ref('')
+const filterSpecVal = ref('')
+const filterUnitVal = ref('')
+
+const filteredList = computed(() => {
+  let items = tableData.value
+  if (filterCodeVal.value) items = items.filter(r => r.code === filterCodeVal.value)
+  if (filterNameVal.value) items = items.filter(r => r.name_cn === filterNameVal.value)
+  if (filterSpecVal.value) items = items.filter(r => r.spec === filterSpecVal.value)
+  if (filterUnitVal.value) items = items.filter(r => r.unit === filterUnitVal.value)
+  return items
+})
+function filterCode(val, row) { filterCodeVal.value = val; return true }
+function filterName(val, row) { filterNameVal.value = val; return true }
+function filterSpec(val, row) { filterSpecVal.value = val; return true }
+function filterUnit(val, row) { filterUnitVal.value = val; return true }
 const dialogVisible = ref(false)
 const dialogLoading = ref(false)
 const dialogMode = ref('create')
@@ -122,10 +151,17 @@ async function fetchData() {
     const res = await foundationApi.products.list({
       page: pagination.value.page,
       page_size: pagination.value.pageSize,
-      keyword: searchForm.keyword || undefined,
+      code: searchForm.code || undefined,
+      name_cn: searchForm.name_cn || undefined,
+      spec: searchForm.spec || undefined,
     })
     tableData.value = res.items || []
     pagination.value.total = res.total || 0
+    // 更新列筛选
+    codeFilters.value = [...new Set(tableData.value.map(r => r.code).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nameFilters.value = [...new Set(tableData.value.map(r => r.name_cn).filter(Boolean))].map(v => ({ text: v, value: v }))
+    specFilters.value = [...new Set(tableData.value.map(r => r.spec).filter(Boolean))].map(v => ({ text: v, value: v }))
+    unitFilters.value = [...new Set(tableData.value.map(r => r.unit).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch (e) {
     // handled by interceptor
   } finally {
@@ -134,7 +170,10 @@ async function fetchData() {
 }
 
 function resetSearch() {
-  searchForm.keyword = ''
+  searchForm.code = ''
+  searchForm.name_cn = ''
+  searchForm.spec = ''
+  filterCodeVal.value = ''; filterNameVal.value = ''; filterSpecVal.value = ''; filterUnitVal.value = ''
   pagination.value.page = 1
   fetchData()
 }

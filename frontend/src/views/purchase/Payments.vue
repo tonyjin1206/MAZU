@@ -18,15 +18,15 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="payment_no" label="付款单号" width="160" />
-        <el-table-column prop="supplier_name" label="供应商" min-width="150" />
-        <el-table-column prop="payment_date" label="付款日期" width="120" />
-        <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column label="核销金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.allocated_amount) }}</template></el-table-column>
-        <el-table-column prop="payment_method" label="付款方式" width="100" />
-        <el-table-column prop="operator" label="操作人" width="90" />
-        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip />
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="payment_no" label="付款单号" width="160" sortable />
+        <el-table-column prop="supplier_name" label="供应商" min-width="150" column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" sortable />
+        <el-table-column prop="payment_date" label="付款日期" width="120" column-key="payment_date" :filters="dateFilters" :filter-method="filterDate" sortable />
+        <el-table-column label="金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+        <el-table-column label="核销金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.allocated_amount) }}</template></el-table-column>
+        <el-table-column prop="payment_method" label="付款方式" width="100" sortable />
+        <el-table-column prop="operator" label="操作人" width="90" sortable />
+        <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
@@ -41,7 +41,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -103,7 +103,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api/request'
 
@@ -111,14 +111,30 @@ const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(100)
 const detailVisible = ref(false)
 const detail = ref(null)
 const editVisible = ref(false)
 const submitting = ref(false)
 const searchForm = reactive({ keyword: '', dateRange: null })
 
-function resetSearch() { searchForm.keyword = ''; searchForm.dateRange = null; page.value = 1; fetchList() }
+// 列筛选
+const dateFilters = ref([])
+const supplierFilters = ref([])
+const filterDateVal = ref('')
+const filterSupplierVal = ref('')
+
+const filteredList = computed(() => {
+  let items = list.value
+  if (filterDateVal.value) items = items.filter(r => r.payment_date === filterDateVal.value)
+  if (filterSupplierVal.value) items = items.filter(r => r.supplier_name === filterSupplierVal.value)
+  return items
+})
+
+function filterDate(val, row) { filterDateVal.value = val; return true }
+function filterSupplier(val, row) { filterSupplierVal.value = val; return true }
+
+function resetSearch() { searchForm.keyword = ''; searchForm.dateRange = null; filterDateVal.value = ''; filterSupplierVal.value = ''; page.value = 1; fetchList() }
 
 const editForm = reactive({
   id: null, payment_no: '', supplier_name: '', amount: 0,
@@ -136,6 +152,9 @@ async function fetchList() {
     const res = await request.get('/purchase/payments', { params })
     list.value = res.items || []
     total.value = res.total || 0
+    // 更新列筛选
+    dateFilters.value = [...new Set(list.value.map(r => r.payment_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
+    supplierFilters.value = [...new Set(list.value.map(r => r.supplier_name).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch { ElMessage.error('加载失败') }
   finally { loading.value = false }
 }

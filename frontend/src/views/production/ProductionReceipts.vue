@@ -32,7 +32,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -108,7 +108,7 @@ const detailVisible = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(100)
 const total = ref(0)
 const outsourcingList = ref([])
 const warehouseList = ref([])

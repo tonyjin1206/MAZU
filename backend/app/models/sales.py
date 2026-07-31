@@ -82,6 +82,7 @@ class SalesOrderItem(Base):
     tax_amount = Column(Float, default=0, comment="税额(本币)")
     hs_code_id = Column(Integer, ForeignKey("fd_hs_code.id"), comment="HS编码")
     delivered_qty = Column(Float, default=0, comment="已发货数量")
+    production_status = Column(String(16), default="未生产", comment="生产状态: 未生产/生产中/已生产")
     remark = Column(Text)
 
     order = relationship("SalesOrder", back_populates="items")

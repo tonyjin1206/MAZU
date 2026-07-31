@@ -1,8 +1,8 @@
 # Mazu Trade System (MTS)
 
-> Mazu Trade System — A Lightweight Trade Management Platform  
+> **v2.1.0** — Mazu Trade System — A Lightweight Trade Management Platform  
 > 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化  
-> **支持 macOS / Windows / Linux**
+> **支持 AI 智能助手对话式操作**
 
 ---
 
@@ -81,6 +81,7 @@ python launcher.py --help
 生产管理 → 生产订单 → 派产 → 发料 → 完工 → 成品入库 / 委外 / 加工费发票
 库存管理 → 库存余额 / 库存流水 / 批次追溯
 退税申报 → 申报期管理 / 发票关联 / 状态跟踪
+AI 助手 → 自然语言对话式操作 / 客户/供应商/物料/产品查询 / 创建单据 / 收款/付款 / 发票录入 / 委外/发料/入库
 管理驾驶舱 → 现金收支 / 应收应付账龄 / 销售毛利分析（支持穿透查询）
 ```
 

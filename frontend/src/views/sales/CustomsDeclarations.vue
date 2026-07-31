@@ -27,16 +27,16 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe>
-        <el-table-column prop="customs_no" label="报关单号" width="160" />
-        <el-table-column prop="order_no" label="关联订单" width="140" />
-        <el-table-column prop="customer_name" label="客户" min-width="130" />
-        <el-table-column prop="hs_code" label="HS编码" width="120" />
-        <el-table-column label="报关金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.declare_amount) }}</template></el-table-column>
-        <el-table-column prop="currency_code" label="币种" width="70" />
-        <el-table-column prop="customs_broker" label="报关行" min-width="120" />
-        <el-table-column prop="declare_date" label="报关日期" width="100" />
-        <el-table-column prop="status" label="状态" width="90">
+      <el-table :data="filteredList" v-loading="loading" stripe>
+        <el-table-column prop="customs_no" label="报关单号" width="160" sortable />
+        <el-table-column prop="order_no" label="关联订单" width="140" sortable />
+        <el-table-column prop="customer_name" label="客户" min-width="130" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
+        <el-table-column prop="hs_code" label="HS编码" width="120" sortable />
+        <el-table-column label="报关金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.declare_amount) }}</template></el-table-column>
+        <el-table-column prop="currency_code" label="币种" width="90" sortable />
+        <el-table-column prop="customs_broker" label="报关行" min-width="120" sortable />
+        <el-table-column prop="declare_date" label="报关日期" width="100" sortable column-key="declare_date" :filters="dateFilters" :filter-method="filterDate" />
+        <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus">
           <template #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
@@ -54,7 +54,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[50, 100, 200]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -104,7 +104,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api/request'
 
@@ -115,7 +115,7 @@ const editMode = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(100)
 const total = ref(0)
 
 // 搜索条件
@@ -129,9 +129,30 @@ function resetSearch() {
   searchForm.keyword = ''
   searchForm.dateRange = null
   searchForm.status = ''
+  filterDateVal.value = ''; filterCustomerVal.value = ''; filterStatusVal.value = ''
   page.value = 1
   fetchList()
 }
+
+// 列筛选
+const dateFilters = ref([])
+const customerFilters = ref([])
+const statusFilters = ref([])
+const filterDateVal = ref('')
+const filterCustomerVal = ref('')
+const filterStatusVal = ref('')
+
+const filteredList = computed(() => {
+  let items = list.value
+  if (filterDateVal.value) items = items.filter(r => r.declare_date === filterDateVal.value)
+  if (filterCustomerVal.value) items = items.filter(r => r.customer_name === filterCustomerVal.value)
+  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
+  return items
+})
+
+function filterDate(val, row) { filterDateVal.value = val; return true }
+function filterCustomer(val, row) { filterCustomerVal.value = val; return true }
+function filterStatus(val, row) { filterStatusVal.value = val; return true }
 const orderList = ref([])
 const hsCodeList = ref([])
 const currencyList = ref([])
@@ -177,6 +198,10 @@ async function fetchList() {
     const res = await request.get('/sales/customs', { params })
     list.value = res.items || []
     total.value = res.total || 0
+    // 更新列筛选
+    dateFilters.value = [...new Set(list.value.map(r => r.declare_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
+    customerFilters.value = [...new Set(list.value.map(r => r.customer_name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    statusFilters.value = [...new Set(list.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch { ElMessage.error('加载失败') }
   finally { loading.value = false }
 }

@@ -32,6 +32,7 @@ backend/build/
 .env
 .env.local
 .env.production
+.encryption_key
 
 # === 安装包 ===
 erp-system.zip

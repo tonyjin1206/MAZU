@@ -43,7 +43,7 @@ router = APIRouter()
 @router.get("/orders", response_model=dict, tags=["采购管理"])
 def list_orders(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
+    page_size: int = Query(100, ge=1, le=200),
     status: str = Query("", description="状态筛选"),
     keyword: str = Query("", description="订单号/供应商搜索"),
     date_from: str = Query(""), date_to: str = Query(""),
@@ -251,11 +251,9 @@ def create_order(
     current_user: User = Depends(get_current_user),
 ):
     """创建采购订单"""
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(PurchaseOrder).filter(
-        PurchaseOrder.order_no.like(f"PO-{today_str}%")
-    ).count()
-    order_no = f"PO-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.purchase import PurchaseOrder
+    order_no = generate_doc_no(db, "PO", PurchaseOrder, "order_no")
 
     order = PurchaseOrder(
         order_no=order_no,
@@ -344,13 +342,14 @@ def create_receipt(
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == data.order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
+    # 状态校验：待审核/已关闭订单不可入库
+    if order.status in ("待审核", "已关闭", "已取消"):
+        raise HTTPException(400, f"订单状态「{order.status}」不允许入库")
 
     # 生成入库单号
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(PurchaseReceipt).filter(
-        PurchaseReceipt.receipt_no.like(f"PR-{today_str}%")
-    ).count()
-    receipt_no = f"PR-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.purchase import PurchaseReceipt
+    receipt_no = generate_doc_no(db, "PR", PurchaseReceipt, "receipt_no")
 
     receipt = PurchaseReceipt(
         receipt_no=receipt_no,
@@ -587,6 +586,12 @@ def create_invoice(
     if not order:
         raise HTTPException(404, "订单不存在")
 
+    # 发票号唯一性校验（数据库唯一约束冲突 → 409 业务错误）
+    existing_inv = db.query(PurchaseInvoice).filter(
+        PurchaseInvoice.invoice_no == data.invoice_no).first()
+    if existing_inv:
+        raise HTTPException(409, f"发票号已存在: {data.invoice_no}")
+
     invoice = PurchaseInvoice(
         invoice_no=data.invoice_no,
         order_id=data.order_id,
@@ -629,11 +634,9 @@ def create_invoice(
     supplier = db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
     due_days = supplier.account_period if supplier else 30
     due_date = (data.invoice_date or date.today()) + timedelta(days=due_days)
-    today_str = date.today().strftime("%Y%m%d")
-    ap_count = db.query(sa_func.count(AccountsPayable.id)).filter(
-        AccountsPayable.ap_no.like(f"AP-{today_str}%")
-    ).scalar() or 0
-    ap_no_str = f"AP-{today_str}-{ap_count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.purchase import AccountsPayable
+    ap_no_str = generate_doc_no(db, "AP", AccountsPayable, "ap_no")
     ap = AccountsPayable(
         ap_no=ap_no_str,
         source_type="purchase_invoice",
@@ -737,9 +740,9 @@ def create_payment(
     current_user: User = Depends(get_current_user),
 ):
     """付款并核销应付"""
-    today_str = date.today().strftime("%Y%m%d")
-    count = db.query(Payment).filter(Payment.payment_no.like(f"PM-{today_str}%")).count()
-    payment_no = f"PM-{today_str}-{count+1:03d}"
+    from app.utils.batch_no import generate_doc_no
+    from app.models.purchase import Payment
+    payment_no = generate_doc_no(db, "PM", Payment, "payment_no")
 
     payment = Payment(
         payment_no=payment_no,

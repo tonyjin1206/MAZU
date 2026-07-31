@@ -91,7 +91,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
 
@@ -152,7 +152,7 @@
             <el-table-column prop="source_doc_type" label="单据" width="100" />
             <el-table-column prop="source_doc_no" label="单据号" width="140" />
           </el-table>
-          <el-pagination v-model:current-page="transPage" v-model:page-size="transPageSize" :total="transTotal" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchTransactions" @current-change="fetchTransactions" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="transPage" v-model:page-size="transPageSize" :total="transTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchTransactions" @current-change="fetchTransactions" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -172,7 +172,7 @@ const balanceList = ref([])
 const balanceLoading = ref(false)
 const balanceTotal = ref(0)
 const balancePage = ref(1)
-const balancePageSize = ref(20)
+const balancePageSize = ref(100)
 const balanceQuery = reactive({ warehouse_id: null, type: '', keyword: '', dateRange: null })
 const balancePeriod = ref(false) // 是否显示期间视图
 
@@ -234,7 +234,7 @@ const transactionList = ref([])
 const transLoading = ref(false)
 const transTotal = ref(0)
 const transPage = ref(1)
-const transPageSize = ref(50)
+const transPageSize = ref(100)
 const transQuery = reactive({ warehouse_id: null, type: '', direction: '', keyword: '', material_id: null, product_id: null })
 
 const transTypeMap = {

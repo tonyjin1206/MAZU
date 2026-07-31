@@ -19,19 +19,19 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="invoice_no" label="发票号" width="160" />
-        <el-table-column prop="order_no" label="生产订单号" width="160" />
-        <el-table-column prop="supplier_name" label="销售方" min-width="140" />
-        <el-table-column label="含税金额" width="100" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column label="税率" width="70" align="right" prop="tax_rate"><template #default="{ row }">{{ row.tax_rate }}%</template></el-table-column>
-        <el-table-column label="不含税金额" width="100" align="right"><template #default="{ row }">{{ $fm(row.amount_excl_tax) }}</template></el-table-column>
-        <el-table-column prop="invoice_date" label="开票日期" width="110" />
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="invoice_no" label="发票号" width="160" sortable />
+        <el-table-column prop="order_no" label="生产订单号" width="160" sortable />
+        <el-table-column prop="supplier_name" label="销售方" min-width="140" sortable column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" />
+        <el-table-column label="含税金额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+        <el-table-column label="税率" width="90" align="right" prop="tax_rate" sortable><template #default="{ row }">{{ row.tax_rate }}%</template></el-table-column>
+        <el-table-column label="不含税金额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.amount_excl_tax) }}</template></el-table-column>
+        <el-table-column prop="invoice_date" label="开票日期" width="110" sortable column-key="invoice_date" :filters="dateFilters" :filter-method="filterDate" />
         <el-table-column label="操作" width="80">
           <template #default="{ row }"><el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button></template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 12px" />
+      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 12px" />
     </el-card>
 
     <!-- 选候选单弹窗 -->
@@ -68,7 +68,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { productionApi } from '../../api/business'
 
@@ -76,12 +76,29 @@ const loading = ref(false)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(20)
+const pageSize = ref(100)
 
 const searchForm = reactive({ keyword: '', dateRange: null })
 
+// 列筛选
+const dateFilters = ref([])
+const supplierFilters = ref([])
+const filterDateVal = ref('')
+const filterSupplierVal = ref('')
+
+const filteredList = computed(() => {
+  let items = list.value
+  if (filterDateVal.value) items = items.filter(r => r.invoice_date === filterDateVal.value)
+  if (filterSupplierVal.value) items = items.filter(r => r.supplier_name === filterSupplierVal.value)
+  return items
+})
+
+function filterDate(val, row) { filterDateVal.value = val; return true }
+function filterSupplier(val, row) { filterSupplierVal.value = val; return true }
+
 function resetSearch() {
   searchForm.keyword = ''; searchForm.dateRange = null
+  filterDateVal.value = ''; filterSupplierVal.value = ''
   page.value = 1; fetchData()
 }
 
@@ -103,6 +120,9 @@ async function fetchData() {
     const res = await productionApi.productions.processingInvoices.list(params)
     list.value = res.items || []
     total.value = res.total || 0
+    // 更新列筛选
+    dateFilters.value = [...new Set(list.value.map(r => r.invoice_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
+    supplierFilters.value = [...new Set(list.value.map(r => r.supplier_name).filter(Boolean))].map(v => ({ text: v, value: v }))
   } finally { loading.value = false }
 }
 

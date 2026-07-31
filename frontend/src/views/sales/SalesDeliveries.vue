@@ -15,24 +15,24 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe border size="small" style="width:100%">
-        <el-table-column prop="delivery_no" label="发货单号" width="160" />
-        <el-table-column prop="order_no" label="关联订单" width="160" />
-        <el-table-column prop="product_name" label="产品" min-width="140" />
-        <el-table-column prop="batch_no" label="批次号" width="140" />
-        <el-table-column label="数量" width="90" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-        <el-table-column label="单价" width="100" align="right"><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
-        <el-table-column label="金额" width="100" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column prop="delivery_date" label="发货日期" width="110" />
-        <el-table-column prop="status" label="状态" width="80" />
-        <el-table-column prop="created_at" label="创建时间" width="160" />
+      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width:100%">
+        <el-table-column prop="delivery_no" label="发货单号" width="160" sortable />
+        <el-table-column prop="order_no" label="关联订单" width="160" sortable />
+        <el-table-column prop="product_name" label="产品" min-width="140" sortable column-key="product_name" :filters="productFilters" :filter-method="filterProduct" />
+        <el-table-column prop="batch_no" label="批次号" width="140" sortable />
+        <el-table-column label="数量" width="90" align="right" sortable><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
+        <el-table-column label="单价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
+        <el-table-column label="金额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+        <el-table-column prop="delivery_date" label="发货日期" width="110" sortable column-key="delivery_date" :filters="dateFilters" :filter-method="filterDate" />
+        <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus" sortable />
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable />
         <el-table-column label="操作" width="80" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next" @change="fetchList" style="margin-top: 12px" />
+      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchList" style="margin-top: 12px" />
     </el-card>
 
     <!-- 新建发货弹窗 -->
@@ -104,7 +104,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import request from '../../api/request'
 
@@ -112,11 +112,31 @@ const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(100)
+
+// 列筛选
+const dateFilters = ref([])
+const productFilters = ref([])
+const statusFilters = ref([])
+const filterDateVal = ref('')
+const filterProductVal = ref('')
+const filterStatusVal = ref('')
+
+const filteredList = computed(() => {
+  let items = list.value
+  if (filterDateVal.value) items = items.filter(r => r.delivery_date === filterDateVal.value)
+  if (filterProductVal.value) items = items.filter(r => r.product_name === filterProductVal.value)
+  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
+  return items
+})
+
+function filterDate(val, row) { filterDateVal.value = val; return true }
+function filterProduct(val, row) { filterProductVal.value = val; return true }
+function filterStatus(val, row) { filterStatusVal.value = val; return true }
 
 const searchForm = reactive({ keyword: '', dateRange: null })
 
-function resetSearch() { searchForm.keyword = ''; searchForm.dateRange = null; page.value = 1; fetchList() }
+function resetSearch() { searchForm.keyword = ''; searchForm.dateRange = null; filterDateVal.value = ''; filterProductVal.value = ''; filterStatusVal.value = ''; page.value = 1; fetchList() }
 
 const dialogVisible = ref(false)
 const submitting = ref(false)
@@ -146,6 +166,10 @@ async function fetchList() {
     const res = await request.get('/sales/deliveries', { params: { page: page.value, page_size: pageSize.value } })
     list.value = res.items || []
     total.value = res.total || 0
+    // 更新列筛选
+    dateFilters.value = [...new Set(list.value.map(r => r.delivery_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
+    productFilters.value = [...new Set(list.value.map(r => r.product_name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    statusFilters.value = [...new Set(list.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch (e) { ElMessage.error('加载失败') } finally { loading.value = false }
 }
 

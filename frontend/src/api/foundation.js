@@ -1,5 +1,31 @@
 import request from './request'
 
+// 系统配置 API
+export const systemConfigApi = {
+  wecom: {
+    list: () => request.get('/system/wecom'),
+    create: (data) => request.post('/system/wecom', data),
+    update: (id, data) => request.put(`/system/wecom/${id}`, data),
+    delete: (id) => request.delete(`/system/wecom/${id}`),
+  },
+  bot: {
+    list: () => request.get('/system/bot'),
+    active: () => request.get('/system/bot/active'),
+    create: (data) => request.post('/system/bot', data),
+    update: (id, data) => request.put(`/system/bot/${id}`, data),
+    delete: (id) => request.delete(`/system/bot/${id}`),
+    defaultPrompt: () => request.get('/system/bot/default-prompt'),
+  },
+  reminders: {
+    list: (params) => request.get('/system/reminders', { params }),
+    types: () => request.get('/system/reminder-types'),
+    create: (data) => request.post('/system/reminders', data),
+    update: (id, data) => request.put(`/system/reminders/${id}`, data),
+    delete: (id) => request.delete(`/system/reminders/${id}`),
+    logs: (params) => request.get('/system/reminder-logs', { params }),
+  },
+}
+
 // 认证相关
 export const authApi = {
   login: (data) => request.post('/auth/login', data),

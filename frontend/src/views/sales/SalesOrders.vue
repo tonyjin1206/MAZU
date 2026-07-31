@@ -1,81 +1,147 @@
 <template>
   <div>
-    <el-card style="margin-bottom: 12px">
-      <template #header>
-        <div style="display: flex; justify-content: flex-end; gap: 8px">
-          <el-button type="primary" @click="fetchData">查询</el-button>
-          <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openCreate">新建订单</el-button>
-        </div>
-      </template>
-      <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
-        <el-form-item label="客户">
-          <el-input v-model="searchForm.keyword" placeholder="客户名称/订单号" clearable style="width: 160px" @keyup.enter="fetchData" />
-        </el-form-item>
-        <el-form-item label="日期范围">
-          <el-date-picker v-model="searchForm.dateRange" type="daterange" range-separator="至" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" style="width: 220px" />
-        </el-form-item>
-        <el-form-item label="金额范围">
-          <el-input v-model="searchForm.amountMin" placeholder="最小" type="number" style="width: 100px" />
-          <span style="margin: 0 6px">~</span>
-          <el-input v-model="searchForm.amountMax" placeholder="最大" type="number" style="width: 100px" />
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small">
-        <el-table-column prop="order_date" label="订单日期" width="100" column-key="order_date" :filters="dateFilters" :filter-method="filterDate" />
-        <el-table-column prop="order_no" label="订单号" min-width="140" />
-        <el-table-column prop="customer_name" label="客户" min-width="120" column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
-        <el-table-column prop="item_count" label="明细" width="50" align="center" />
-          <el-table-column label="含税金额" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-          <el-table-column label="已开票" align="right"><template #default="{ row }">{{ $fm(row.invoiced_amount) }}</template></el-table-column>
-          <el-table-column label="未开票" align="right">
-            <template #default="{ row }">
-              <span :style="{ color: (row.total_amount - row.invoiced_amount) > 0 ? '#e6a23c' : '#909399' }">
-                {{ $fm((row.total_amount || 0) - (row.invoiced_amount || 0)) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="currency_code" label="币种" width="60" />
-          <el-table-column prop="trade_term" label="贸易术语" width="80" />
-          <el-table-column label="发货" align="center" min-width="60">
-            <template #default="{ row }">
-              <el-tag v-if="row.status === '已发货'" type="success" size="small">已发货</el-tag>
-              <el-tag v-else-if="row.status === '部分发货'" type="warning" size="small">部分</el-tag>
-              <el-tag v-else size="small">{{ row.status }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="已发货" align="right"><template #default="{ row }">{{ $fm(row.delivered_amount) }}</template></el-table-column>
-          <el-table-column label="未发货" align="right">
-            <template #default="{ row }">
-              <span :style="{ color: (row.undelivered_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
-                {{ $fm(row.undelivered_amount) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column label="已收款" align="right"><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
-          <el-table-column label="未收款" align="right">
-            <template #default="{ row }">
-              <span :style="{ color: (row.uncollected_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
-                {{ $fm(row.uncollected_amount) }}
-              </span>
-            </template>
-          </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="row.status === '待审核'" link type="primary" @click="handleApprove(row)">审核</el-button>
-            <el-button v-if="row.status === '待审核'" link type="danger" @click="handleDelete(row)">删除</el-button>
-            <el-button link type="primary" @click="openDialog(row)">详情</el-button>
+    <el-tabs v-model="activeTab" @tab-change="onTabChange">
+      <!-- ========== 页签1：按销售订单查询 ========== -->
+      <el-tab-pane label="按销售订单查询" name="orders">
+        <el-card style="margin-bottom: 12px">
+          <template #header>
+            <div style="display: flex; justify-content: flex-end; gap: 8px">
+              <el-button type="primary" @click="fetchData">查询</el-button>
+              <el-button @click="resetSearch">重置</el-button>
+              <el-button type="primary" @click="openCreate">新建订单</el-button>
+            </div>
           </template>
-        </el-table-column>
-      </el-table>
-      <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[100]" layout="total, prev, pager, next" @change="fetchData" style="margin-top: 12px" />
-    </el-card>
+          <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
+            <el-form-item label="客户">
+              <el-input v-model="searchForm.keyword" placeholder="客户名称/订单号" clearable style="width: 160px" @keyup.enter="fetchData" />
+            </el-form-item>
+            <el-form-item label="日期范围">
+              <el-date-picker v-model="searchForm.dateRange" type="daterange" range-separator="至" start-placeholder="开始" end-placeholder="结束" value-format="YYYY-MM-DD" style="width: 220px" />
+            </el-form-item>
+            <el-form-item label="金额范围">
+              <el-input v-model="searchForm.amountMin" placeholder="最小" type="number" style="width: 100px" />
+              <span style="margin: 0 6px">~</span>
+              <el-input v-model="searchForm.amountMax" placeholder="最大" type="number" style="width: 100px" />
+            </el-form-item>
+          </el-form>
+        </el-card>
 
-    <!-- 新建/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="viewMode ? '订单详情' : '新建订单'" width="900px" destroy-on-close>
+        <el-card>
+          <el-table :data="filteredList" v-loading="loading" stripe border size="small">
+            <el-table-column prop="order_date" label="订单日期" width="100" sortable column-key="order_date" :filters="dateFilters" :filter-method="filterDate" />
+            <el-table-column prop="order_no" label="订单号" min-width="140" sortable />
+            <el-table-column prop="customer_name" label="客户" width="170" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
+            <el-table-column prop="item_count" label="明细" width="70" align="center" sortable />
+              <el-table-column label="含税金额" align="right" width="100" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
+              <el-table-column label="已开票" align="right" width="100" sortable><template #default="{ row }">{{ $fm(row.invoiced_amount) }}</template></el-table-column>
+              <el-table-column label="未开票" align="right" width="100" sortable>
+                <template #default="{ row }">
+                  <span :style="{ color: (row.total_amount - row.invoiced_amount) > 0 ? '#e6a23c' : '#909399' }">
+                    {{ $fm((row.total_amount || 0) - (row.invoiced_amount || 0)) }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="currency_code" label="币种" width="80" sortable />
+              <el-table-column prop="trade_term" label="贸易术语" width="100" sortable />
+              <el-table-column label="状态" align="center" width="90" sortable>
+                <template #default="{ row }">
+                  <el-tag v-if="row.status === '已发货'" type="success" size="small">已发货</el-tag>
+                  <el-tag v-else-if="row.status === '部分发货'" type="warning" size="small">部分发货</el-tag>
+                  <el-tag v-else-if="row.status === '生产中'" type="primary" size="small">生产中</el-tag>
+                  <el-tag v-else-if="row.status === '已审'" type="info" size="small">已审</el-tag>
+                  <el-tag v-else-if="row.status === '待审核'" type="info" size="small">待审核</el-tag>
+                  <el-tag v-else size="small">{{ row.status }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="已发货" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.delivered_amount) }}</template></el-table-column>
+              <el-table-column label="未发货" align="right" width="90" sortable>
+                <template #default="{ row }">
+                  <span :style="{ color: (row.undelivered_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
+                    {{ $fm(row.undelivered_amount) }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column label="已收款" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
+              <el-table-column label="未收款" align="right" width="90" sortable>
+                <template #default="{ row }">
+                  <span :style="{ color: (row.uncollected_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
+                    {{ $fm(row.uncollected_amount) }}
+                  </span>
+                </template>
+              </el-table-column>
+            <el-table-column label="操作" width="220" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="row.status === '待审核'" link type="primary" @click="handleApprove(row)">审核</el-button>
+                <el-button v-if="row.status === '待审核'" link type="primary" @click="openEdit(row)">修改</el-button>
+                <el-button v-if="row.status === '待审核'" link type="danger" @click="handleDelete(row)">删除</el-button>
+                <el-button link type="primary" @click="openDialog(row)">详情</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 12px" />
+        </el-card>
+      </el-tab-pane>
+
+      <!-- ========== 页签2：按销售明细查询 ========== -->
+      <el-tab-pane label="按销售明细查询" name="items">
+        <el-card style="margin-bottom: 12px">
+          <template #header>
+            <div style="display: flex; justify-content: flex-end; gap: 8px">
+              <el-button type="primary" @click="fetchOrderItems">查询</el-button>
+              <el-button @click="resetItemSearch">重置</el-button>
+            </div>
+          </template>
+          <el-form :inline="true" :model="itemSearchForm" style="flex-wrap: nowrap">
+            <el-form-item label="关键词">
+              <el-input v-model="itemSearchForm.keyword" placeholder="订单号/客户/产品" clearable style="width: 180px" @keyup.enter="fetchOrderItems" />
+            </el-form-item>
+            <el-form-item label="生产状态">
+              <el-select v-model="itemSearchForm.production_status" clearable placeholder="全部" style="width: 140px" @change="fetchOrderItems">
+                <el-option label="未生产" value="未生产" />
+                <el-option label="生产中" value="生产中" />
+                <el-option label="已生产" value="已生产" />
+              </el-select>
+            </el-form-item>
+          </el-form>
+        </el-card>
+
+        <el-card>
+          <el-table :data="filteredItemList" v-loading="itemLoading" stripe border size="small">
+            <el-table-column prop="order_no" label="订单号" min-width="140" sortable />
+            <el-table-column prop="order_date" label="订单日期" width="110" sortable column-key="order_date_i" :filters="itemDateFilters" :filter-method="filterItemDate" />
+            <el-table-column prop="customer_name" label="客户" width="160" sortable column-key="customer_name_i" :filters="itemCustomerFilters" :filter-method="filterItemCustomer" />
+            <el-table-column prop="product_code" label="产品编码" width="100" sortable column-key="product_code" :filters="prodCodeFilters" :filter-method="filterProdCode" />
+            <el-table-column prop="product_name" label="产品名称" min-width="140" sortable column-key="product_name" :filters="prodNameFilters" :filter-method="filterProdName" />
+            <el-table-column prop="quantity" label="数量" width="80" align="right" sortable />
+            <el-table-column prop="unit_price" label="单价" width="100" align="right" sortable>
+              <template #default="{ row }">{{ $fm(row.unit_price) }}</template>
+            </el-table-column>
+            <el-table-column prop="total_amount" label="金额" width="100" align="right" sortable>
+              <template #default="{ row }">{{ $fm(row.total_amount) }}</template>
+            </el-table-column>
+            <el-table-column label="生产状态" width="100" align="center" sortable column-key="prod_status" :filters="prodStatusFilters" :filter-method="filterProdStatus">
+              <template #default="{ row }">
+                <el-tag v-if="row.production_status === '未生产'" type="info" size="small">未生产</el-tag>
+                <el-tag v-else-if="row.production_status === '生产中'" type="warning" size="small">生产中</el-tag>
+                <el-tag v-else-if="row.production_status === '已生产'" type="success" size="small">已生产</el-tag>
+                <el-tag v-else size="small">{{ row.production_status }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="180" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openOrderDialog(row.order_id)">查看订单</el-button>
+                <el-button v-if="!row.has_active_mo" link type="primary" size="small" @click="editOrderItem(row)">修改</el-button>
+                <el-button v-if="!row.has_active_mo" link type="primary" size="small" @click="reProduceItem(row)">重发生产</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination v-model:current-page="itemQueryParams.page" v-model:page-size="itemQueryParams.page_size" :total="itemTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchOrderItems" style="margin-top: 12px" />
+        </el-card>
+      </el-tab-pane>
+    </el-tabs>
+
+    <!-- 新建/编辑/详情弹窗 -->
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="900px" destroy-on-close>
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -134,7 +200,7 @@
                   <span v-else>{{ row.product_name }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="数量" width="100">
+              <el-table-column label="数量" width="80">
                 <template #default="{ row }">
                   <el-input type="number" v-model="row.quantity" :min="0" size="small" :disabled="viewMode" controls-position="right" @input="calcItem(row)" />
                 </template>
@@ -144,7 +210,7 @@
                   <el-input type="number" v-model="row.unit_price" :min="0" :precision="2" size="small" :disabled="viewMode" controls-position="right" @input="calcItem(row)" />
                 </template>
               </el-table-column>
-              <el-table-column label="税率%" width="70">
+              <el-table-column label="税率%" width="65">
                 <template #default="{ row }">
                   <el-input type="number" v-model="row.tax_rate" :min="0" :max="17" size="small" :disabled="viewMode" controls-position="right" @input="calcItem(row)" />
                 </template>
@@ -157,6 +223,14 @@
               </el-table-column>
               <el-table-column label="不含税" width="100" align="right">
                 <template #default="{ row }">{{ $fm(row.total_amount_excl_tax) }}</template>
+              </el-table-column>
+              <el-table-column label="生产状态" width="80" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.production_status === '未生产' || !row.production_status" type="info" size="small">未生产</el-tag>
+                  <el-tag v-else-if="row.production_status === '生产中'" type="warning" size="small">生产中</el-tag>
+                  <el-tag v-else-if="row.production_status === '已生产'" type="success" size="small">✓已生产</el-tag>
+                  <el-tag v-else size="small">{{ row.production_status }}</el-tag>
+                </template>
               </el-table-column>
               <el-table-column v-if="!viewMode" width="50">
                 <template #default="{ $index }">
@@ -177,7 +251,43 @@
 
       <template #footer>
         <el-button @click="dialogVisible = false">{{ viewMode ? '关闭' : '取消' }}</el-button>
-        <el-button v-if="!viewMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button v-if="editMode" type="primary" :loading="submitting" @click="handleUpdate">保存修改</el-button>
+        <el-button v-if="!viewMode && !editMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 修改明细行弹窗 -->
+    <el-dialog v-model="itemEditVisible" title="修改明细行" width="500px" destroy-on-close>
+      <el-form :model="itemEditForm" label-width="80px">
+        <el-form-item label="产品">
+          <el-select v-model="itemEditForm.product_id" placeholder="选择产品" filterable style="width: 100%">
+            <el-option v-for="p in productList" :key="p.id" :label="`${p.code} - ${p.name_cn}`" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="8">
+            <el-form-item label="数量">
+              <el-input type="number" v-model="itemEditForm.quantity" :min="0" controls-position="right" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="单价">
+              <el-input type="number" v-model="itemEditForm.unit_price" :min="0" :precision="2" controls-position="right" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="8">
+            <el-form-item label="税率%">
+              <el-input type="number" v-model="itemEditForm.tax_rate" :min="0" :max="17" controls-position="right" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="含税金额">
+          <span style="color: #409eff; font-weight: bold">{{ $fm(itemEditForm.total_amount) }}</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="itemEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="itemSubmitting" @click="handleItemUpdate">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -188,17 +298,19 @@ import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api/request'
 
+// ========== 页签 ==========
+const activeTab = ref('orders')
+
+// ========== 页签1：销售订单查询 ==========
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
 const queryParams = reactive({ page: 1, page_size: 100 })
 
-// 搜索条件
 const searchForm = reactive({
   keyword: '', dateRange: null, amountMin: '', amountMax: '',
 })
 
-// 列筛选
 const customerFilters = ref([])
 const dateFilters = ref([])
 const filterCustomerVal = ref('')
@@ -228,8 +340,131 @@ function resetSearch() {
 
 function filterDate(val, row) { filterDateVal.value = val; return true }
 function filterCustomer(val, row) { filterCustomerVal.value = val; return true }
+
+// ========== 页签2：明细行查询 ==========
+const itemLoading = ref(false)
+const orderItemList = ref([])
+const itemTotal = ref(0)
+const itemQueryParams = reactive({ page: 1, page_size: 100 })
+const itemSearchForm = reactive({ keyword: '', production_status: '' })
+
+// 明细列筛选
+const itemDateFilters = ref([])
+const itemCustomerFilters = ref([])
+const prodCodeFilters = ref([])
+const prodNameFilters = ref([])
+const prodStatusFilters = ref([])
+const filterItemDateVal = ref('')
+const filterItemCustomerVal = ref('')
+const filterProdCodeVal = ref('')
+const filterProdNameVal = ref('')
+const filterProdStatusVal = ref('')
+
+const filteredItemList = computed(() => {
+  let items = orderItemList.value
+  if (filterItemDateVal.value) items = items.filter(r => r.order_date === filterItemDateVal.value)
+  if (filterItemCustomerVal.value) items = items.filter(r => r.customer_name === filterItemCustomerVal.value)
+  if (filterProdCodeVal.value) items = items.filter(r => r.product_code === filterProdCodeVal.value)
+  if (filterProdNameVal.value) items = items.filter(r => r.product_name === filterProdNameVal.value)
+  if (filterProdStatusVal.value) items = items.filter(r => r.production_status === filterProdStatusVal.value)
+  return items
+})
+function filterItemDate(val, row) { filterItemDateVal.value = val; return true }
+function filterItemCustomer(val, row) { filterItemCustomerVal.value = val; return true }
+function filterProdCode(val, row) { filterProdCodeVal.value = val; return true }
+function filterProdName(val, row) { filterProdNameVal.value = val; return true }
+function filterProdStatus(val, row) { filterProdStatusVal.value = val; return true }
+
+function resetItemSearch() {
+  itemSearchForm.keyword = ''
+  itemSearchForm.production_status = ''
+  filterItemDateVal.value = ''; filterItemCustomerVal.value = ''
+  filterProdCodeVal.value = ''; filterProdNameVal.value = ''; filterProdStatusVal.value = ''
+  itemQueryParams.page = 1
+  fetchOrderItems()
+}
+
+async function fetchOrderItems() {
+  itemLoading.value = true
+  try {
+    const params = { page: itemQueryParams.page, page_size: itemQueryParams.page_size }
+    if (itemSearchForm.keyword) params.keyword = itemSearchForm.keyword
+    if (itemSearchForm.production_status) params.production_status = itemSearchForm.production_status
+    const res = await request.get('/sales/order-items', { params })
+    orderItemList.value = res.items || []
+    itemTotal.value = res.total || 0
+    // 更新列筛选
+    itemDateFilters.value = [...new Set(orderItemList.value.map(r => r.order_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
+    itemCustomerFilters.value = [...new Set(orderItemList.value.map(r => r.customer_name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    prodCodeFilters.value = [...new Set(orderItemList.value.map(r => r.product_code).filter(Boolean))].map(v => ({ text: v, value: v }))
+    prodNameFilters.value = [...new Set(orderItemList.value.map(r => r.product_name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    prodStatusFilters.value = [...new Set(orderItemList.value.map(r => r.production_status).filter(Boolean))].map(v => ({ text: v, value: v }))
+  } catch {} finally { itemLoading.value = false }
+}
+
+function onTabChange(tab) {
+  if (tab === 'items' && orderItemList.value.length === 0) {
+    fetchOrderItems()
+  }
+}
+
+function openOrderDialog(orderId) {
+  // 切换到订单页签并加载数据
+  activeTab.value = 'orders'
+  const row = { id: orderId }
+  openDialog(row)
+}
+
+async function editOrderItem(row) {
+  // 实时获取最新状态
+  try {
+    const res = await request.get(`/sales/orders/${row.order_id}`)
+    const item = (res.items || []).find(i => i.id === row.id)
+    if (!item) { ElMessage.warning('明细行不存在'); return }
+    if (item.production_status !== '未生产') {
+      ElMessage.warning(`该明细行当前生产状态为「${item.production_status}」，不允许修改`)
+      return
+    }
+    // 填充到编辑表单
+    itemEditForm.order_id = row.order_id
+    itemEditForm.id = item.id
+    itemEditForm.product_id = item.product_id
+    itemEditForm.quantity = item.quantity
+    itemEditForm.unit_price = item.unit_price
+    itemEditForm.tax_rate = item.tax_rate
+    itemEditForm.total_amount = item.total_amount
+    itemEditVisible.value = true
+  } catch { return }
+}
+
+async function reProduceItem(row) {
+  // 实时获取最新状态
+  try {
+    const res = await request.get(`/sales/orders/${row.order_id}`)
+    const item = (res.items || []).find(i => i.id === row.id)
+    if (!item) { ElMessage.warning('明细行不存在'); return }
+    if (item.production_status !== '未生产') {
+      ElMessage.warning(`该明细行当前生产状态为「${item.production_status}」，不允许重发生产`)
+      return
+    }
+  } catch { return }
+  await ElMessageBox.confirm(`确定对明细行「${row.product_name}」重发生产？`, '提示', { type: 'info' })
+  try {
+    const res = await request.post(`/sales/orders/${row.order_id}/items/${row.id}/re-produce`)
+    ElMessage.success(res.message || '重发生产成功')
+    fetchOrderItems()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '重发生产失败') }
+}
+
+// ========== 弹窗 ==========
 const dialogVisible = ref(false)
 const viewMode = ref(false)
+const editMode = ref(false)
+const dialogTitle = computed(() => {
+  if (viewMode.value) return '订单详情'
+  if (editMode.value) return '修改订单'
+  return '新建订单'
+})
 const submitting = ref(false)
 const customerList = ref([])
 const currencyList = ref([])
@@ -240,6 +475,7 @@ const orderForm = reactive({
   id: null, customer_id: null, currency_id: null, trade_term_id: null,
   payment_terms: 'TT', order_date: '', delivery_date: '', remark: '',
   total_amount: 0, tax_amount: 0, total_amount_excl_tax: 0,
+  exchange_rate: 1,
   items: [],
 })
 
@@ -257,7 +493,6 @@ async function fetchData() {
     const res = await request.get('/sales/orders', { params })
     dataList.value = res.items || []
     total.value = res.total || 0
-    // 更新列筛选选项
     dateFilters.value = [...new Set(dataList.value.map(r => r.order_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
     customerFilters.value = [...new Set(dataList.value.map(r => r.customer_name).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch {} finally { loading.value = false }
@@ -278,6 +513,7 @@ async function loadProducts() {
 
 function openCreate() {
   viewMode.value = false
+  editMode.value = false
   Object.assign(orderForm, {
     id: null, customer_id: null, currency_id: null, trade_term_id: null,
     payment_terms: 'TT', order_date: '', delivery_date: '', remark: '',
@@ -289,6 +525,7 @@ function openCreate() {
 
 async function openDialog(row) {
   viewMode.value = true
+  editMode.value = false
   try {
     const res = await request.get(`/sales/orders/${row.id}`)
     Object.assign(orderForm, { ...res, items: res.items || [] })
@@ -373,7 +610,85 @@ async function handleDelete(row) {
   } catch {}
 }
 
-// 监听明细行增减时自动重算（不 deep watch，避免 calcItem 修改属性导致循环触发）
+async function openEdit(row) {
+  editMode.value = true
+  viewMode.value = false
+  try {
+    const res = await request.get(`/sales/orders/${row.id}`)
+    Object.assign(orderForm, { ...res, items: res.items || [] })
+    calcTotals()
+  } catch {}
+  dialogVisible.value = true
+}
+
+async function handleUpdate() {
+  if (!orderForm.customer_id) { ElMessage.warning('请选择客户'); return }
+  if (!orderForm.items.length) { ElMessage.warning('请添加明细'); return }
+  submitting.value = true
+  try {
+    const items = orderForm.items.map(item => ({
+      id: item.id,
+      product_id: item.product_id,
+      quantity: parseFloat(item.quantity) || 0,
+      unit_price: parseFloat(item.unit_price) || 0,
+      total_amount: parseFloat(item.total_amount) || 0,
+      tax_amount: parseFloat(item.tax_amount) || 0,
+      total_amount_excl_tax: parseFloat(item.total_amount_excl_tax) || 0,
+      tax_rate: parseFloat(item.tax_rate) || 13,
+    }))
+    await request.put(`/sales/orders/${orderForm.id}`, {
+      customer_id: orderForm.customer_id, currency_id: orderForm.currency_id,
+      trade_term_id: orderForm.trade_term_id, payment_terms: orderForm.payment_terms,
+      order_date: orderForm.order_date, delivery_date: orderForm.delivery_date,
+      remark: orderForm.remark, exchange_rate: orderForm.exchange_rate,
+      items,
+    })
+    ElMessage.success('修改成功')
+    dialogVisible.value = false
+    editMode.value = false
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '修改失败') } finally { submitting.value = false }
+}
+
+// ========== 明细行独立修改 ==========
+const itemEditVisible = ref(false)
+const itemSubmitting = ref(false)
+const itemEditForm = reactive({
+  order_id: null, id: null, product_id: null,
+  quantity: 1, unit_price: 0, tax_rate: 13, total_amount: 0,
+})
+
+watch(() => itemEditForm.quantity, () => calcItemTotal(), { immediate: false })
+watch(() => itemEditForm.unit_price, () => calcItemTotal(), { immediate: false })
+watch(() => itemEditForm.tax_rate, () => calcItemTotal(), { immediate: false })
+
+function calcItemTotal() {
+  const qty = parseFloat(itemEditForm.quantity) || 0
+  const price = parseFloat(itemEditForm.unit_price) || 0
+  itemEditForm.total_amount = qty * price
+}
+
+async function handleItemUpdate() {
+  if (!itemEditForm.product_id) { ElMessage.warning('请选择产品'); return }
+  itemSubmitting.value = true
+  try {
+    const qty = parseFloat(itemEditForm.quantity) || 0
+    const price = parseFloat(itemEditForm.unit_price) || 0
+    const rate = parseFloat(itemEditForm.tax_rate) || 13
+    const total = qty * price
+    await request.put(`/sales/orders/${itemEditForm.order_id}/items/${itemEditForm.id}`, {
+      product_id: itemEditForm.product_id,
+      quantity: qty,
+      unit_price: price,
+      tax_rate: rate,
+      total_amount: total,
+    })
+    ElMessage.success('明细行已修改')
+    itemEditVisible.value = false
+    fetchOrderItems()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '修改失败') } finally { itemSubmitting.value = false }
+}
+
 watch(() => orderForm.items.length, () => {
   orderForm.items.forEach(item => calcItem(item))
 })
