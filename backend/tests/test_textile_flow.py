@@ -48,11 +48,9 @@ class TestTextileFullFlow:
                              "tax_id": tax_id, "address": addr,
                              "supplier_type": stype}, h)["id"]
 
-        # 2委外商
-        os_sun = api(client, "POST", "/api/foundation/outsourcers",
-                     {"supplier_id": sup["江苏阳光纺织科技有限公司"], "lead_time": 3}, h)["id"]
-        os_hong = api(client, "POST", "/api/foundation/outsourcers",
-                      {"supplier_id": sup["杭州宏丰化工有限公司"], "lead_time": 5}, h)["id"]
+        # 2委外商（新设计：委外商=供应商分类 supplier_type=委外，不单独建表）
+        os_sun = sup["江苏阳光纺织科技有限公司"]
+        os_hong = sup["杭州宏丰化工有限公司"]
         outsrc = {"江苏": os_sun, "宏丰": os_hong}
 
         # 3客户（含联系人、税号、电话、地址）
@@ -225,6 +223,12 @@ class TestTextileFullFlow:
             mo_id = mo["id"]
             mo_no = mo["order_no"]
             print(f"   ② 审核→生产订单: {mo_no}")
+
+            # ---- (2.5) 确认备货方式（自产）----
+            st = api(client, "POST", f"/api/production/productions/{mo_id}/set-type",
+                     {"production_type": "自产"}, h)
+            assert st, "确认备货方式失败"
+            print(f"   ②·⑤ 备货方式: 自产")
 
             # ---- (3) 展开BOM ----
             api(client, "POST", f"/api/production/productions/{mo_id}/expand-bom", {}, h)
