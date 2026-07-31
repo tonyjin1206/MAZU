@@ -27,6 +27,7 @@
         v-loading="loading"
         stripe border size="small"
         style="width: 100%"
+        :row-class-name="rowClassName"
       >
         <el-table-column
           v-for="col in columns"
@@ -47,11 +48,19 @@
           <template v-if="col.prop === 'sale_price'" #default="{ row }">
             {{ $fm(row.sale_price) }}
           </template>
+          <template v-else-if="col.prop === 'is_active'" #default="{ row }">
+            <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">
+              {{ row.is_active === 1 ? '启用' : '停用' }}
+            </el-tag>
+          </template>
         </el-table-column>
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button link :type="row.is_active === 1 ? 'warning' : 'success'" size="small" @click="handleToggle(row)">
+              {{ row.is_active === 1 ? '停用' : '启用' }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -121,6 +130,7 @@ const defaultColumns = [
   { prop: 'spec', label: '规格', minWidth: 140, sortable: true },
   { prop: 'unit', label: '单位', width: 100, align: 'center', sortable: true },
   { prop: 'sale_price', label: '销售价', width: 100, align: 'right', sortable: true },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center' },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
@@ -253,8 +263,29 @@ async function handleDelete(row) {
     ElMessage.success('删除成功')
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败')
   }
 }
 
+async function handleToggle(row) {
+  const next = row.is_active === 1 ? 0 : 1
+  try {
+    await foundationApi.products.update(row.id, { is_active: next })
+    row.is_active = next
+    ElMessage.success(next ? '已启用' : '已停用')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '操作失败')
+  }
+}
+
+function rowClassName({ row }) {
+  return row.is_active === 1 ? '' : 'mazu-disabled-row'
+}
+
 </script>
+
+<style scoped>
+:deep(.mazu-disabled-row) {
+  opacity: 0.55;
+}
+</style>

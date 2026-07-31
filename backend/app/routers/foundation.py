@@ -16,14 +16,20 @@ from app.models.foundation import (
     SystemParam,
 )
 from app.models.sales import (
-    SalesQuote, SalesOrder, SalesDelivery, CustomsDeclaration,
+    SalesQuote, SalesOrder, SalesOrderItem, SalesDelivery, CustomsDeclaration,
     SalesInvoice, AccountsReceivable, Collection,
 )
 from app.models.purchase import (
-    PurchaseOrder, PurchaseReceipt, PurchaseInvoice,
+    PurchaseOrder, PurchaseOrderItem, PurchaseReceipt, PurchaseReceiptItem, PurchaseInvoice,
     AccountsPayable, Payment,
 )
-from app.models.production import OutsourcingOrder, ProcessingInvoice
+from app.models.production import (
+    OutsourcingOrder, ProcessingInvoice,
+    ProductionOrder, ProductionMaterial, ProductionReceipt, MaterialIssueItem,
+)
+from app.models.inventory import (
+    WarehouseInventory, StockTransaction, StockCheckItem,
+)
 from app.models.tax_refund import TaxRefundInputInvoice
 from app.schemas.foundation import (
     MaterialCreate, MaterialUpdate, MaterialOut,
@@ -164,7 +170,10 @@ def delete_material(item_id: int, db: Session = Depends(get_db),
     item = db.query(Material).filter(Material.id == item_id).first()
     if not item:
         raise HTTPException(404, "材料不存在")
-    item.is_active = 0
+    biz = _has_business_refs(db, Material, item_id, MATERIAL_REFS)
+    if biz:
+        raise HTTPException(400, f"该材料已有{biz}数据，不允许删除，可停用")
+    db.delete(item)
     db.commit()
     return {"message": "材料已删除"}
 
@@ -272,7 +281,10 @@ def delete_product(item_id: int, db: Session = Depends(get_db), current_user: Us
     item = db.query(Product).filter(Product.id == item_id).first()
     if not item:
         raise HTTPException(404, "产品不存在")
-    item.is_active = 0
+    biz = _has_business_refs(db, Product, item_id, PRODUCT_REFS)
+    if biz:
+        raise HTTPException(400, f"该产品已有{biz}数据，不允许删除，可停用")
+    db.delete(item)
     db.commit()
     return {"message": "产品已删除"}
 
@@ -441,6 +453,36 @@ SUPPLIER_REFS = [
     (OutsourcingOrder, "supplier_id", "委外工单"),
     (ProcessingInvoice, "supplier_id", "加工费发票"),
     (TaxRefundInputInvoice, "supplier_id", "进项发票"),
+]
+
+# 材料被引用的业务表：采购明细/入库明细/BOM/生产物料/发料/库存/流水/盘点
+MATERIAL_REFS = [
+    (PurchaseOrderItem, "material_id", "采购订单"),
+    (PurchaseReceiptItem, "material_id", "采购入库"),
+    (BomItem, "material_id", "BOM"),
+    (ProductionMaterial, "material_id", "生产订单"),
+    (MaterialIssueItem, "material_id", "发料记录"),
+    (WarehouseInventory, "material_id", "库存"),
+    (StockTransaction, "material_id", "库存流水"),
+    (StockCheckItem, "material_id", "盘点单"),
+]
+
+# 产品被引用的业务表：报价/销售明细/发货/BOM/工艺/生产/完工入库/委外/加工费/库存/流水/进项发票
+PRODUCT_REFS = [
+    (SalesQuote, "product_id", "销售报价"),
+    (SalesOrderItem, "product_id", "销售订单"),
+    (SalesDelivery, "product_id", "销售发货"),
+    (BomItem, "product_id", "BOM"),
+    (ProductProcess, "product_id", "工艺路线"),
+    (ProductionOrder, "product_id", "生产订单"),
+    (ProductionMaterial, "product_id", "生产物料"),
+    (ProductionReceipt, "product_id", "完工入库"),
+    (OutsourcingOrder, "product_id", "委外工单"),
+    (ProcessingInvoice, "product_id", "加工费发票"),
+    (WarehouseInventory, "product_id", "库存"),
+    (StockTransaction, "product_id", "库存流水"),
+    (StockCheckItem, "product_id", "盘点单"),
+    (TaxRefundInputInvoice, "product_id", "进项发票"),
 ]
 
 
