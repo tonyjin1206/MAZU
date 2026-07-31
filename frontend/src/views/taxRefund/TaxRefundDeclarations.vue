@@ -176,7 +176,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import { taxRefundApi } from '../../api/business'
 
 const list = ref([])
 const loading = ref(false)
@@ -218,7 +218,7 @@ async function fetchList() {
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
     if (searchForm.dateRange) { params.date_from = searchForm.dateRange[0]; params.date_to = searchForm.dateRange[1] }
-    const res = await request.get('/tax-refund/declarations', { params })
+    const res = await taxRefundApi.declarations.list({ params })
     list.value = res.items || []; total.value = res.total || 0
   } catch { ElMessage.error('加载失败') }
   finally { loading.value = false }
@@ -226,7 +226,7 @@ async function fetchList() {
 
 async function fetchInvoices() {
   try {
-    const res = await request.get('/tax-refund/input-invoices', { params: { page: 1, page_size: 100 } })
+    const res = await taxRefundApi.inputInvoices.list({ page: 1, page_size: 100 })
     invoiceList.value = res.items || []
   } catch {}
 }
@@ -241,7 +241,7 @@ async function submitCreate() {
   if (!createForm.period || createForm.period.length !== 6) { ElMessage.warning('申报年月格式为 YYYYMM'); return }
   const declNo = `TS-${createForm.period}-${String(createForm.batch).padStart(2, '0')}`
   try {
-    const res = await request.post('/tax-refund/declarations', {
+    const res = await taxRefundApi.declarations.create({
       declaration_no: declNo, declare_date: new Date().toISOString().slice(0, 10),
       period: createForm.period, batch: createForm.batch,
       export_amount_fob: 0, domestic_tax: 0, input_tax: 0, last_period_deduction: 0,
@@ -271,7 +271,7 @@ async function openEdit(row) {
 
 async function loadDraft(id) {
   try {
-    const res = await request.get(`/tax-refund/declarations/${id}`)
+    const res = await taxRefundApi.declarations.get(id, id)
     currentDecl.value = res
     draftRows.value = (res.rows || []).map(r => ({ ...r, _isNew: false, _pendingDelete: false }))
   } catch {}
@@ -293,7 +293,7 @@ async function saveRows() {
     // 删除标记的行
     for (const row of draftRows.value) {
       if (row._pendingDelete && row.id) {
-        await request.delete(`/tax-refund/declarations/${currentDeclId.value}/rows/${row.id}`)
+        await taxRefundApi.declarations.deleteRow(currentDeclId.value, row.id, currentDeclId.value)
       }
     }
     // 保存新行和更新已有行
@@ -301,26 +301,10 @@ async function saveRows() {
       .filter(r => !r._pendingDelete)
       .map(async (row) => {
         if (row._isNew && row.input_invoice_id) {
-          await request.post(`/tax-refund/declarations/${currentDeclId.value}/rows`, {
-            input_invoice_id: row.input_invoice_id,
-            voucher_type: row.voucher_type || '增值税专用发票',
-            product_code: row.product_code || '',
-            product_name: row.product_name || '',
-            unit: row.unit || '', quantity: row.quantity || 0,
-            taxable_amount: row.taxable_amount || 0,
-            tax_rate: row.tax_rate || 13, refund_rate: row.refund_rate || 13,
-          })
+          await taxRefundApi.declarations.addRow(currentDeclId.value, currentDeclId.value)
         } else if (row.id && !row._isNew) {
           // 更新已有行（商品代码/名称/单位/数量/计税金额等）
-          await request.put(`/tax-refund/declarations/${currentDeclId.value}/rows/${row.id}`, {
-            product_code: row.product_code || '',
-            product_name: row.product_name || '',
-            unit: row.unit || '',
-            quantity: row.quantity || 0,
-            taxable_amount: row.taxable_amount || 0,
-            tax_rate: row.tax_rate || 13,
-            refund_rate: row.refund_rate || 13,
-          })
+          await taxRefundApi.declarations.updateRow(currentDeclId.value, row.id, currentDeclId.value)
         }
       })
     await Promise.all(savePromises)
@@ -381,14 +365,14 @@ function markDeleteRow(index) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除申报 ${row.declaration_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/tax-refund/declarations/${row.id}`)
+    await taxRefundApi.declarations.delete(row.id, row.id)
     ElMessage.success('已删除'); fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
 }
 
 async function handleSubmitDecl(row) {
   try {
-    await request.put(`/tax-refund/declarations/${row.id}/submit`)
+    await taxRefundApi.declarations.submit(row.id, row.id)
     ElMessage.success('申报成功')
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '申报失败') }
@@ -397,7 +381,7 @@ async function handleSubmitDecl(row) {
 async function handleCancelSubmit(row) {
   await ElMessageBox.confirm(`确定取消申报 ${row.declaration_no}？申报将返回待申报状态。`, '提示', { type: 'warning' })
   try {
-    await request.put(`/tax-refund/declarations/${row.id}/cancel-submit`)
+    await taxRefundApi.declarations.cancelSubmit(row.id, row.id)
     ElMessage.success('已取消申报')
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -413,7 +397,7 @@ async function confirmRefund() {
   const amt = parseFloat(refundAmount.value)
   if (amt <= 0) { ElMessage.warning('请输入有效的退税金额'); return }
   try {
-    await request.put(`/tax-refund/declarations/${refundTarget.value.id}/refund`, { amount: amt })
+    await taxRefundApi.declarations.refund(refundTarget.value.id, refundTarget.value.id)
     ElMessage.success('退税完成')
     refundDialog.value = false
     fetchList()
@@ -423,7 +407,7 @@ async function confirmRefund() {
 async function handleCancelRefund(row) {
   await ElMessageBox.confirm(`确定取消退税？申报将返回"已申报"状态。`, '提示', { type: 'warning' })
   try {
-    await request.put(`/tax-refund/declarations/${row.id}/cancel-refund`)
+    await taxRefundApi.declarations.cancelRefund(row.id, row.id)
     ElMessage.success('退税已取消')
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }

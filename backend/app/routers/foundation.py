@@ -8,7 +8,7 @@ from app.models.auth import User
 from app.models.foundation import (
     Material, Product, BomItem, Process,
     Department, Employee,
-    Customer, Supplier, Outsourcer,
+    Customer, Supplier,
     Warehouse, Currency, ExchangeRate,
     HsCode, TradeTerm,
     Company, CompanyContact,
@@ -23,7 +23,6 @@ from app.schemas.foundation import (
     EmployeeCreate, EmployeeOut,
     CustomerCreate, CustomerUpdate, CustomerOut,
     SupplierCreate, SupplierUpdate, SupplierOut,
-    OutsourcerCreate, OutsourcerOut,
     WarehouseCreate, WarehouseOut,
     CurrencyCreate, CurrencyOut,
     ExchangeRateCreate, ExchangeRateOut,
@@ -145,7 +144,7 @@ def create_product_with_hs(
         code=code, name_cn=data.name_cn, name_en=data.name_en or "",
         spec=data.spec, model=data.model or "", unit=data.unit,
         estimated_cost=data.estimated_cost or 0, sale_price=data.sale_price or 0,
-        hs_code_id=hs_code_id, remark=data.remark or "",
+        hs_code_id=hs_code_id, can_purchase=data.can_purchase or 0, remark=data.remark or "",
     )
     db.add(product)
     db.commit()
@@ -223,49 +222,23 @@ def delete_product(item_id: int, db: Session = Depends(get_db), current_user: Us
     return {"message": "产品已删除"}
 
 
-# ==================== 委外商自定义创建（验证供应商类型）====================
-
-@router.post("/outsourcers", tags=["基础档案-委外商"])
-def create_outsourcer(
-    data: OutsourcerCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """创建委外商，验证供应商类型必须为委外"""
-    supplier = db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
-    if not supplier:
-        raise HTTPException(400, "供应商不存在")
-    if supplier.supplier_type != "委外":
-        raise HTTPException(400, f"供应商「{supplier.name}」类型为「{supplier.supplier_type}」，不可作为委外商，请先修改供应商类型为「委外」")
-    out = Outsourcer(supplier_id=data.supplier_id, lead_time=data.lead_time or 7)
-    db.add(out)
-    db.commit()
-    db.refresh(out)
-    return OutsourcerOut.model_validate(out)
-
+# ==================== 委外商（供应商类型=委外，不单独建表） ====================
 
 @router.get("/outsourcers", tags=["基础档案-委外商"])
 def list_outsourcers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                     keyword: str = Query(""),
                      db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    query = db.query(Outsourcer)
+    """委外商列表 = 供应商中 supplier_type=委外 的档案"""
+    query = db.query(Supplier).filter(Supplier.supplier_type == "委外")
+    if keyword:
+        query = query.filter(Supplier.name.like(f"%{keyword}%") | Supplier.code.like(f"%{keyword}%"))
     total = query.count()
-    items = query.order_by(Outsourcer.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    items = query.order_by(Supplier.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size, "items": [
-        OutsourcerOut.model_validate(o) for o in items
+        {"id": s.id, "supplier_id": s.id, "code": s.code, "name": s.name,
+         "contact_person": s.contact_person, "phone": s.phone, "is_active": s.is_active}
+        for s in items
     ]}
-
-
-@router.delete("/outsourcers/{item_id}", tags=["基础档案-委外商"])
-def delete_outsourcer(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    item = db.query(Outsourcer).filter(Outsourcer.id == item_id).first()
-    if not item:
-        raise HTTPException(404, "委外商不存在")
-    if hasattr(item, "is_active"):
-        item.is_active = 0
-    else:
-        db.delete(item)
-    db.commit()
-    return {"message": "委外商已删除"}
 
 
 # ==================== 客户自定义创建（自动编码 CU+6位流水）====================
@@ -588,15 +561,13 @@ def outsourcers_select(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """委外商选择器"""
-    from sqlalchemy.orm import joinedload
-    query = db.query(Outsourcer).filter(Outsourcer.is_active == 1)
+    """委外商选择器 = 供应商中 supplier_type=委外 的档案"""
+    query = db.query(Supplier).filter(Supplier.supplier_type == "委外", Supplier.is_active == 1)
     if keyword:
-        query = query.join(Supplier).filter(Supplier.name.like(f"%{keyword}%"))
-    items = query.limit(100).all()
-    return [{"id": o.id, "supplier_id": o.supplier_id,
-             "name": o.supplier.name if o.supplier else "",
-             "lead_time": o.lead_time} for o in items]
+        query = query.filter(Supplier.name.like(f"%{keyword}%") | Supplier.code.like(f"%{keyword}%"))
+    items = query.order_by(Supplier.id.desc()).limit(100).all()
+    return [{"id": s.id, "supplier_id": s.id, "code": s.code,
+             "name": s.name, "lead_time": 7} for s in items]
 
 
 # ==================== 客户/供应商/产品/材料下拉数据 ====================
@@ -661,6 +632,38 @@ def materials_select(
         query = query.filter(Material.name.like(f"%{keyword}%") | Material.code.like(f"%{keyword}%"))
     items = query.order_by(Material.id.desc()).limit(100).all()
     return [{"id": m.id, "code": m.code, "name": m.name, "spec": m.spec, "model": m.model, "unit": m.unit, "purchase_price": m.purchase_price} for m in items]
+
+
+@router.get("/procurement-items-select", tags=["基础档案-选择器"])
+def procurement_items_select(
+    keyword: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """采购选品：原材料 + 可外购成品"""
+    results = []
+    # 材料
+    mat_query = db.query(Material).filter(Material.is_active == 1)
+    if keyword:
+        mat_query = mat_query.filter(Material.name.like(f"%{keyword}%") | Material.code.like(f"%{keyword}%"))
+    for m in mat_query.order_by(Material.id.desc()).limit(100).all():
+        results.append({
+            "id": m.id, "type": "material", "code": m.code, "name": m.name,
+            "spec": m.spec or "", "model": m.model or "", "unit": m.unit,
+            "purchase_price": m.purchase_price,
+        })
+    # 可外购成品
+    prod_query = db.query(Product).filter(Product.is_active == 1, Product.can_purchase == 1)
+    if keyword:
+        prod_query = prod_query.filter(
+            Product.name_cn.like(f"%{keyword}%") | Product.code.like(f"%{keyword}%"))
+    for p in prod_query.order_by(Product.id.desc()).limit(100).all():
+        results.append({
+            "id": p.id, "type": "product", "code": p.code, "name": p.name_cn,
+            "spec": p.spec or "", "model": p.model or "", "unit": p.unit,
+            "purchase_price": p.estimated_cost,
+        })
+    return results
 
 
 @router.get("/currencies", tags=["基础档案-选择器"])

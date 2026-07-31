@@ -84,6 +84,7 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-inbox-in"/></svg>
             <span>采购管理</span>
           </template>
+          <el-menu-item index="/purchase/requisitions">采购需求</el-menu-item>
           <el-menu-item index="/purchase/orders">采购订单</el-menu-item>
           <el-menu-item index="/purchase/receipts">采购入库</el-menu-item>
           <el-menu-item index="/purchase/invoices">采购发票</el-menu-item>
@@ -162,6 +163,7 @@ const pageTitle = computed(() => {
     '/foundation/suppliers': '供应商管理',
     '/foundation/hs-codes': 'HS编码/退税率管理',
     '/foundation/processes': '工序管理',
+    '/purchase/requisitions': '采购需求',
     '/purchase/orders': '采购订单',
     '/purchase/receipts': '采购入库',
     '/purchase/invoices': '采购发票',
@@ -173,7 +175,6 @@ const pageTitle = computed(() => {
     '/sales/customs': '报关管理',
     '/sales/ar': '应收账款',
     '/sales/collections': '收款单',
-    '/production/outsourcings': '委外工单',
     '/production/orders': '生产订单',
     '/production/workspace': '生产工作台',
     '/production/invoices': '加工费发票',

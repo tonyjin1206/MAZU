@@ -161,7 +161,6 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { purchaseApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
 
 const route = useRoute()
 
@@ -347,7 +346,7 @@ async function handleSubmit() {
 
 async function showDetail(row) {
   try {
-    const res = await request.get(`/purchase/receipts/${row.id}`)
+    const res = await purchaseApi.receipts.get(row.id, row.id)
     detail.value = res
     detailVisible.value = true
   } catch {
@@ -361,7 +360,7 @@ async function handleCancel(row) {
     '提示', { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '再想想' }
   )
   try {
-    await request.delete(`/purchase/receipts/${row.id}`)
+    await purchaseApi.receipts.delete(row.id, row.id)
     ElMessage.success('入库已取消，库存已回滚')
     fetchData()
   } catch (e) {
@@ -379,7 +378,7 @@ onMounted(async () => {
   if (orderId) {
     autoFillMode.value = true
     try {
-      const res = await request.get('/purchase/orders/' + orderId)
+      const res = await purchaseApi.orders.get(orderId)
       if (res && res.items) {
         const batchNo = 'BATCH-' + Date.now()
         // 直接赋值，不用 openDialog（避免重置 items）

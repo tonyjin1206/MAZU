@@ -1,6 +1,6 @@
 # MTS 已知问题清单（Known Issues）
 
-> 由 `scripts/test_robust.py` 健壮性测试自动发现。
+> 由 `scripts/test_robust.py` 健壮性测试 + 自动化测试套件（tests/）自动发现。
 > 状态：`遗留` = 用户确认暂不修复；`已修复` = 已处理；`待修` = 排队修复。
 
 ## 数据完整性
@@ -22,6 +22,13 @@
 | 8 | 重复发票号 | 500（唯一约束未捕获） | 409 | ✅ **已修复**（purchase.py 409 校验） |
 | 9 | 数量传非数字字符串 | 500（类型转换未捕获） | 422 | ✅ **已修复**（sales.py try/except） |
 | 10 | 重复供应商 code | 500（唯一约束未捕获） | 409 | ✅ **已修复**（foundation.py 409 校验） |
+| 13 | **采购入库必 500（BUG#1）** | 任何入库崩溃：purchase.py 传 product_id 给无此字段的 PurchaseReceiptItem；且 material_id NOT NULL 挡成品 | 200 正常入库 | ✅ **已修复**（2026-07-31：模型加 product_id 列、material_id 改可空、delete_receipt 双路径回滚；迁移脚本 scripts/migrate_po_receipt_item.py；成品采购入库全链路验证通过） |
+
+## 权限
+
+| # | 问题 | 现状 | 期望 | 状态 |
+|---|------|------|------|------|
+| 14 | GET /auth/users 只认证不授权 | 任何登录用户可查看用户列表（仅 get_current_user） | 仅管理员可看 | ✅ **已修复**（2026-07-31：auth.py 的 GET /users、/users/{id}、/roles、/permissions 加 require_permission("menu:system:users")，低权限角色 403） |
 
 ## 业务校验缺失
 

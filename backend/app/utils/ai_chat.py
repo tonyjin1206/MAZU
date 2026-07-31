@@ -136,22 +136,6 @@ TOOLS = [
     },
     {
         "type": "function", "function": {
-            "name": "create_outsourcing",
-            "description": "创建委外加工单：指定工序委外给某供应商加工，同时发出物料。",
-            "parameters": {"type": "object", "properties": {
-                "production_order_no": {"type": "string", "description": "生产订单编号"},
-                "process_name": {"type": "string", "description": "委外的工序名称"},
-                "supplier_name": {"type": "string", "description": "委外供应商名称"},
-                "material_name": {"type": "string", "description": "发出的物料名称"},
-                "material_qty": {"type": "number", "description": "发出物料数量"},
-                "outsource_qty": {"type": "number", "description": "委外加工数量"},
-                "unit_price": {"type": "number", "description": "委外加工单价"},
-                "due_date": {"type": "string", "description": "要求完成日期"},
-            }, "required": ["production_order_no", "process_name", "supplier_name", "outsource_qty"]},
-        }
-    },
-    {
-        "type": "function", "function": {
             "name": "issue_materials",
             "description": "生产领料/发料：为生产订单发出物料到产线或委外商。",
             "parameters": {"type": "object", "properties": {
@@ -185,9 +169,8 @@ SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助用户完
 4. create_payment — 创建付款单（向供应商付款+自动核销应付）
 5. create_purchase_invoice — 录入采购发票（关联采购单）
 6. create_sales_invoice — 录入销售发票（关联销售单）
-7. create_outsourcing — 创建委外加工单（工序委外+发料）
-8. issue_materials — 生产发料/领料
-9. production_receipt — 生产完工入库
+7. issue_materials — 生产发料/领料
+8. production_receipt — 生产完工入库
 
 ## 工作流程
 
@@ -445,31 +428,6 @@ def _execute_create_sales_invoice(args: dict, db: Session) -> str:
     except Exception as e: return f"❌ 失败：{e}"
 
 
-def _execute_create_outsourcing(args: dict, db: Session) -> str:
-    from app.models.foundation import Supplier, Material
-    from app.models.production import ProductionOrder, OutsourcingOrder, MaterialIssueItem
-    from app.utils.batch_no import generate_doc_no
-    try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
-        if not mo: return f"未找到生产订单「{args['production_order_no']}」"
-        sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
-        if not sup: return f"未找到供应商「{args['supplier_name']}」"
-        os_no = generate_doc_no(db, "OS")
-        oo = OutsourcingOrder(outsource_no=os_no, production_id=mo.id, outsourcer_id=sup.id, product_id=mo.product_id,
-                              quantity=float(args["outsource_qty"]), unit_price=float(args.get("unit_price",0)),
-                              total_amount=float(args.get("unit_price",0))*float(args["outsource_qty"]),
-                              due_date=_parse_date(args.get("due_date","")), status="待发料")
-        db.add(oo); db.flush()
-        if args.get("material_name"):
-            mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
-            if mat and args.get("material_qty"):
-                db.add(MaterialIssueItem(issue_no=os_no, outsource_id=oo.id, material_id=mat.id, quantity=float(args["material_qty"]), operator="AI"))
-                oo.material_status = "已发料"
-        db.commit()
-        return f"✅ 委外单 {os_no}（{sup.name}）"
-    except Exception as e: db.rollback(); return f"❌ 委外失败：{e}"
-
-
 def _execute_issue_materials(args: dict, db: Session) -> str:
     from app.models.foundation import Material
     from app.models.production import ProductionOrder, MaterialIssueItem
@@ -507,7 +465,7 @@ def _parse_date(val):
 
 TOOL_EXECUTORS = {k: globals()[f"_execute_{k}"] for k in
     ["query_entities", "create_order", "create_collection", "create_payment",
-     "create_purchase_invoice", "create_sales_invoice", "create_outsourcing",
+     "create_purchase_invoice", "create_sales_invoice",
      "issue_materials", "production_receipt"]}
 
 

@@ -1,7 +1,7 @@
 """认证与 RBAC 相关 Schemas"""
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ==================== 登录 ====================
@@ -46,8 +46,7 @@ class UserOut(BaseModel):
     is_active: int
     created_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 权限 ====================
@@ -59,8 +58,7 @@ class PermissionOut(BaseModel):
     description: str | None = None
     created_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 角色 ====================
@@ -88,8 +86,7 @@ class RoleOut(BaseModel):
     user_count: int = 0
     created_at: datetime | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PermissionGroup(BaseModel):

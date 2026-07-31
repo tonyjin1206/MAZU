@@ -162,7 +162,8 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '@/api/request'
+import { inventoryApi } from '../../api/business'
+import { foundationApi } from '../../api/foundation'
 
 const activeTab = ref('balance')
 const warehouseList = ref([])
@@ -188,7 +189,7 @@ async function fetchBalance() {
       params.start_date = balanceQuery.dateRange[0]
       params.end_date = balanceQuery.dateRange[1]
     }
-    const res = await request.get('/inventory/balance', { params })
+    const res = await inventoryApi.balance({ params })
     balanceList.value = res.items || []
     balanceTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally { balanceLoading.value = false }
@@ -256,7 +257,7 @@ async function fetchTransactions() {
     if (transQuery.keyword) params.keyword = transQuery.keyword
     if (transQuery.material_id) params.material_id = transQuery.material_id
     if (transQuery.product_id) params.product_id = transQuery.product_id
-    const res = await request.get('/inventory/transactions', { params })
+    const res = await inventoryApi.transactions({ params })
     transactionList.value = res.items || []
     transTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally { transLoading.value = false }
@@ -322,7 +323,7 @@ function getTransSummary({ columns, data }) {
 }
 
 onMounted(() => {
-  request.get('/foundation/warehouses', { params: { page_size: 50 } }).then(res => {
+  foundationApi.warehouses.list({ page_size: 50 }).then(res => {
     warehouseList.value = res.items || []
   }).catch(() => {})
   fetchBalance()

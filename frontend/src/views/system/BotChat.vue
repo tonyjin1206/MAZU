@@ -65,7 +65,7 @@
 import { ref, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { systemConfigApi } from '../../api/foundation'
-import request from '../../api/request'
+import { chatApi } from '../../api/business'
 
 import { marked } from 'marked'
 
@@ -120,7 +120,7 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const res = await request.post('/chat/message', {
+    const res = await chatApi.message({
       message: text,
       session_id: sessionId.value,
     })
@@ -139,7 +139,7 @@ async function sendMessage() {
 
 async function resetChat() {
   if (sessionId.value) {
-    try { await request.post('/chat/reset', { session_id: sessionId.value }) } catch {}
+    try { await chatApi.reset() } catch {}
   }
   messages.value = [{
     role: 'bot',

@@ -5,13 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.auth import User
-from app.models.foundation import Product, Material, Warehouse, Outsourcer, Process, Supplier
+from app.models.foundation import Product, Material, Warehouse, Process, Supplier
 from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionProcess, ProductionReceipt, ProcessingInvoice,
     MaterialIssueItem,
 )
 from app.models.inventory import WarehouseInventory, StockTransaction
-from app.models.purchase import AccountsPayable
+from app.models.purchase import AccountsPayable, PurchaseRequisition
 from app.utils.auth import get_current_user
 from app.utils.batch_no import generate_batch_no, generate_doc_no
 from sqlalchemy import func as sa_func
@@ -116,11 +116,17 @@ def list_productions(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=200),
     status: str = Query(""), keyword: str = Query(""),
     date_from: str = Query(""), date_to: str = Query(""),
+    sales_order_id: int = Query(None, description="按销售订单过滤"),
+    sales_order_item_id: int = Query(None, description="按销售明细行过滤"),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
     query = db.query(ProductionOrder)
     if status:
         query = query.filter(ProductionOrder.status == status)
+    if sales_order_id:
+        query = query.filter(ProductionOrder.sales_order_id == sales_order_id)
+    if sales_order_item_id:
+        query = query.filter(ProductionOrder.sales_order_item_id == sales_order_item_id)
     if keyword:
         query = query.outerjoin(Product).filter(
             ProductionOrder.order_no.like(f"%{keyword}%")
@@ -136,6 +142,11 @@ def list_productions(
          "product_id": p.product_id,
          "product_name": p.product.name_cn if p.product else "",
          "quantity": p.quantity, "status": p.status,
+         "production_type": p.production_type or "",
+         "requisition_id": p.requisition_id,
+         "sales_order_id": p.sales_order_id,
+         "sales_order_item_id": p.sales_order_item_id,
+         "received_qty": p.received_qty or 0,
          "created_at": str(p.created_at)[:10] if p.created_at else "",
          "start_date": str(p.start_date) if p.start_date else "",
          "due_date": str(p.due_date) if p.due_date else "",
@@ -220,7 +231,7 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
             "process_name": pr.process.name if pr.process else "",
             "process_code": pr.process.code if pr.process else "",
             "seq": pr.seq, "outsourcer_id": pr.outsourcer_id,
-            "outsourcer_name": pr.outsourcer.supplier.name if pr.outsourcer and pr.outsourcer.supplier else "",
+            "outsourcer_name": pr.outsourcer.name if pr.outsourcer else "",
             "unit_price": pr.unit_price or 0,
             "process_qty": pr.process_qty or 0,
             "process_amount": pr.process_amount or 0,
@@ -244,12 +255,85 @@ def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), c
     return {"message": "生产订单已更新"}
 
 
+@router.post("/productions/{prod_id}/set-type", tags=["生产管理-新"])
+def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """确认备货方式: production_type = 自产/委外/外购"""
+    prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
+    if not prod:
+        raise HTTPException(404, "生产订单不存在")
+    if prod.production_type:
+        raise HTTPException(400, "备货方式已确认，不可更改")
+
+    ptype = data.get("production_type")
+    if ptype not in ("自产", "委外", "外购"):
+        raise HTTPException(400, "备货方式必须为: 自产/委外/外购")
+
+    prod.production_type = ptype
+    if ptype == "外购":
+        prod.status = "待采购"
+        # 自动标记产品可外购
+        from app.models.foundation import Product
+        product = db.query(Product).filter(Product.id == prod.product_id).first()
+        if product and not product.can_purchase:
+            product.can_purchase = 1
+    else:
+        prod.status = "待排产"
+
+    db.commit()
+    return {"message": f"备货方式已确认为「{ptype}」", "production_type": ptype, "status": prod.status}
+
+
+@router.post("/productions/{prod_id}/to-requisition", tags=["生产管理-新"])
+def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """外购型生产订单 → 推采购需求（采购部门后续转采购订单）"""
+    prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
+    if not prod:
+        raise HTTPException(404, "生产订单不存在")
+    if prod.production_type != "外购":
+        raise HTTPException(400, "仅外购型生产订单可推采购需求")
+    if prod.requisition_id:
+        req = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == prod.requisition_id).first()
+        if req and req.status != "已关闭":
+            raise HTTPException(400, f"该生产订单已有关联采购需求（{req.requisition_no}，状态：{req.status}）")
+
+    quantity = float(data.get("quantity", prod.quantity) or prod.quantity)
+    remark = data.get("remark", "")
+
+    from app.utils.batch_no import generate_doc_no
+    req = PurchaseRequisition(
+        requisition_no=generate_doc_no(db, "PR", PurchaseRequisition, "requisition_no"),
+        production_order_id=prod.id,
+        product_id=prod.product_id,
+        quantity=quantity,
+        status="待处理",
+        remark=remark,
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(req)
+    db.flush()
+
+    # 关联生产订单
+    prod.requisition_id = req.id
+    prod.status = "待采购"
+    db.commit()
+
+    return {
+        "message": f"已生成采购需求 {req.requisition_no}",
+        "requisition_id": req.id,
+        "requisition_no": req.requisition_no,
+    }
+
+
 @router.post("/productions/{prod_id}/expand-bom", tags=["生产管理-新"])
 def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """展开BOM → 生成物料需求清单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
         raise HTTPException(404, "生产订单不存在")
+    if prod.production_type == "外购":
+        raise HTTPException(400, "外购型生产订单无需展开 BOM")
+    if not prod.production_type:
+        raise HTTPException(400, "请先确认备货方式")
     # 删除已有物料清单
     db.query(ProductionMaterial).filter(ProductionMaterial.production_id == prod_id).delete()
     # 从 BomItem 展开
@@ -1124,15 +1208,15 @@ def production_workspace(
             "current_process_name": current_proc.process.name if current_proc and current_proc.process else "",
             "current_process_status": current_proc.status if current_proc else "",
             "current_outsourcer_name": (
-                current_proc.outsourcer.supplier.name
-                if current_proc and current_proc.outsourcer and current_proc.outsourcer.supplier
+                current_proc.outsourcer.name
+                if current_proc and current_proc.outsourcer
                 else ""
             ) if current_proc else "",
             "processes": [{
                 "id": pr.id, "process_name": pr.process.name if pr.process else "",
                 "seq": pr.seq, "status": pr.status,
                 "outsourcer_name": (
-                    pr.outsourcer.supplier.name if pr.outsourcer and pr.outsourcer.supplier else "自产"
+                    pr.outsourcer.name if pr.outsourcer else "自产"
                 ),
                 "unit_price": pr.unit_price or 0,
                 "process_qty": pr.process_qty or 0,
@@ -1203,9 +1287,9 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
     if not processes:
         raise HTTPException(400, "该生产订单没有已完工的委外工序")
 
-    # 取第一个委外工序的委外商对应的供应商
+    # 取第一个委外工序的委外商（即供应商）
     first_proc = processes[0]
-    supplier_id = first_proc.outsourcer.supplier_id if first_proc.outsourcer else None
+    supplier_id = first_proc.outsourcer_id or (first_proc.outsourcer.id if first_proc.outsourcer else None)
     if not supplier_id:
         raise HTTPException(400, "委外商未关联供应商")
 
@@ -1310,7 +1394,7 @@ def list_processing_invoice_candidates(
             ProductionProcess.outsourcer_id.isnot(None),
         ).all()
         first_proc = processes[0] if processes else None
-        supplier_id = first_proc.outsourcer.supplier_id if first_proc and first_proc.outsourcer else None
+        supplier_id = first_proc.outsourcer_id if first_proc else None
         supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first() if supplier_id else None
 
         result.append({

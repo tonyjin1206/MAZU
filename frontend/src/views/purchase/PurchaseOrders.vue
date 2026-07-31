@@ -88,16 +88,16 @@
         </el-form-item>
         <el-form-item label="订单明细">
           <el-table :data="orderForm.items" border size="small" style="width: 100%">
-            <el-table-column label="物料编码" width="140">
+            <el-table-column label="物料/成品" width="180">
               <template #default="{ row, $index }">
-                <el-select v-model="row.material_id" placeholder="选择物料" filterable size="small" @change="onMaterialChange($index)">
-                  <el-option v-for="m in materialList" :key="m.id" :label="m.code + ' - ' + m.name" :value="m.id" />
+                <el-select v-model="row._item_key" placeholder="选材料或成品" filterable size="small" :disabled="viewMode || !!row.requisition_id" @change="(val) => onProcurementChange($index, val)">
+                  <el-option v-for="m in procurementList" :key="m.type + '_' + m.id" :label="(m.type === 'product' ? '📦 ' : '') + m.code + ' - ' + m.name" :value="m.type + '_' + m.id" />
                 </el-select>
               </template>
             </el-table-column>
-            <el-table-column prop="material_name" label="物料名称" width="150" />
-            <el-table-column prop="material_code" label="物料编码" width="100" />
-            <el-table-column prop="unit" label="单位" width="70" />
+            <el-table-column prop="_item_name" label="名称" width="150" />
+            <el-table-column prop="_item_code" label="编码" width="100" />
+            <el-table-column prop="_item_unit" label="单位" width="60" />
             <el-table-column label="数量" width="100">
               <template #default="{ row, $index }">
                 <el-input type="number" v-model="row.quantity" :min="0" size="small" controls-position="right" @change="calcAmount($index)" />
@@ -144,7 +144,6 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { purchaseApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
 
 const router = useRouter()
 
@@ -188,7 +187,7 @@ const submitting = ref(false)
 const orderFormRef = ref(null)
 
 const supplierList = ref([])
-const materialList = ref([])
+const procurementList = ref([])
 
 const orderForm = reactive({
   id: null, supplier_id: null, supplier_name: '',
@@ -201,20 +200,31 @@ const orderRules = {
 }
 
 function newItem() {
-  return { material_id: null, material_name: '', material_code: '', unit: '', quantity: 1, unit_price: 0, total_amount: 0, tax_rate: 13, tax_amount: 0, total_amount_excl_tax: 0 }
+  return { material_id: null, product_id: null, _item_key: '', _item_name: '', _item_code: '', _item_unit: '', quantity: 1, unit_price: 0, total_amount: 0, tax_rate: 13, tax_amount: 0, total_amount_excl_tax: 0 }
 }
 
 function addItem() { orderForm.items.push(newItem()) }
 function removeItem(index) { orderForm.items.splice(index, 1); calcTotal() }
 
-function onMaterialChange(index) {
-  const m = materialList.value.find(x => x.id === orderForm.items[index].material_id)
-  if (m) {
-    const item = orderForm.items[index]
-    item.material_name = m.name || ''
-    item.material_code = m.code || ''
-    item.unit = m.unit || ''
+function onProcurementChange(index, key) {
+  if (!key) return
+  const [type, idStr] = key.split('_')
+  const id = parseInt(idStr)
+  const item = procurementList.value.find(m => m.type === type && m.id === id)
+  if (!item) return
+  const row = orderForm.items[index]
+  if (type === 'product') {
+    row.product_id = id
+    row.material_id = null
+  } else {
+    row.material_id = id
+    row.product_id = null
   }
+  row._item_name = item.name
+  row._item_code = item.code
+  row._item_unit = item.unit
+  row.unit_price = item.purchase_price || 0
+  calcAmount(index)
 }
 
 function calcAmount(index) {
@@ -259,15 +269,16 @@ function statusLabel(status) {
 function openCreate() {
   viewMode.value = false
   Object.assign(orderForm, { id: null, supplier_id: null, supplier_name: '', total_amount: 0, tax_rate: 13, payment_terms: '', remark: '', items: [newItem()] })
+  calcTotal()
   if (!supplierList.value.length) loadSuppliers()
-  if (!materialList.value.length) loadMaterials()
+  if (!procurementList.value.length) loadProcurementItems()
   dialogVisible.value = true
 }
 
 async function openEdit(row) {
   viewMode.value = false
   if (!supplierList.value.length) loadSuppliers()
-  if (!materialList.value.length) loadMaterials()
+  if (!procurementList.value.length) loadProcurementItems()
   Object.assign(orderForm, { id: row.id, supplier_id: row.supplier_id, supplier_name: row.supplier_name || '', total_amount: row.total_amount || 0, tax_rate: row.tax_rate || 13, payment_terms: row.payment_terms || '', remark: row.remark || '', items: [] })
   await loadOrderDetail(row.id)
   dialogVisible.value = true
@@ -283,10 +294,20 @@ async function openDetail(row) {
 
 async function loadOrderDetail(orderId) {
   try {
-    const res = await request.get(`/purchase/orders/${orderId}`)
-    if (res.items) orderForm.items = res.items
-    if (res.total_amount_excl_tax !== undefined) orderForm.total_amount_excl_tax = res.total_amount_excl_tax
-    if (res.tax_amount !== undefined) orderForm.tax_amount = res.tax_amount
+    const res = await purchaseApi.orders.get(orderId, orderId)
+    if (res.items) {
+      orderForm.items = res.items.map(item => ({
+        ...item,
+        material_id: item.material_id || null,
+        product_id: item.product_id || null,
+        _item_key: item.product_id ? `product_${item.product_id}` : (item.material_id ? `material_${item.material_id}` : ''),
+        _item_name: item.material_name || '',
+        _item_code: item.material_code || '',
+        _item_unit: item.unit || '',
+      }))
+    }
+    // 从明细行重新汇总（后端 to-purchase 生成的 PO 头部金额可能缺失）
+    calcTotal()
   } catch {}
 }
 
@@ -297,10 +318,10 @@ async function loadSuppliers() {
   } catch {}
 }
 
-async function loadMaterials() {
+async function loadProcurementItems() {
   try {
-    const res = await foundationApi.materials.list({ page: 1, pageSize: 100 })
-    materialList.value = res.items || res.list || res.data || []
+    const res = await foundationApi.procurementItemsSelect()
+    procurementList.value = res || []
   } catch {}
 }
 
@@ -330,9 +351,9 @@ async function handleSubmit() {
   if (orderForm.items.length === 0) { ElMessage.warning('请添加至少一条物料明细'); return }
   submitting.value = true
   try {
-    const payload = { supplier_id: orderForm.supplier_id, payment_terms: orderForm.payment_terms, remark: orderForm.remark, tax_rate: orderForm.tax_rate, items: orderForm.items.map(({ material_id, quantity, unit_price }) => ({ material_id, quantity: parseFloat(quantity) || 0, unit_price: parseFloat(unit_price) || 0 })) }
+    const payload = { supplier_id: orderForm.supplier_id, payment_terms: orderForm.payment_terms, remark: orderForm.remark, tax_rate: orderForm.tax_rate, items: orderForm.items.map(({ material_id, product_id, requisition_id, quantity, unit_price }) => ({ material_id: material_id || null, product_id: product_id || null, requisition_id: requisition_id || null, quantity: parseFloat(quantity) || 0, unit_price: parseFloat(unit_price) || 0 })) }
     if (orderForm.id) {
-      await request.put(`/purchase/orders/${orderForm.id}`, payload)
+      await purchaseApi.orders.update(orderForm.id, payload)
       ElMessage.success('修改成功')
     } else {
       await purchaseApi.orders.create(payload)
@@ -349,7 +370,7 @@ async function handleApprove(row) {
 
 async function handleUnapprove(row) {
   await ElMessageBox.confirm('确定取消审核该订单？取消后可重新编辑。', '提示', { type: 'warning' })
-  try { await request.post(`/purchase/orders/${row.id}/unapprove`); ElMessage.success('已取消审核'); fetchData() } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
+  try { await purchaseApi.orders.unapprove(row.id, row.id); ElMessage.success('已取消审核'); fetchData() } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
 
 function handleInStore(row) { router.push({ path: '/purchase/receipts', query: { oid: row.id } }) }
@@ -359,7 +380,7 @@ async function handleDelete(row) {
   try { await purchaseApi.orders.delete(row.id); ElMessage.success('删除成功'); fetchData() } catch (e) {}
 }
 
-onMounted(() => { fetchData(); loadSuppliers(); loadMaterials() })
+onMounted(() => { fetchData(); loadSuppliers(); loadProcurementItems() })
 </script>
 
 <style scoped>

@@ -391,7 +391,7 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db), current_us
             product_id=item.product_id,
             quantity=item.quantity,
             due_date=order.delivery_date,
-            status="待排产",
+            status="待确认",
             created_by=current_user.display_name or current_user.username,
         )
         db.add(prod)
@@ -418,7 +418,7 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
     # 检查是否已有活跃的生产订单
     existing = db.query(ProductionOrder).filter(
         ProductionOrder.sales_order_item_id == item_id,
-        ProductionOrder.status.in_(["待排产", "已排产", "生产中", "已完成", "部分入库", "已入库"]),
+        ProductionOrder.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
     ).first()
     if existing:
         raise HTTPException(400, f"该明细行已有活跃生产订单（{existing.order_no}），不允许重复生成")
@@ -432,7 +432,7 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
         product_id=item.product_id,
         quantity=item.quantity,
         due_date=order.delivery_date,
-        status="待排产",
+        status="待确认",
         created_by=current_user.display_name or current_user.username,
     )
     db.add(prod)
@@ -1080,7 +1080,7 @@ def list_order_items(
     if item_ids:
         rows = db.query(ProductionOrder.sales_order_item_id).filter(
             ProductionOrder.sales_order_item_id.in_(item_ids),
-            ProductionOrder.status.in_(["待排产", "已排产", "生产中", "已完成", "部分入库", "已入库"]),
+            ProductionOrder.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
         ).all()
         active_mo_items = {r[0] for r in rows}
     return {"total": total, "page": page, "page_size": page_size, "items": [
@@ -1122,7 +1122,7 @@ def update_order_item(
     from app.models.production import ProductionOrder
     pending_mos = db.query(ProductionOrder).filter(
         ProductionOrder.sales_order_item_id == item_id,
-        ProductionOrder.status == "待排产",
+        ProductionOrder.status.in_(["待确认", "待排产"]),
     ).all()
     for mo in pending_mos:
         db.delete(mo)

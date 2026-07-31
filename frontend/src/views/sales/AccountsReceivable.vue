@@ -87,7 +87,7 @@
 <script setup>
 import { ref, reactive, onMounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import { salesApi } from '../../api/business'
 
 const activeTab = ref('summary')
 const loading = ref(false)
@@ -114,7 +114,7 @@ const form = reactive({
 async function fetchData() {
   loading.value = true
   try {
-    const res = await request.get('/sales/ar', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.ar.list({ page: 1, page_size: 100 })
     list.value = res.items || []
     total.value = res.total || 0
   } catch {} finally { loading.value = false }
@@ -126,7 +126,7 @@ async function fetchCD() {
   if (!cdFilter.value) return
   cdLoading.value = true
   try {
-    const res = await request.get('/sales/ar/collection-detail')
+    const res = await salesApi.ar.collectionDetail()
     cdList.value = (res.items || []).filter(r =>
       (r.customer_name || '').toLowerCase().includes(cdFilter.value.toLowerCase())
     )
@@ -195,7 +195,7 @@ async function handleSubmit() {
   if (amount > form.balance) { ElMessage.warning('收款金额不能超过余额'); return }
   submitting.value = true
   try {
-    await request.post('/sales/collections', {
+    await salesApi.collections.create({
       customer_id: form.customer_id,
       amount, amount_fc: amount, currency_id: 2, exchange_rate: 7.2,
       collection_date: form.collection_date || new Date().toISOString().slice(0, 10),
@@ -223,7 +223,7 @@ function openCollectionByDetail(row) {
 async function viewCollection(row) {
   if (!row.collection_id) return
   try {
-    const res = await request.get(`/sales/collections/${row.collection_id}`)
+    const res = await salesApi.collections.get(row.collection_id, row.collection_id)
     collectionDetail.value = res
     collectionDetailVisible.value = true
   } catch {

@@ -1,7 +1,7 @@
 """系统配置 Schemas — 企微/AI Bot/提醒"""
 
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ==================== 企业微信 ====================
@@ -35,8 +35,7 @@ class WecomConfigOut(BaseModel):
     is_active: int
     created_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== AI Bot ====================
@@ -124,8 +123,7 @@ class BotConfigOut(BaseModel):
     is_active: int
     created_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 提醒配置 ====================
@@ -164,8 +162,7 @@ class ReminderConfigOut(BaseModel):
     push_days: str | None
     created_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ReminderLogOut(BaseModel):
@@ -178,5 +175,4 @@ class ReminderLogOut(BaseModel):
     error_msg: str | None
     pushed_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

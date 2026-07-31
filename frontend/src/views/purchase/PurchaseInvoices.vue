@@ -109,7 +109,8 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import { purchaseApi } from '../../api/business'
+import { foundationApi } from '../../api/foundation'
 
 const list = ref([])
 const loading = ref(false)
@@ -200,7 +201,7 @@ async function fetchList() {
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/purchase/invoices', { params })
+    const res = await purchaseApi.invoices.list({ params })
     list.value = res.items || res.list || []
     total.value = res.total || 0
     // 更新列筛选
@@ -216,14 +217,14 @@ async function fetchList() {
 
 async function fetchSuppliers() {
   try {
-    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.suppliers.list({ page: 1, page_size: 100 })
     supplierList.value = res.items || res.list || []
   } catch {}
 }
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/purchase/orders', { params: { page: 1, page_size: 100 } })
+    const res = await purchaseApi.orders.list({ page: 1, page_size: 100 })
     orderList.value = (res.items || []).filter(o => ['已审核', '部分入库', '待开票', '已开票', '部分付款'].includes(o.status) && (o.uninvoiced_amount || 0) > 0)
   } catch {}
 }
@@ -281,7 +282,7 @@ function openEdit(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除发票 ${row.invoice_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/purchase/invoices/${row.id}`)
+    await purchaseApi.invoices.delete(row.id, row.id)
     ElMessage.success('删除成功')
     fetchList()
   } catch (e) {}
@@ -293,10 +294,10 @@ async function submitForm() {
   submitting.value = true
   try {
     if (editMode.value) {
-      await request.put(`/purchase/invoices/${form.id}`, { ...form })
+      await purchaseApi.invoices.update(form.id, form.id)
       ElMessage.success('修改成功')
     } else {
-      await request.post('/purchase/invoices', {
+      await purchaseApi.invoices.create({
         order_id: form.purchase_order_id,
         supplier_id: form.supplier_id,
         invoice_no: form.invoice_no,

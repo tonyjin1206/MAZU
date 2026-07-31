@@ -5,23 +5,22 @@ from app.models.auth import User, Role, Permission, RolePermission
 from app.models.foundation import (
     Material, Product, BomItem, Process,
     Department, Employee,
-    Customer, Supplier, Outsourcer,
+    Customer, Supplier,
     Warehouse, Currency, ExchangeRate,
     HsCode, TradeTerm,
 )
 from app.models.inventory import (
     WarehouseInventory, StockTransaction,
-    StockCheck, StockCheckItem,
 )
 from app.models.purchase import (
     PurchaseOrder, PurchaseOrderItem,
     PurchaseReceipt, PurchaseReceiptItem,
     PurchaseInvoice,
+    PurchaseRequisition,
     AccountsPayable, Payment, PaymentAllocation,
 )
 from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionProcess, ProductionReceipt, ProcessingInvoice,
-    OutsourcingOrder, OutsourceReceiptItem,
     MaterialIssueItem,
 )
 from app.models.sales import (
@@ -44,17 +43,16 @@ __all__ = [
     "User", "Role", "Permission", "RolePermission",
     "Material", "Product", "BomItem", "Process",
     "Department", "Employee",
-    "Customer", "Supplier", "Outsourcer",
+    "Customer", "Supplier",
     "Warehouse", "Currency", "ExchangeRate",
     "HsCode", "TradeTerm",
     "WarehouseInventory", "StockTransaction",
-    "StockCheck", "StockCheckItem",
     "PurchaseOrder", "PurchaseOrderItem",
     "PurchaseReceipt", "PurchaseReceiptItem",
-    "PurchaseInvoice",
+    "PurchaseInvoice", "PurchaseRequisition",
     "AccountsPayable", "Payment", "PaymentAllocation",
-    "ProductionOrder", "ProductionMaterial", "ProductionProcess", "ProductionReceipt", "ProcessingInvoice", "OutsourcingOrder",
-    "MaterialIssueItem", "OutsourceReceiptItem",
+    "ProductionOrder", "ProductionMaterial", "ProductionProcess", "ProductionReceipt", "ProcessingInvoice",
+    "MaterialIssueItem",
     "SalesQuote", "SalesOrder",
     "SalesDelivery", "CustomsDeclaration",
     "SalesInvoice",

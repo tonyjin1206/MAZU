@@ -106,7 +106,8 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import { salesApi } from '../../api/business'
+import { foundationApi } from '../../api/foundation'
 
 const list = ref([])
 const loading = ref(false)
@@ -195,7 +196,7 @@ async function fetchList() {
       params.date_to = searchForm.dateRange[1]
     }
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/sales/customs', { params })
+    const res = await salesApi.customs.list({ params })
     list.value = res.items || []
     total.value = res.total || 0
     // 更新列筛选
@@ -208,21 +209,21 @@ async function fetchList() {
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.orders.list({ page: 1, page_size: 100 })
     orderList.value = res.items || []
   } catch {}
 }
 
 async function fetchHsCodes() {
   try {
-    const res = await request.get('/foundation/hs-codes', { params: { page: 1, page_size: 200 } })
+    const res = await foundationApi.hsCodes.list({ page: 1, page_size: 200 })
     hsCodeList.value = res.items || res.list || []
   } catch {}
 }
 
 async function fetchCurrencies() {
   try {
-    const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 50 } })
+    const res = await foundationApi.currencies.list({ page: 1, page_size: 50 })
     currencyList.value = res.items || res.list || []
   } catch {}
 }
@@ -244,7 +245,7 @@ function openCreate() {
 async function openEdit(row) {
   editMode.value = true
   try {
-    const res = await request.get(`/sales/customs/${row.id}`)
+    const res = await salesApi.customs.get(row.id, row.id)
     Object.assign(form, {
       id: res.id, customs_no: res.customs_no, order_id: res.order_id,
       hs_code_id: res.hs_code_id, declare_amount: res.declare_amount,
@@ -261,10 +262,10 @@ async function submitForm() {
   submitting.value = true
   try {
     if (editMode.value) {
-      await request.put(`/sales/customs/${form.id}`, { ...form })
+      await salesApi.customs.update(form.id, form.id)
       ElMessage.success('修改成功')
     } else {
-      await request.post('/sales/customs', { ...form })
+      await salesApi.customs.create({ ...form })
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -277,7 +278,7 @@ async function submitForm() {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除报关单 ${row.customs_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/sales/customs/${row.id}`)
+    await salesApi.customs.delete(row.id, row.id)
     ElMessage.success('删除成功')
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }

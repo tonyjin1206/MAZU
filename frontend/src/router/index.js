@@ -19,6 +19,7 @@ const routes = [
       { path: 'foundation/processes', name: 'Processes', component: () => import('../views/foundation/Processes.vue') },
 
       // 采购管理
+      { path: 'purchase/requisitions', name: 'PurchaseRequisitions', component: () => import('../views/purchase/PurchaseRequisitions.vue') },
       { path: 'purchase/orders', name: 'PurchaseOrders', component: () => import('../views/purchase/PurchaseOrders.vue') },
       { path: 'purchase/receipts', name: 'PurchaseReceipts', component: () => import('../views/purchase/PurchaseReceipts.vue') },
       { path: 'purchase/invoices', name: 'PurchaseInvoices', component: () => import('../views/purchase/PurchaseInvoices.vue') },
@@ -34,12 +35,10 @@ const routes = [
       { path: 'sales/collections', name: 'Collections', component: () => import('../views/sales/Collections.vue') },
 
       // 生产管理
-      { path: 'production/outsourcings', name: 'Outsourcings', component: () => import('../views/production/Outsourcings.vue') },
       { path: 'production/orders', name: 'ProductionOrders', component: () => import('../views/production/ProductionOrders.vue') },
       { path: 'production/detail/:id', name: 'ProductionDetail', component: () => import('../views/production/ProductionDetail.vue') },
       { path: 'production/workspace', name: 'ProductionWorkspace', component: () => import('../views/production/ProductionWorkspace.vue') },
       { path: 'production/invoices', name: 'ProcessingInvoices', component: () => import('../views/production/ProcessingInvoices.vue') },
-      { path: 'production/receipts', name: 'ProductionReceipts', component: () => import('../views/production/ProductionReceipts.vue') },
       { path: 'production/inventory', name: 'BatchInventory', component: () => import('../views/production/BatchInventory.vue') },
 
       // 库存管理

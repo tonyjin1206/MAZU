@@ -511,6 +511,9 @@ async function doCancelIssue(row) {
 async function doIssue() {
   const validRows = issueRows.value.filter(r => r.material_id && r._selectedBatches?.length)
   if (!validRows.length) { ElMessage.warning('请至少选择物料和批次'); return }
+  // 检查是否填写了发料数量（选了批次但数量为0时静默无反应的问题）
+  const hasQty = validRows.some(r => (r._selectedBatches || []).some(b => parseFloat(b.issue_qty) > 0))
+  if (!hasQty) { ElMessage.warning('请填写发料数量'); return }
   issueLoading.value = true
   let success = 0
   let errors = []

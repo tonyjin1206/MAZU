@@ -18,6 +18,7 @@ from app.utils.auth import (
     get_password_hash,
     get_current_user,
     get_current_admin,
+    require_permission,
 )
 
 router = APIRouter()
@@ -86,7 +87,7 @@ def create_user(
 def list_users(
     keyword: str = Query(""),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取用户列表"""
     query = db.query(User)
@@ -103,7 +104,7 @@ def list_users(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取单个用户"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -200,7 +201,7 @@ PERMISSION_DEFS = [
 @router.get("/permissions", response_model=list[PermissionGroup])
 def list_permissions(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取所有权限（按模块分组）"""
     # 先从数据库查
@@ -235,7 +236,7 @@ def list_permissions(
 @router.get("/roles", response_model=list[RoleOut])
 def list_roles(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取角色列表"""
     roles = db.query(Role).order_by(Role.id).all()

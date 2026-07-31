@@ -56,38 +56,3 @@ class StockTransaction(Base):
     remark = Column(Text)
 
     warehouse = relationship("Warehouse")
-
-
-class StockCheck(Base):
-    """库存盘点计划"""
-    __tablename__ = "inv_stock_check"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    check_no = Column(String(64), unique=True, nullable=False, comment="盘点单号")
-    warehouse_id = Column(Integer, ForeignKey("fd_warehouse.id"), nullable=False)
-    check_type = Column(String(16), default="全部", comment="盘点类型: 全部/抽盘")
-    status = Column(String(16), default="待盘点", comment="状态: 待盘点/盘点中/已完成")
-    check_date = Column(Date, nullable=False, comment="盘点日期")
-    checker = Column(String(32), comment="盘点人")
-    remark = Column(Text)
-    created_at = Column(DateTime, default=func.now())
-    completed_at = Column(DateTime)
-
-    warehouse = relationship("Warehouse")
-    items = relationship("StockCheckItem", backref="check", lazy="selectin")
-
-
-class StockCheckItem(Base):
-    """盘点明细"""
-    __tablename__ = "inv_stock_check_item"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    check_id = Column(Integer, ForeignKey("inv_stock_check.id"), nullable=False)
-    warehouse_id = Column(Integer, ForeignKey("fd_warehouse.id"))
-    material_id = Column(Integer, ForeignKey("fd_material.id"), comment="原料")
-    product_id = Column(Integer, ForeignKey("fd_product.id"), comment="产品")
-    batch_no = Column(String(64), comment="批次号")
-    book_qty = Column(Float, default=0, comment="账面数量")
-    actual_qty = Column(Float, default=0, comment="实盘数量")
-    diff_qty = Column(Float, default=0, comment="差异数量")
-    remark = Column(Text)

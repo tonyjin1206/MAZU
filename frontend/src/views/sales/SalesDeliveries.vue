@@ -106,7 +106,8 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import { salesApi, inventoryApi } from '../../api/business'
+import { foundationApi } from '../../api/foundation'
 
 const list = ref([])
 const loading = ref(false)
@@ -163,7 +164,7 @@ const detailData = ref({})
 async function fetchList() {
   loading.value = true
   try {
-    const res = await request.get('/sales/deliveries', { params: { page: page.value, page_size: pageSize.value } })
+    const res = await salesApi.deliveries.list({ page: page.value, page_size: pageSize.value })
     list.value = res.items || []
     total.value = res.total || 0
     // 更新列筛选
@@ -175,14 +176,14 @@ async function fetchList() {
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.orders.list({ page: 1, page_size: 100 })
     orderList.value = res.items || []
   } catch {}
 }
 
 async function fetchWarehouses() {
   try {
-    const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.warehouses.list({ page: 1, page_size: 100 })
     warehouseList.value = res.items || []
   } catch {}
 }
@@ -199,7 +200,7 @@ function openCreate() {
 async function onOrderChange() {
   if (!form.order_id) return
   try {
-    const res = await request.get(`/sales/orders/${form.order_id}`)
+    const res = await salesApi.orders.get(form.order_id, form.order_id)
     orderItems.value = res.items || []
     selectedItem.value = null
   } catch {}
@@ -217,7 +218,7 @@ function onItemRowClick(row) {
 async function loadBatches(productId) {
   if (!productId) { batchList.value = []; return }
   try {
-    const res = await request.get('/inventory/available-batches', { params: { product_id: productId } })
+    const res = await inventoryApi.availableBatches({ product_id: productId })
     batchList.value = res.items || []
   } catch { batchList.value = [] }
 }
@@ -232,7 +233,7 @@ async function handleSubmit() {
   if (!form.batch_no) { ElMessage.warning('请输入批次号'); return }
   submitting.value = true
   try {
-    await request.post('/sales/deliveries', { ...form })
+    await salesApi.deliveries.create({ ...form })
     ElMessage.success('发货成功')
     dialogVisible.value = false
     fetchList()
