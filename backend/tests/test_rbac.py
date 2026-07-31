@@ -19,7 +19,7 @@ class TestPermissions:
         for g in data:
             for p in g["permissions"]:
                 all_codes.add(p["code"])
-        assert len(all_codes) == 27  # 27 个菜单权限
+        assert len(all_codes) == 33  # 33 个菜单权限（27 + 2026-07-31 补齐 6 个：采购需求/完工入库/AI助手等）
 
     def test_my_permissions(self, client, auth_headers):
         resp = client.get("/api/auth/me/permissions", headers=auth_headers)

@@ -171,6 +171,7 @@ PERMISSION_DEFS = [
     {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
     {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
     # 采购管理
+    {"code": "menu:purchase:requisitions", "name": "采购需求", "module": "采购管理", "description": ""},
     {"code": "menu:purchase:orders", "name": "采购订单", "module": "采购管理", "description": ""},
     {"code": "menu:purchase:receipts", "name": "采购入库", "module": "采购管理", "description": ""},
     {"code": "menu:purchase:invoices", "name": "采购发票", "module": "采购管理", "description": ""},
@@ -187,6 +188,7 @@ PERMISSION_DEFS = [
     {"code": "menu:production:orders", "name": "生产订单", "module": "生产管理", "description": ""},
     {"code": "menu:production:workspace", "name": "生产工作台", "module": "生产管理", "description": ""},
     {"code": "menu:production:invoices", "name": "加工费发票", "module": "生产管理", "description": ""},
+    {"code": "menu:production:receipts", "name": "完工入库", "module": "生产管理", "description": ""},
     {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
     # 库存管理
     {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},
@@ -195,7 +197,11 @@ PERMISSION_DEFS = [
     # 系统管理
     {"code": "menu:system:users", "name": "用户管理", "module": "系统管理", "description": ""},
     {"code": "menu:system:roles", "name": "角色管理", "module": "系统管理", "description": ""},
-]
+    {"code": "menu:system:wecom", "name": "企业微信配置", "module": "系统管理", "description": ""},
+    {"code": "menu:system:bot", "name": "AI 模型配置", "module": "系统管理", "description": ""},
+    {"code": "menu:system:bot-chat", "name": "AI 助手", "module": "系统管理", "description": ""},
+    {"code": "menu:system:reminders", "name": "提醒管理", "module": "系统管理", "description": ""},
+    ]
 
 
 @router.get("/permissions", response_model=list[PermissionGroup])
