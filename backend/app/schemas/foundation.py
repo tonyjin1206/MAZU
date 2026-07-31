@@ -206,15 +206,19 @@ class CustomerCreate(BaseModel):
     code: str = ""
     name_cn: str
     name_en: str = ""
-    country: str
-    contact_person: str
-    phone: str
+    country: str = ""
+    contact_person: str = ""
+    phone: str = ""
     email: str = ""
-    tax_id: str
-    address: str
+    tax_id: str = ""
+    address: str = ""
     credit_limit: float = 0
     payment_terms: str = "TT"
     account_period: int = 30
+    bank_name: str = ""
+    bank_account: str = ""
+    default_tax_rate: float = 13
+    rating: int = 3
     remark: str = ""
 
 
@@ -230,6 +234,10 @@ class CustomerUpdate(BaseModel):
     credit_limit: float | None = None
     payment_terms: str | None = None
     account_period: int | None = None
+    bank_name: str | None = None
+    bank_account: str | None = None
+    default_tax_rate: float | None = None
+    rating: int | None = None
     remark: str | None = None
     is_active: int | None = None
 
@@ -247,6 +255,10 @@ class CustomerOut(BaseModel):
     credit_limit: float
     payment_terms: str
     account_period: int
+    bank_name: str | None
+    bank_account: str | None
+    default_tax_rate: float
+    rating: int
     is_active: int
     created_at: datetime
 
@@ -259,21 +271,26 @@ class CustomerOut(BaseModel):
 class SupplierCreate(BaseModel):
     code: str = ""
     name: str
-    contact_person: str
-    phone: str
+    country: str = ""
+    contact_person: str = ""
+    phone: str = ""
     email: str = ""
-    tax_id: str
-    address: str
+    tax_id: str = ""
+    address: str = ""
     payment_terms: str = "TT"
     account_period: int = 30
     supply_range: str = ""
     rating: int = 3
     supplier_type: str = "原材料"
+    bank_name: str = ""
+    bank_account: str = ""
+    default_tax_rate: float = 13
     remark: str = ""
 
 
 class SupplierUpdate(BaseModel):
     name: str | None = None
+    country: str | None = None
     contact_person: str | None = None
     phone: str | None = None
     email: str | None = None
@@ -284,6 +301,9 @@ class SupplierUpdate(BaseModel):
     supply_range: str | None = None
     rating: int | None = None
     supplier_type: str | None = None
+    bank_name: str | None = None
+    bank_account: str | None = None
+    default_tax_rate: float | None = None
     remark: str | None = None
     is_active: int | None = None
 
@@ -292,6 +312,7 @@ class SupplierOut(BaseModel):
     id: int
     code: str
     name: str
+    country: str | None
     contact_person: str | None
     phone: str | None
     email: str | None
@@ -300,6 +321,9 @@ class SupplierOut(BaseModel):
     account_period: int
     supplier_type: str
     rating: int
+    bank_name: str | None
+    bank_account: str | None
+    default_tax_rate: float
     is_active: int
     created_at: datetime
 

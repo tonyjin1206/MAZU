@@ -19,25 +19,55 @@
         <el-form-item label="联系人">
           <el-input v-model="searchForm.contact_person" placeholder="联系人" clearable style="width: 120px" @keyup.enter="fetchData" />
         </el-form-item>
+        <el-form-item label="国家">
+          <el-input v-model="searchForm.country" placeholder="国家" clearable style="width: 120px" @keyup.enter="fetchData" />
+        </el-form-item>
       </el-form>
     </el-card>
 
     <!-- 底部：数据表格卡片 -->
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" border stripe size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="120" sortable column-key="code" :filters="codeFilters" :filter-method="filterCode" />
-        <el-table-column prop="name_cn" label="中文名" min-width="150" sortable column-key="name_cn" :filters="nameFilters" :filter-method="filterName" />
-        <el-table-column prop="name_en" label="英文名" min-width="150" sortable />
-        <el-table-column prop="country" label="国家" width="100" sortable column-key="country" :filters="countryFilters" :filter-method="filterCountry" />
-        <el-table-column prop="contact_person" label="联系人" width="120" sortable column-key="contact_person" :filters="contactFilters" :filter-method="filterContact" />
-        <el-table-column prop="phone" label="电话" width="140" sortable />
-        <el-table-column prop="tax_id" label="税号" width="150" sortable />
-        <el-table-column prop="payment_terms" label="结算方式" width="100" sortable />
-        <el-table-column prop="account_period" label="账期(天)" width="100" sortable />
-        <el-table-column label="操作" width="160" fixed="right">
+      <el-table
+        :key="columnVersion"
+        ref="tableRef"
+        :data="filteredList"
+        v-loading="loading"
+        border stripe size="small"
+        style="width: 100%"
+        :row-class-name="rowClassName"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :sortable="col.sortable"
+          :align="col.align"
+        >
+          <template v-if="col.prop === 'is_active'" #default="{ row }">
+            <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">
+              {{ row.is_active === 1 ? '启用' : '停用' }}
+            </el-tag>
+          </template>
+          <template v-else-if="col.prop === 'rating'" #default="{ row }">
+            <el-rate :model-value="row.rating" disabled :max="5" size="small" />
+          </template>
+          <template v-else-if="col.prop === 'created_at'" #default="{ row }">
+            {{ formatTime(row.created_at) }}
+          </template>
+          <template v-else-if="col.prop === 'default_tax_rate'" #default="{ row }">
+            {{ row.default_tax_rate }}%
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button link :type="row.is_active === 1 ? 'warning' : 'success'" size="small" @click="handleToggle(row)">
+              {{ row.is_active === 1 ? '停用' : '启用' }}
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -53,8 +83,11 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="600px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="640px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
+        <el-form-item label="编码" prop="code">
+          <el-input v-model="form.code" placeholder="留空自动生成" />
+        </el-form-item>
         <el-form-item label="中文名" prop="name_cn">
           <el-input v-model="form.name_cn" />
         </el-form-item>
@@ -72,8 +105,26 @@
         <el-form-item label="电话" prop="phone">
           <el-input v-model="form.phone" />
         </el-form-item>
+        <el-form-item label="邮箱" prop="email">
+          <el-input v-model="form.email" />
+        </el-form-item>
         <el-form-item label="税号" prop="tax_id">
           <el-input v-model="form.tax_id" />
+        </el-form-item>
+        <el-form-item label="客户地址" prop="address">
+          <el-input v-model="form.address" type="textarea" :rows="2" />
+        </el-form-item>
+        <el-form-item label="开户行" prop="bank_name">
+          <el-input v-model="form.bank_name" />
+        </el-form-item>
+        <el-form-item label="银行账号" prop="bank_account">
+          <el-input v-model="form.bank_account" />
+        </el-form-item>
+        <el-form-item label="默认税率(%)" prop="default_tax_rate">
+          <el-input type="number" v-model="form.default_tax_rate" :min="0" :max="100" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="评级" prop="rating">
+          <el-rate v-model="form.rating" :max="5" />
         </el-form-item>
         <el-form-item label="结算方式" prop="payment_terms">
           <el-select v-model="form.payment_terms" style="width: 100%">
@@ -87,8 +138,8 @@
         <el-form-item label="账期(天)" prop="account_period">
           <el-input type="number" v-model="form.account_period" :min="0" :step="15" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="地址" prop="address">
-          <el-input v-model="form.address" type="textarea" :rows="2" />
+        <el-form-item label="备注" prop="remark">
+          <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -100,8 +151,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import Sortable from 'sortablejs'
 import { foundationApi } from '../../api/foundation'
 
 const countryList = [
@@ -113,53 +165,106 @@ const countryList = [
   '尼日利亚', '埃及', '肯尼亚',
 ]
 
+// ===== 列配置（可拖拽排序，localStorage 记住个人偏好）=====
+const STORAGE_KEY = 'mazu_customer_columns'
+const defaultColumns = [
+  { prop: 'code', label: '编码', width: 120, sortable: true },
+  { prop: 'name_cn', label: '中文名', minWidth: 150, sortable: true },
+  { prop: 'country', label: '国家', width: 100, sortable: true },
+  { prop: 'contact_person', label: '联系人', width: 110, sortable: true },
+  { prop: 'phone', label: '电话', width: 130, sortable: true },
+  { prop: 'address', label: '客户地址', minWidth: 180 },
+  { prop: 'bank_name', label: '开户行', width: 140 },
+  { prop: 'bank_account', label: '银行账号', width: 140 },
+  { prop: 'default_tax_rate', label: '默认税率', width: 90, align: 'center' },
+  { prop: 'rating', label: '评级', width: 110, align: 'center' },
+  { prop: 'payment_terms', label: '结算方式', width: 100, sortable: true },
+  { prop: 'account_period', label: '账期(天)', width: 90, sortable: true },
+  { prop: 'tax_id', label: '税号', width: 140 },
+  { prop: 'created_at', label: '创建时间', width: 150 },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center' },
+]
+
+function loadColumnOrder() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
+    if (saved.length) {
+      // 按保存顺序重排，缺失的列补在后面
+      const savedSet = new Set(saved)
+      const others = defaultColumns.filter(c => !savedSet.has(c.prop))
+      return [...defaultColumns.filter(c => savedSet.has(c.prop)), ...others]
+    }
+  } catch (e) { /* 忽略损坏的存储 */ }
+  return [...defaultColumns]
+}
+
+const columns = ref(loadColumnOrder())
+const columnVersion = ref(0)
+let sortableInstance = null
+
+function initColumnDrag() {
+  const thead = document.querySelector('.el-table__header-wrapper thead tr')
+  if (!thead || sortableInstance) return
+  sortableInstance = Sortable.create(thead, {
+    animation: 150,
+    filter: (el) => el.classList.contains('el-table-fixed-column--right'),
+    onEnd: (evt) => {
+      const { oldIndex, newIndex } = evt
+      if (oldIndex === newIndex) return
+      const cols = [...columns.value]
+      const [moved] = cols.splice(oldIndex, 1)
+      cols.splice(newIndex, 0, moved)
+      columns.value = cols
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cols.map(c => c.prop)))
+      // 强制重渲染表格列
+      columnVersion.value++
+      nextTick(() => {
+        sortableInstance?.destroy()
+        sortableInstance = null
+        initColumnDrag()
+      })
+    },
+  })
+}
+
+function destroyColumnDrag() {
+  sortableInstance?.destroy()
+  sortableInstance = null
+}
+
+function rowClassName({ row }) {
+  return row.is_active === 0 ? 'mazu-disabled-row' : ''
+}
+
+function formatTime(t) {
+  if (!t) return ''
+  return t.replace('T', ' ').slice(0, 16)
+}
+
 const loading = ref(false)
 const tableData = ref([])
 const pagination = ref({ page: 1, pageSize: 100, total: 0 })
 
-// 列筛选
-const codeFilters = ref([])
-const nameFilters = ref([])
-const countryFilters = ref([])
-const contactFilters = ref([])
-const filterCodeVal = ref('')
-const filterNameVal = ref('')
-const filterCountryVal = ref('')
-const filterContactVal = ref('')
+const filteredList = computed(() => tableData.value)
 
-const filteredList = computed(() => {
-  let items = tableData.value
-  if (filterCodeVal.value) items = items.filter(r => r.code === filterCodeVal.value)
-  if (filterNameVal.value) items = items.filter(r => r.name_cn === filterNameVal.value)
-  if (filterCountryVal.value) items = items.filter(r => r.country === filterCountryVal.value)
-  if (filterContactVal.value) items = items.filter(r => r.contact_person === filterContactVal.value)
-  return items
-})
-function filterCode(val, row) { filterCodeVal.value = val; return true }
-function filterName(val, row) { filterNameVal.value = val; return true }
-function filterCountry(val, row) { filterCountryVal.value = val; return true }
-function filterContact(val, row) { filterContactVal.value = val; return true }
-
-const searchForm = reactive({ code: '', name_cn: '', contact_person: '' })
+const searchForm = reactive({ code: '', name_cn: '', contact_person: '', country: '' })
 
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const saving = ref(false)
 const formRef = ref(null)
+const tableRef = ref(null)
 
 const form = reactive({
   id: null, code: '', name_cn: '', name_en: '', country: '',
-  contact_person: '', phone: '', email: '', tax_id: '',
-  payment_terms: 'TT', account_period: 30, address: '',
+  contact_person: '', phone: '', email: '', tax_id: '', address: '',
+  bank_name: '', bank_account: '', default_tax_rate: 13, rating: 3,
+  payment_terms: 'TT', account_period: 30, remark: '',
 })
 
 const rules = {
   code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name_cn: [{ required: true, message: '请输入中文名', trigger: 'blur' }],
-  country: [{ required: true, message: '请选择国家', trigger: 'change' }],
-  contact_person: [{ required: true, message: '请输入联系人', trigger: 'blur' }],
-  phone: [{ required: true, message: '请输入电话', trigger: 'blur' }],
-  tax_id: [{ required: true, message: '请输入税号', trigger: 'blur' }],
 }
 
 async function fetchData() {
@@ -171,15 +276,12 @@ async function fetchData() {
       code: searchForm.code || undefined,
       name_cn: searchForm.name_cn || undefined,
       contact_person: searchForm.contact_person || undefined,
+      country: searchForm.country || undefined,
     }
     const res = await foundationApi.customers.list(params)
     tableData.value = res.items || res.data?.items || []
     pagination.value.total = res.total || res.data?.total || 0
-    // 更新列筛选
-    codeFilters.value = [...new Set(tableData.value.map(r => r.code).filter(Boolean))].map(v => ({ text: v, value: v }))
-    nameFilters.value = [...new Set(tableData.value.map(r => r.name_cn).filter(Boolean))].map(v => ({ text: v, value: v }))
-    countryFilters.value = [...new Set(tableData.value.map(r => r.country).filter(Boolean))].map(v => ({ text: v, value: v }))
-    contactFilters.value = [...new Set(tableData.value.map(r => r.contact_person).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nextTick(initColumnDrag)
   } catch (e) {
     ElMessage.error('加载失败')
   } finally {
@@ -188,10 +290,7 @@ async function fetchData() {
 }
 
 function resetSearch() {
-  searchForm.code = ''
-  searchForm.name_cn = ''
-  searchForm.contact_person = ''
-  filterCodeVal.value = ''; filterNameVal.value = ''; filterCountryVal.value = ''; filterContactVal.value = ''
+  Object.assign(searchForm, { code: '', name_cn: '', contact_person: '', country: '' })
   pagination.value.page = 1
   fetchData()
 }
@@ -199,26 +298,25 @@ function resetSearch() {
 function resetForm() {
   Object.assign(form, {
     id: null, code: '', name_cn: '', name_en: '', country: '',
-    contact_person: '', phone: '', email: '', tax_id: '',
-    payment_terms: 'TT', account_period: 30, address: '',
+    contact_person: '', phone: '', email: '', tax_id: '', address: '',
+    bank_name: '', bank_account: '', default_tax_rate: 13, rating: 3,
+    payment_terms: 'TT', account_period: 30, remark: '',
   })
 }
 
 function openDialog(mode, row) {
   dialogMode.value = mode
   if (mode === 'edit' && row) {
-    form.id = row.id
-    form.code = row.code
-    form.name_cn = row.name_cn || ''
-    form.name_en = row.name_en || ''
-    form.country = row.country || ''
-    form.contact_person = row.contact_person || ''
-    form.phone = row.phone || ''
-    form.email = row.email || ''
-    form.tax_id = row.tax_id || ''
-    form.address = row.address || ''
-    form.payment_terms = row.payment_terms || 'TT'
-    form.account_period = row.account_period ?? 30
+    Object.assign(form, {
+      id: row.id, code: row.code || '', name_cn: row.name_cn || '',
+      name_en: row.name_en || '', country: row.country || '',
+      contact_person: row.contact_person || '', phone: row.phone || '',
+      email: row.email || '', tax_id: row.tax_id || '', address: row.address || '',
+      bank_name: row.bank_name || '', bank_account: row.bank_account || '',
+      default_tax_rate: row.default_tax_rate ?? 13, rating: row.rating ?? 3,
+      payment_terms: row.payment_terms || 'TT', account_period: row.account_period ?? 30,
+      remark: row.remark || '',
+    })
   } else {
     resetForm()
   }
@@ -241,6 +339,8 @@ async function handleSave() {
     }
     dialogVisible.value = false
     fetchData()
+  } catch (e) {
+    ElMessage.error(e?.response?.data?.detail || '保存失败')
   } finally {
     saving.value = false
   }
@@ -248,14 +348,42 @@ async function handleSave() {
 
 async function handleDelete(row) {
   try {
-    await ElMessageBox.confirm(`确认删除客户「${row.name_cn}」？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(`确认删除客户「${row.name_cn}」？删除后不可恢复。`, '提示', { type: 'warning' })
     await foundationApi.customers.delete(row.id)
     ElMessage.success('删除成功')
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') {
+      ElMessage.error(e?.response?.data?.detail || '删除失败')
+    }
   }
 }
 
-onMounted(fetchData)
+async function handleToggle(row) {
+  const toActive = row.is_active === 1 ? 0 : 1
+  const action = toActive === 0 ? '停用' : '启用'
+  try {
+    await ElMessageBox.confirm(
+      `确认${action}客户「${row.name_cn}」？${toActive === 0 ? '停用后下单选择客户时将看不到该客户。' : ''}`,
+      '提示', { type: 'warning' }
+    )
+    await foundationApi.customers.update(row.id, { is_active: toActive })
+    ElMessage.success(`${action}成功`)
+    fetchData()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(`${action}失败`)
+  }
+}
+
+onMounted(() => {
+  fetchData()
+})
+onBeforeUnmount(destroyColumnDrag)
 </script>
+
+<style scoped>
+:deep(.mazu-disabled-row) {
+  opacity: 0.55;
+  background-color: #fafafa;
+}
+</style>

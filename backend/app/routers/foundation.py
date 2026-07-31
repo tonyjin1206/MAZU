@@ -14,6 +14,16 @@ from app.models.foundation import (
     Company, CompanyContact,
     ProductProcess,
 )
+from app.models.sales import (
+    SalesQuote, SalesOrder, SalesDelivery, CustomsDeclaration,
+    SalesInvoice, AccountsReceivable, Collection,
+)
+from app.models.purchase import (
+    PurchaseOrder, PurchaseReceipt, PurchaseInvoice,
+    AccountsPayable, Payment,
+)
+from app.models.production import OutsourcingOrder, ProcessingInvoice
+from app.models.tax_refund import TaxRefundInputInvoice
 from app.schemas.foundation import (
     MaterialCreate, MaterialUpdate, MaterialOut,
     ProductCreate, ProductUpdate, ProductOut,
@@ -288,11 +298,14 @@ def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     code = data.code or _next_code(db, Customer, "CU")
     c = Customer(code=code, name_cn=data.name_cn, name_en=data.name_en or "",
-                 country=data.country, contact_person=data.contact_person,
-                 phone=data.phone, email=data.email or "", tax_id=data.tax_id,
-                 address=data.address, credit_limit=data.credit_limit or 0,
+                 country=data.country or "", contact_person=data.contact_person or "",
+                 phone=data.phone or "", email=data.email or "", tax_id=data.tax_id or "",
+                 address=data.address or "", credit_limit=data.credit_limit or 0,
                  payment_terms=data.payment_terms or "TT",
-                 account_period=data.account_period or 30, remark=data.remark or "")
+                 account_period=data.account_period or 30,
+                 bank_name=data.bank_name or "", bank_account=data.bank_account or "",
+                 default_tax_rate=data.default_tax_rate or 13, rating=data.rating or 3,
+                 remark=data.remark or "")
     db.add(c)
     db.commit()
     db.refresh(c)
@@ -303,6 +316,7 @@ def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
 def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
                    keyword: str = Query(""), code: str = Query(""),
                    name_cn: str = Query(""), contact_person: str = Query(""),
+                   country: str = Query(""),
                    db: Session = Depends(get_db),
                    current_user: User = Depends(get_current_user)):
     query = db.query(Customer)
@@ -318,6 +332,8 @@ def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
             query = query.filter(Customer.name_cn.like(f"%{name_cn}%"))
         if contact_person:
             query = query.filter(Customer.contact_person.like(f"%{contact_person}%"))
+        if country:
+            query = query.filter(Customer.country.like(f"%{country}%"))
     total = query.count()
     items = query.order_by(Customer.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,
@@ -338,15 +354,68 @@ def update_customer(item_id: int, data: CustomerUpdate, db: Session = Depends(ge
     return CustomerOut.model_validate(item)
 
 
+def _has_business_refs(db: Session, model, item_id: int, refs: list) -> str | None:
+    """检查业务数据引用，返回被引用的业务名称，无引用返回 None"""
+    for table_name, field_name, biz_name in refs:
+        try:
+            exists = db.query(table_name).filter(getattr(table_name, field_name) == item_id).first()
+        except Exception:
+            continue
+        if exists:
+            return biz_name
+    return None
+
+
+# 客户被引用的业务表：销售报价/订单/发货/报关/发票/应收/收款
+CUSTOMER_REFS = [
+    (SalesQuote, "customer_id", "报价单"),
+    (SalesOrder, "customer_id", "销售订单"),
+    (SalesDelivery, "customer_id", "销售发货"),
+    (CustomsDeclaration, "customer_id", "报关单"),
+    (SalesInvoice, "customer_id", "销售发票"),
+    (AccountsReceivable, "customer_id", "应收账款"),
+    (Collection, "customer_id", "收款单"),
+]
+
+# 供应商被引用的业务表：采购订单/入库/发票/应付/付款/委外/加工费/进项发票
+SUPPLIER_REFS = [
+    (PurchaseOrder, "supplier_id", "采购订单"),
+    (PurchaseReceipt, "supplier_id", "采购入库"),
+    (PurchaseInvoice, "supplier_id", "采购发票"),
+    (AccountsPayable, "supplier_id", "应付账款"),
+    (Payment, "supplier_id", "付款单"),
+    (OutsourcingOrder, "supplier_id", "委外工单"),
+    (ProcessingInvoice, "supplier_id", "加工费发票"),
+    (TaxRefundInputInvoice, "supplier_id", "进项发票"),
+]
+
+
 @router.delete("/customers/{item_id}", tags=["基础档案-客户"])
 def delete_customer(item_id: int, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     item = db.query(Customer).filter(Customer.id == item_id).first()
     if not item:
         raise HTTPException(404, "客户不存在")
-    item.is_active = 0
+    biz = _has_business_refs(db, Customer, item_id, CUSTOMER_REFS)
+    if biz:
+        raise HTTPException(400, f"该客户已有{biz}数据，不允许删除，可停用")
+    db.delete(item)
     db.commit()
     return {"message": "客户已删除"}
+
+
+@router.delete("/suppliers/{item_id}", tags=["基础档案-供应商"])
+def delete_supplier(item_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(get_current_user)):
+    item = db.query(Supplier).filter(Supplier.id == item_id).first()
+    if not item:
+        raise HTTPException(404, "供应商不存在")
+    biz = _has_business_refs(db, Supplier, item_id, SUPPLIER_REFS)
+    if biz:
+        raise HTTPException(400, f"该供应商已有{biz}数据，不允许删除，可停用")
+    db.delete(item)
+    db.commit()
+    return {"message": "供应商已删除"}
 
 
 # ==================== 供应商自定义创建（自动编码 SU+6位流水）====================
@@ -355,12 +424,15 @@ def delete_customer(item_id: int, db: Session = Depends(get_db),
 def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     code = data.code or _next_code(db, Supplier, "SU")
-    s = Supplier(code=code, name=data.name, contact_person=data.contact_person,
-                 phone=data.phone, email=data.email or "", tax_id=data.tax_id,
-                 address=data.address, payment_terms=data.payment_terms or "TT",
+    s = Supplier(code=code, name=data.name, country=data.country or "",
+                 contact_person=data.contact_person or "",
+                 phone=data.phone or "", email=data.email or "", tax_id=data.tax_id or "",
+                 address=data.address or "", payment_terms=data.payment_terms or "TT",
                  account_period=data.account_period or 30,
                  supply_range=data.supply_range or "",
                  rating=data.rating or 3, supplier_type=data.supplier_type or "原材料",
+                 bank_name=data.bank_name or "", bank_account=data.bank_account or "",
+                 default_tax_rate=data.default_tax_rate or 13,
                  remark=data.remark or "")
     db.add(s)
     db.commit()
@@ -372,6 +444,7 @@ def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
 def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
                    keyword: str = Query(""), code: str = Query(""),
                    name: str = Query(""), contact_person: str = Query(""),
+                   country: str = Query(""),
                    db: Session = Depends(get_db),
                    current_user: User = Depends(get_current_user)):
     query = db.query(Supplier)
@@ -386,6 +459,8 @@ def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
             query = query.filter(Supplier.name.like(f"%{name}%"))
         if contact_person:
             query = query.filter(Supplier.contact_person.like(f"%{contact_person}%"))
+        if country:
+            query = query.filter(Supplier.country.like(f"%{country}%"))
     total = query.count()
     items = query.order_by(Supplier.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,
@@ -404,17 +479,6 @@ def update_supplier(item_id: int, data: SupplierUpdate, db: Session = Depends(ge
     db.commit()
     db.refresh(item)
     return SupplierOut.model_validate(item)
-
-
-@router.delete("/suppliers/{item_id}", tags=["基础档案-供应商"])
-def delete_supplier(item_id: int, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
-    item = db.query(Supplier).filter(Supplier.id == item_id).first()
-    if not item:
-        raise HTTPException(404, "供应商不存在")
-    item.is_active = 0
-    db.commit()
-    return {"message": "供应商已删除"}
 
 
 # ==================== BOM 特殊路由 ====================
