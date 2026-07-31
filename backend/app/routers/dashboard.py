@@ -106,7 +106,7 @@ def get_dashboard_data(
     from app.models.foundation import Product
     from app.models.inventory import StockTransaction
     deliveries = db.query(SalesDelivery).filter(
-        SalesDelivery.status.in_(["已发货", "部分发货"])
+        SalesDelivery.status.in_(["已发货", "部分发货", "已退货"])
     ).all()
 
     # 按发货单展开毛利
@@ -163,7 +163,7 @@ def get_profit_detail(
     product = db.query(Product).filter(Product.id == product_id).first()
     deliveries = db.query(SalesDelivery).filter(
         SalesDelivery.product_id == product_id,
-        SalesDelivery.status.in_(["已发货", "部分发货"]),
+        SalesDelivery.status.in_(["已发货", "部分发货", "已退货"]),
     ).order_by(SalesDelivery.delivery_date).all()
 
     detail = []

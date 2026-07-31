@@ -1,50 +1,64 @@
 <template>
   <div>
-    <el-card>
-      <template #header></template>
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="汇总" name="summary">
-          <el-form :inline="true" style="margin-bottom: 12px">
-            <el-form-item label="供应商">
-              <el-input v-model="searchKeyword" placeholder="输入供应商名称查询" clearable style="width: 260px" @input="filterSummary" />
-            </el-form-item>
-          </el-form>
-          <el-table :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
-            <el-table-column prop="supplier_name" label="供应商" min-width="180">
-              <template #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.supplier_name }}</span></template>
-            </el-table-column>
-            <el-table-column label="应付笔数" width="80" align="center"><template #default="{ row }">{{ row.count }}</template></el-table-column>
-            <el-table-column label="应付金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-            <el-table-column label="已付金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_paid) }}</template></el-table-column>
-            <el-table-column label="余额" width="130" align="right">
-              <template #default="{ row }">
-                <span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
+    <!-- 查询条件（整体风格） -->
+    <el-card style="margin-bottom: 12px">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <el-button type="primary" @click="search">查询</el-button>
+          <el-button @click="resetSearch">重置</el-button>
+        </div>
+      </template>
+      <el-form :inline="true">
+        <el-form-item label="供应商">
+          <el-input v-model="searchKeyword" placeholder="供应商名称" clearable style="width: 220px" @keyup.enter="search" />
+        </el-form-item>
+      </el-form>
+    </el-card>
 
-        <el-tab-pane label="明细" name="detail">
-          <el-table :data="paymentDetailList" border stripe v-loading="pdLoading" style="width: 100%" :summary-method="pdTotal" show-summary>
-            <el-table-column prop="supplier_name" label="供应商" min-width="140" />
-            <el-table-column prop="ap_date" label="应付日期" width="110" />
-            <el-table-column prop="ap_no" label="应付单号" width="160" />
-            <el-table-column label="应付金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ap_amount) }}</template></el-table-column>
-            <el-table-column prop="pm_date" label="付款日期" width="110" />
-            <el-table-column prop="payment_no" label="付款单号" width="160" />
-            <el-table-column label="付款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
-            <el-table-column label="余额" width="110" align="right">
-              <template #default="{ row }"><span :style="{ color: (row.ap_amount - row.paid_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ap_amount - row.paid_amount) }}</span></template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" align="center" fixed="right">
-              <template #default="{ row }">
-                <el-button v-if="!row.payment_no" type="primary" size="small" @click="openPaymentByDetail(row)">付款</el-button>
-                <el-button v-else type="success" size="small" @click="viewPayment(row)">查看付款单</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+    <!-- 汇总 -->
+    <el-card style="margin-bottom: 12px">
+      <template #header><span style="font-weight: 600">汇总</span></template>
+      <el-table :data="summaryList" border stripe size="small" v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
+        <el-table-column prop="supplier_name" label="供应商" min-width="180">
+          <template #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.supplier_name }}</span></template>
+        </el-table-column>
+        <el-table-column label="应付笔数" width="80" align="center"><template #default="{ row }">{{ row.count }}</template></el-table-column>
+        <el-table-column label="应付金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
+        <el-table-column label="已付金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_paid) }}</template></el-table-column>
+        <el-table-column label="余额" width="130" align="right">
+          <template #default="{ row }">
+            <span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- 明细 -->
+    <el-card id="ap-detail-card">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="font-weight: 600">明细</span>
+          <el-tag v-if="pdFilter" closable type="info" size="small" @close="clearPdFilter">{{ pdFilter }}</el-tag>
+        </div>
+      </template>
+      <el-table :data="paymentDetailList" border stripe size="small" v-loading="pdLoading" style="width: 100%" :summary-method="pdTotal" show-summary>
+        <el-table-column prop="supplier_name" label="供应商" min-width="140" />
+        <el-table-column prop="ap_date" label="应付日期" width="110" />
+        <el-table-column prop="ap_no" label="应付单号" width="160" />
+        <el-table-column label="应付金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ap_amount) }}</template></el-table-column>
+        <el-table-column prop="pm_date" label="付款日期" width="110" />
+        <el-table-column prop="payment_no" label="付款单号" width="160" />
+        <el-table-column label="付款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
+        <el-table-column label="余额" width="110" align="right">
+          <template #default="{ row }"><span :style="{ color: (row.ap_amount - row.paid_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ap_amount - row.paid_amount) }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="!row.payment_no" type="primary" size="small" @click="openPaymentByDetail(row)">付款</el-button>
+            <el-button v-else type="success" size="small" @click="viewPayment(row)">查看付款单</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-card>
 
     <!-- 付款弹窗 -->
@@ -93,15 +107,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import { purchaseApi } from '../../api/business'
 
-const activeTab = ref('summary')
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const page = ref(1)
 const searchKeyword = ref('')
 const dialogVisible = ref(false)
 const submitting = ref(false)
@@ -121,6 +133,7 @@ const form = reactive({
 
 const rules = { payment_amount: [{ required: true, message: '请输入付款金额', trigger: 'blur' }] }
 
+// 汇总：按供应商分组（前端过滤）
 const summaryList = computed(() => {
   const groups = {}
   list.value.forEach(r => {
@@ -167,39 +180,53 @@ function pdTotal({ columns }) {
   const sums = []
   columns.forEach((col, i) => {
     if (i === 0) { sums[i] = '合计'; return }
-    if (col.label === '应付金额') sums[i] = '¥' + pdList.value.reduce((s, r) => s + (r.ap_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
-    else if (col.label === '付款金额') sums[i] = '¥' + pdList.value.reduce((s, r) => s + (r.paid_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
- else if (col.label === '余额') sums[i] = '¥' + pdList.value.reduce((s, r) => s + (r.ap_amount || 0) - (r.paid_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    if (col.label === '应付金额') sums[i] = '¥' + paymentDetailList.value.reduce((s, r) => s + (r.ap_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    else if (col.label === '付款金额') sums[i] = '¥' + paymentDetailList.value.reduce((s, r) => s + (r.paid_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    else if (col.label === '余额') sums[i] = '¥' + paymentDetailList.value.reduce((s, r) => s + (r.ap_amount || 0) - (r.paid_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
     else sums[i] = ''
   })
   return sums
 }
 
-function filterSummary() {} // computed handles it
-
-function showDetail(row) {
-  pdFilter.value = row.supplier_name
-  activeTab.value = 'detail'
-  fetchPaymentDetails()
-}
-
 async function fetchData() {
   loading.value = true
   try {
-    const res = await request.get('/purchase/ap', { params: { page: 1, page_size: 100 } })
+    const res = await purchaseApi.ap.list({ page: 1, page_size: 100 })
     list.value = res.items || []
     total.value = res.total || 0
   } finally { loading.value = false }
 }
 
-watch(activeTab, (tab) => { if (tab === 'detail') { if (!pdFilter.value) pdFilter.value = ' '; fetchPaymentDetails() } })
-
 async function fetchPaymentDetails() {
   pdLoading.value = true
   try {
-    const res = await request.get('/purchase/ap/payment-detail')
+    const res = await purchaseApi.ap.paymentDetail()
     pdList.value = res.items || []
   } finally { pdLoading.value = false }
+}
+
+// 查询 / 重置（整体风格）
+function search() {
+  fetchData()
+  fetchPaymentDetails()
+}
+
+function resetSearch() {
+  searchKeyword.value = ''
+  pdFilter.value = ''
+  search()
+}
+
+// 点击汇总行 → 明细按该供应商过滤并定位
+function showDetail(row) {
+  pdFilter.value = row.supplier_name
+  fetchPaymentDetails()
+  const el = document.getElementById('ap-detail-card')
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function clearPdFilter() {
+  pdFilter.value = ''
 }
 
 function openPayment(row) {
@@ -220,7 +247,7 @@ async function handleSubmit() {
   if (amt > form.balance) { ElMessage.warning('付款金额不能超过余额'); return }
   submitting.value = true
   try {
-    await request.post('/purchase/payments', {
+    await purchaseApi.payments.create({
       supplier_id: form.supplier_id,
       amount: amt, payment_date: form.payment_date,
       payment_method: form.payment_method, remark: form.remark || '',
@@ -249,7 +276,7 @@ function openPaymentByDetail(row) {
 async function viewPayment(row) {
   if (!row.payment_id) return
   try {
-    const res = await request.get(`/purchase/payments/${row.payment_id}`)
+    const res = await purchaseApi.payments.get(row.payment_id, row.payment_id)
     paymentDetail.value = res
     paymentDetailVisible.value = true
   } catch {
@@ -257,7 +284,10 @@ async function viewPayment(row) {
   }
 }
 
-onMounted(fetchData)
+onMounted(() => {
+  fetchData()
+  fetchPaymentDetails()
+})
 </script>
 
 <style scoped>

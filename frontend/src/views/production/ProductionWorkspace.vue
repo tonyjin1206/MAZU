@@ -211,10 +211,18 @@
         <el-divider content-position="left">成本转出</el-divider>
         <el-form-item label="材料成本总额"><el-input :model-value="$fm(receiptForm.total_mat_cost)" disabled size="small" /></el-form-item>
         <el-form-item label="已转出材料成本"><el-input :model-value="$fm(receiptForm.transferred_mat_cost)" disabled size="small" /></el-form-item>
-        <el-form-item label="本次转出材料成本" prop="material_cost"><el-input type="number" v-model="receiptForm.material_cost" :min="0" :max="receiptForm.remain_mat_cost" size="small" /></el-form-item>
+        <el-form-item label="本次转出材料成本" prop="material_cost">
+          <el-input type="number" v-model="receiptForm.material_cost" :min="0" :max="receiptForm.remain_mat_cost" size="small"
+            :placeholder="`自动: ${$fm(receiptForm.auto_mat_cost)}`" />
+          <div style="font-size: 12px; color: #909399; line-height: 1.4">留空 = 按剩余投入比例自动结转</div>
+        </el-form-item>
         <el-form-item label="加工费总额"><el-input :model-value="$fm(receiptForm.total_proc_cost)" disabled size="small" /></el-form-item>
         <el-form-item label="已转出加工费"><el-input :model-value="$fm(receiptForm.transferred_proc_cost)" disabled size="small" /></el-form-item>
-        <el-form-item label="本次转出加工费" prop="process_cost"><el-input type="number" v-model="receiptForm.process_cost" :min="0" :max="receiptForm.remain_proc_cost" size="small" /></el-form-item>
+        <el-form-item label="本次转出加工费" prop="process_cost">
+          <el-input type="number" v-model="receiptForm.process_cost" :min="0" :max="receiptForm.remain_proc_cost" size="small"
+            :placeholder="`自动: ${$fm(receiptForm.auto_proc_cost)}`" />
+          <div style="font-size: 12px; color: #909399; line-height: 1.4">留空 = 按剩余投入比例自动结转</div>
+        </el-form-item>
         <el-divider />
         <el-form-item label="入库单价(自动)"><el-input :model-value="$fm(receiptForm.auto_unit_cost)" disabled size="small" /></el-form-item>
       </el-form>
@@ -511,6 +519,9 @@ async function doCancelIssue(row) {
 async function doIssue() {
   const validRows = issueRows.value.filter(r => r.material_id && r._selectedBatches?.length)
   if (!validRows.length) { ElMessage.warning('请至少选择物料和批次'); return }
+  // 检查是否填写了发料数量（选了批次但数量为0时静默无反应的问题）
+  const hasQty = validRows.some(r => (r._selectedBatches || []).some(b => parseFloat(b.issue_qty) > 0))
+  if (!hasQty) { ElMessage.warning('请填写发料数量'); return }
   issueLoading.value = true
   let success = 0
   let errors = []
@@ -570,14 +581,32 @@ function openReceipt(prod) {
     total_mat_cost: prod.total_material_cost || 0,
     transferred_mat_cost: prod.transferred_material_cost || 0,
     remain_mat_cost: (prod.total_material_cost || 0) - (prod.transferred_material_cost || 0),
-    material_cost: 0,
+    material_cost: '',  // 留空 = 自动结转
     total_proc_cost: prod.total_process_cost || 0,
     transferred_proc_cost: prod.transferred_process_cost || 0,
     remain_proc_cost: (prod.total_process_cost || 0) - (prod.transferred_process_cost || 0),
-    process_cost: 0,
+    process_cost: '',  // 留空 = 自动结转
+    auto_mat_cost: 0,
+    auto_proc_cost: 0,
     auto_unit_cost: 0,
   }
   receiptVisible.value = true
+  calcAutoCost()
+}
+
+// 自动结转：剩余投入 × 本次入库占比（最后一次全转）
+function calcAutoCost() {
+  const f = receiptForm.value
+  const qty = parseFloat(f.quantity) || 0
+  const remainQty = Math.max(0, f.order_qty - f.received_qty)
+  const ratio = remainQty > 0 ? Math.min(1, qty / remainQty) : 1
+  f.auto_mat_cost = qty >= remainQty && remainQty > 0
+    ? f.remain_mat_cost
+    : Math.round(f.remain_mat_cost * ratio * 100) / 100
+  f.auto_proc_cost = qty >= remainQty && remainQty > 0
+    ? f.remain_proc_cost
+    : Math.round(f.remain_proc_cost * ratio * 100) / 100
+  f.auto_unit_cost = qty > 0 ? (f.auto_mat_cost + f.auto_proc_cost) / qty : 0
 }
 
 async function doReceipt() {
@@ -588,8 +617,10 @@ async function doReceipt() {
     await productionApi.productions.receipt(receiptProdId, {
       quantity: parseFloat(receiptForm.value.quantity),
       warehouse_id: receiptForm.value.warehouse_id,
-      material_cost: parseFloat(receiptForm.value.material_cost) || 0,
-      process_cost: parseFloat(receiptForm.value.process_cost) || 0,
+      material_cost: receiptForm.value.material_cost === '' || receiptForm.value.material_cost === null
+        ? null : parseFloat(receiptForm.value.material_cost),
+      process_cost: receiptForm.value.process_cost === '' || receiptForm.value.process_cost === null
+        ? null : parseFloat(receiptForm.value.process_cost),
     })
     ElMessage.success('入库成功')
     receiptVisible.value = false
@@ -597,21 +628,9 @@ async function doReceipt() {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '入库失败') } finally { receiptLoading.value = false }
 }
 
-// 自动计算入库单价及转出成本
-watch(() => receiptForm.value.quantity, (qty) => {
-  const f = receiptForm.value
-  const q = parseFloat(qty) || 0
-  const orderQty = f.order_qty || 1
-  if (q > 0) {
-    // 按比例计算转出成本
-    const autoMat = (f.total_mat_cost / orderQty) * q
-    const autoProc = (f.total_proc_cost / orderQty) * q
-    f.material_cost = Math.min(parseFloat(autoMat.toFixed(2)), f.remain_mat_cost)
-    f.process_cost = Math.min(parseFloat(autoProc.toFixed(2)), f.remain_proc_cost)
-  }
-  const mc = parseFloat(f.material_cost) || 0
-  const pc = parseFloat(f.process_cost) || 0
-  f.auto_unit_cost = q > 0 ? (mc + pc) / q : 0
+// 数量变化 → 重算自动结转建议值（输入框留空时后端按此结转；用户填写则覆盖）
+watch(() => receiptForm.value.quantity, () => {
+  calcAutoCost()
 })
 
 // 物料变更时重置批次选择

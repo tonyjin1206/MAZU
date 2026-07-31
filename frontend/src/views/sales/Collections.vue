@@ -44,7 +44,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -110,13 +110,13 @@
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import { salesApi } from '../../api/business'
 
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const detailVisible = ref(false)
 const detail = ref(null)
 const editVisible = ref(false)
@@ -154,7 +154,7 @@ async function fetchList() {
     const params = { page: page.value, page_size: pageSize.value }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.dateRange) { params.start_date = searchForm.dateRange[0]; params.end_date = searchForm.dateRange[1] }
-    const res = await request.get('/sales/collections', { params })
+    const res = await salesApi.collections.list(params)
     list.value = res.items || []
     total.value = res.total || 0
     // 更新列筛选
@@ -166,7 +166,7 @@ async function fetchList() {
 
 async function openDetail(row) {
   try {
-    const res = await request.get(`/sales/collections/${row.id}`)
+    const res = await salesApi.collections.get(row.id, row.id)
     detail.value = res
     detailVisible.value = true
   } catch { ElMessage.error('加载详情失败') }
@@ -186,11 +186,7 @@ function openEdit(row) {
 async function submitEdit() {
   submitting.value = true
   try {
-    await request.put(`/sales/collections/${editForm.id}`, {
-      collection_date: editForm.collection_date,
-      payment_method: editForm.payment_method,
-      remark: editForm.remark,
-    })
+    await salesApi.collections.update(editForm.id, editForm.id)
     ElMessage.success('修改成功')
     editVisible.value = false
     fetchList()
@@ -204,7 +200,7 @@ async function handleDelete(row) {
     '提示', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
   )
   try {
-    await request.delete(`/sales/collections/${row.id}`)
+    await salesApi.collections.delete(row.id, row.id)
     ElMessage.success('删除成功，应收已回滚')
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }

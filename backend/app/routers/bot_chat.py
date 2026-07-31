@@ -52,7 +52,7 @@ def chat_message(
     session = sessions.get(sid)
     history = session.get("history", [])
 
-    result = process_message(text, history, db)
+    result = process_message(text, history, db, current_user)
 
     # 更新历史
     if result.get("history"):
@@ -66,9 +66,8 @@ def chat_message(
 
 
 @router.post("/reset")
-def chat_reset(body: dict):
+def chat_reset(body: dict, current_user: User = Depends(get_current_user)):
     """重置会话"""
-    sid = body.get("session_id", "")
-    if sid:
-        sessions.clear(sid)
+    sid = body.get("session_id", "") or current_user.username
+    sessions.clear(sid)
     return {"message": "会话已重置"}

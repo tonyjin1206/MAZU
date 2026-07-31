@@ -7,6 +7,7 @@ LLM 通过工具函数操作 ERP。
 import json
 import httpx
 from datetime import date
+from pathlib import Path
 from sqlalchemy.orm import Session
 
 from app.models.system_config import BotConfig
@@ -136,22 +137,6 @@ TOOLS = [
     },
     {
         "type": "function", "function": {
-            "name": "create_outsourcing",
-            "description": "创建委外加工单：指定工序委外给某供应商加工，同时发出物料。",
-            "parameters": {"type": "object", "properties": {
-                "production_order_no": {"type": "string", "description": "生产订单编号"},
-                "process_name": {"type": "string", "description": "委外的工序名称"},
-                "supplier_name": {"type": "string", "description": "委外供应商名称"},
-                "material_name": {"type": "string", "description": "发出的物料名称"},
-                "material_qty": {"type": "number", "description": "发出物料数量"},
-                "outsource_qty": {"type": "number", "description": "委外加工数量"},
-                "unit_price": {"type": "number", "description": "委外加工单价"},
-                "due_date": {"type": "string", "description": "要求完成日期"},
-            }, "required": ["production_order_no", "process_name", "supplier_name", "outsource_qty"]},
-        }
-    },
-    {
-        "type": "function", "function": {
             "name": "issue_materials",
             "description": "生产领料/发料：为生产订单发出物料到产线或委外商。",
             "parameters": {"type": "object", "properties": {
@@ -174,28 +159,89 @@ TOOLS = [
             }, "required": ["production_order_no", "quantity"]},
         }
     },
+    {
+        "type": "function", "function": {
+            "name": "query_inventory",
+            "description": "查询当前库存：按物料/产品名称或仓库查看库存数量与批次。",
+            "parameters": {"type": "object", "properties": {
+                "keyword": {"type": "string", "description": "物料或产品名称关键词，留空列出全部"},
+                "warehouse_name": {"type": "string", "description": "仓库名称，不填查全部仓库"},
+            }},
+        }
+    },
+    {
+        "type": "function", "function": {
+            "name": "query_pending_approvals",
+            "description": "列出当前用户可见的待审核单据（采购订单/销售订单）。",
+            "parameters": {"type": "object", "properties": {
+                "order_type": {"type": "string", "enum": ["purchase_order", "sales_order"],
+                               "description": "单据类型，留空列出全部"},
+            }},
+        }
+    },
+    {
+        "type": "function", "function": {
+            "name": "approve_order",
+            "description": "审核单据：采购订单（待审核→已审核）或销售订单（待审核→已审并生成生产订单）。必须先列出单据让用户指定再调用。",
+            "parameters": {"type": "object", "properties": {
+                "order_type": {"type": "string", "enum": ["purchase_order", "sales_order"], "description": "单据类型"},
+                "order_no": {"type": "string", "description": "单据编号，如 PO-xxx / SO-xxx"},
+            }, "required": ["order_type", "order_no"]},
+        }
+    },
+    {
+        "type": "function", "function": {
+            "name": "unapprove_order",
+            "description": "反审核采购订单（已审核→待审核）。无下游入库/发票时才允许；销售订单不支持反审核。",
+            "parameters": {"type": "object", "properties": {
+                "order_type": {"type": "string", "enum": ["purchase_order"], "description": "单据类型"},
+                "order_no": {"type": "string", "description": "采购订单编号"},
+            }, "required": ["order_type", "order_no"]},
+        }
+    },
+    {
+        "type": "function", "function": {
+            "name": "query_manual",
+            "description": "查询系统操作手册：按关键词返回对应操作章节（如「如何录入客户」「采购入库怎么操作」）。",
+            "parameters": {"type": "object", "properties": {
+                "keyword": {"type": "string", "description": "搜索关键词，如：客户/采购入库/收款/审核"},
+            }, "required": ["keyword"]},
+        }
+    },
 ]
 
-SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助用户完成工作。
+SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手（Matsu），通过对话帮助用户完成工作。
 
 ## 可用工具
 1. query_entities — 查客户/供应商/物料/产品/应收/应付/发票清单
-2. create_order — 创建采购订单/销售订单
-3. create_collection — 创建收款单（客户回款+自动核销应收）
-4. create_payment — 创建付款单（向供应商付款+自动核销应付）
-5. create_purchase_invoice — 录入采购发票（关联采购单）
-6. create_sales_invoice — 录入销售发票（关联销售单）
-7. create_outsourcing — 创建委外加工单（工序委外+发料）
-8. issue_materials — 生产发料/领料
-9. production_receipt — 生产完工入库
+2. query_inventory — 查当前库存（按名称/仓库）
+3. query_pending_approvals — 列待审核单据
+4. approve_order / unapprove_order — 审核/反审核单据
+5. create_order — 创建采购订单/销售订单
+6. create_collection — 创建收款单（客户回款+自动核销应收）
+7. create_payment — 创建付款单（向供应商付款+自动核销应付）
+8. create_purchase_invoice / create_sales_invoice — 录入发票
+9. issue_materials — 生产发料/领料
+10. production_receipt — 生产完工入库
+11. query_manual — 查系统操作手册（教用户怎么操作）
+
+## 权限规则
+- 系统已按用户权限过滤工具，只使用提供的工具
+- 用户没有权限的操作，直接说明「您没有该操作的权限」，不要尝试调用
 
 ## 工作流程
 
 ### 查询
-- 用户说「查xxx/找xxx/xxx清单」→ **调 query_entities**
+- 用户说「查xxx/找xxx/xxx清单」→ 调 query_entities 或 query_inventory
 - keyword 留空 = 列出全部；有 keyword = 模糊搜索
 - 应收/应付会自动汇总余额
 - **不要编造数据**，工具返回什么就展示什么
+- 用户问「怎么操作/怎么录/怎么审核」→ 调 query_manual
+
+### 审核类操作（先查后审）
+第一步：用户说「审核/审批」时，先调 query_pending_approvals 列出待审核单据
+第二步：让用户指定单据号（如 PO-20260731-001）
+第三步：确认后调 approve_order，核对返回结果
 
 ### 创建类操作（三步确认）
 第一步：问清要做什么
@@ -217,7 +263,14 @@ ENTITY_LABELS = {
 }
 
 
-def _execute_query_entities(args: dict, db: Session) -> str:
+def _operator_name(user) -> str:
+    """操作人显示名（AI 工具调用兜底）"""
+    if user is None:
+        return "AI"
+    return user.display_name or user.username
+
+
+def _execute_query_entities(args: dict, db: Session, user=None) -> str:
     from app.models.foundation import Supplier, Customer, Material, Product
     from app.models.sales import AccountsReceivable, SalesInvoice
     from app.models.purchase import AccountsPayable, PurchaseInvoice
@@ -307,9 +360,10 @@ def _execute_query_entities(args: dict, db: Session) -> str:
     return f"不支持的类型：{etype}"
 
 
-def _execute_create_order(args: dict, db: Session) -> str:
+def _execute_create_order(args: dict, db: Session, user=None) -> str:
     from app.models.foundation import Supplier, Customer, Material, Product
     from app.utils.batch_no import generate_doc_no
+    operator = _operator_name(user)
     try:
         items = args.get("items", [])
         if not items:
@@ -323,7 +377,7 @@ def _execute_create_order(args: dict, db: Session) -> str:
             no = generate_doc_no(db, "PO")
             total_amt = 0
             po = PurchaseOrder(order_no=no, supplier_id=sup.id, order_date=_parse_date(args.get("order_date","")),
-                               status="待审批", total_amount=0, tax_rate=13, remark="AI", created_by="AI")
+                               status="待审核", total_amount=0, tax_rate=13, remark="AI", created_by=operator)
             db.add(po); db.flush()
 
             lines = []
@@ -349,7 +403,7 @@ def _execute_create_order(args: dict, db: Session) -> str:
             no = generate_doc_no(db, "SO")
             total_amt = 0
             so = SalesOrder(order_no=no, customer_id=cust.id, order_date=_parse_date(args.get("order_date","")),
-                            status="待审核", total_amount=0, currency_id=1, exchange_rate=1, remark="AI", created_by="AI")
+                            status="待审核", total_amount=0, currency_id=1, exchange_rate=1, remark="AI", created_by=operator)
             db.add(so); db.flush()
 
             lines = []
@@ -370,7 +424,7 @@ def _execute_create_order(args: dict, db: Session) -> str:
     except Exception as e: db.rollback(); return f"❌ 创建失败：{e}"
 
 
-def _execute_create_collection(args: dict, db: Session) -> str:
+def _execute_create_collection(args: dict, db: Session, user=None) -> str:
     from app.models.foundation import Customer
     from app.models.sales import Collection, AccountsReceivable, CollectionAllocation
     from app.utils.batch_no import generate_doc_no
@@ -379,7 +433,7 @@ def _execute_create_collection(args: dict, db: Session) -> str:
         if not cust: return f"未找到客户「{args['customer_name']}」"
         amt = float(args["amount"]); cno = generate_doc_no(db, "RC")
         c = Collection(collection_no=cno, customer_id=cust.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
-                       collection_date=_parse_date(args.get("collection_date","")), operator="AI")
+                       collection_date=_parse_date(args.get("collection_date","")), operator=_operator_name(user))
         db.add(c); db.flush()
         remaining, lines = amt, []
         for ar in db.query(AccountsReceivable).filter(AccountsReceivable.customer_id==cust.id, AccountsReceivable.balance>0).order_by(AccountsReceivable.due_date).all():
@@ -395,7 +449,7 @@ def _execute_create_collection(args: dict, db: Session) -> str:
     except Exception as e: db.rollback(); return f"❌ 收款失败：{e}"
 
 
-def _execute_create_payment(args: dict, db: Session) -> str:
+def _execute_create_payment(args: dict, db: Session, user=None) -> str:
     from app.models.foundation import Supplier
     from app.models.purchase import Payment, AccountsPayable, PaymentAllocation
     from app.utils.batch_no import generate_doc_no
@@ -404,7 +458,7 @@ def _execute_create_payment(args: dict, db: Session) -> str:
         if not sup: return f"未找到供应商「{args['supplier_name']}」"
         amt = float(args["amount"]); pno = generate_doc_no(db, "PAY")
         p = Payment(payment_no=pno, supplier_id=sup.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
-                    payment_date=_parse_date(args.get("payment_date","")), operator="AI")
+                    payment_date=_parse_date(args.get("payment_date","")), operator=_operator_name(user))
         db.add(p); db.flush()
         remaining, lines = amt, []
         for ap in db.query(AccountsPayable).filter(AccountsPayable.supplier_id==sup.id, AccountsPayable.balance>0).order_by(AccountsPayable.due_date).all():
@@ -420,7 +474,7 @@ def _execute_create_payment(args: dict, db: Session) -> str:
     except Exception as e: db.rollback(); return f"❌ 付款失败：{e}"
 
 
-def _execute_create_purchase_invoice(args: dict, db: Session) -> str:
+def _execute_create_purchase_invoice(args: dict, db: Session, user=None) -> str:
     from app.models.purchase import PurchaseOrder, PurchaseInvoice
     try:
         o = db.query(PurchaseOrder).filter(PurchaseOrder.order_no==args["order_no"]).first()
@@ -432,7 +486,7 @@ def _execute_create_purchase_invoice(args: dict, db: Session) -> str:
     except Exception as e: return f"❌ 失败：{e}"
 
 
-def _execute_create_sales_invoice(args: dict, db: Session) -> str:
+def _execute_create_sales_invoice(args: dict, db: Session, user=None) -> str:
     from app.models.sales import SalesOrder, SalesInvoice
     try:
         o = db.query(SalesOrder).filter(SalesOrder.order_no==args["order_no"]).first()
@@ -445,32 +499,7 @@ def _execute_create_sales_invoice(args: dict, db: Session) -> str:
     except Exception as e: return f"❌ 失败：{e}"
 
 
-def _execute_create_outsourcing(args: dict, db: Session) -> str:
-    from app.models.foundation import Supplier, Material
-    from app.models.production import ProductionOrder, OutsourcingOrder, MaterialIssueItem
-    from app.utils.batch_no import generate_doc_no
-    try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
-        if not mo: return f"未找到生产订单「{args['production_order_no']}」"
-        sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
-        if not sup: return f"未找到供应商「{args['supplier_name']}」"
-        os_no = generate_doc_no(db, "OS")
-        oo = OutsourcingOrder(outsource_no=os_no, production_id=mo.id, outsourcer_id=sup.id, product_id=mo.product_id,
-                              quantity=float(args["outsource_qty"]), unit_price=float(args.get("unit_price",0)),
-                              total_amount=float(args.get("unit_price",0))*float(args["outsource_qty"]),
-                              due_date=_parse_date(args.get("due_date","")), status="待发料")
-        db.add(oo); db.flush()
-        if args.get("material_name"):
-            mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
-            if mat and args.get("material_qty"):
-                db.add(MaterialIssueItem(issue_no=os_no, outsource_id=oo.id, material_id=mat.id, quantity=float(args["material_qty"]), operator="AI"))
-                oo.material_status = "已发料"
-        db.commit()
-        return f"✅ 委外单 {os_no}（{sup.name}）"
-    except Exception as e: db.rollback(); return f"❌ 委外失败：{e}"
-
-
-def _execute_issue_materials(args: dict, db: Session) -> str:
+def _execute_issue_materials(args: dict, db: Session, user=None) -> str:
     from app.models.foundation import Material
     from app.models.production import ProductionOrder, MaterialIssueItem
     try:
@@ -479,13 +508,13 @@ def _execute_issue_materials(args: dict, db: Session) -> str:
         mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
         if not mat: return f"未找到物料「{args['material_name']}」"
         db.add(MaterialIssueItem(issue_no=f"IS-{date.today()}", production_id=mo.id, material_id=mat.id,
-                                 quantity=float(args["quantity"]), issue_date=date.today(), operator="AI"))
+                                 quantity=float(args["quantity"]), issue_date=date.today(), operator=_operator_name(user)))
         db.commit()
         return f"✅ 已发料：{mat.name} × {args['quantity']}"
     except Exception as e: db.rollback(); return f"❌ 发料失败：{e}"
 
 
-def _execute_production_receipt(args: dict, db: Session) -> str:
+def _execute_production_receipt(args: dict, db: Session, user=None) -> str:
     from app.models.production import ProductionOrder, ProductionReceipt
     from app.utils.batch_no import generate_doc_no
     try:
@@ -493,10 +522,225 @@ def _execute_production_receipt(args: dict, db: Session) -> str:
         if not mo: return f"未找到生产订单「{args['production_order_no']}」"
         rc = generate_doc_no(db, "FG")
         db.add(ProductionReceipt(receipt_no=rc, production_id=mo.id, product_id=mo.product_id,
-                                  quantity=float(args["quantity"]), receipt_date=_parse_date(args.get("receipt_date","")), operator="AI"))
+                                  quantity=float(args["quantity"]), receipt_date=_parse_date(args.get("receipt_date","")), operator=_operator_name(user)))
         db.commit()
         return f"✅ 入库单 {rc}（{args['quantity']}个）"
     except Exception as e: db.rollback(); return f"❌ 入库失败：{e}"
+
+
+def _execute_query_inventory(args: dict, db: Session, user=None) -> str:
+    """查库存：按名称关键词 + 仓库，按 物料/产品+仓库 汇总"""
+    from app.models.inventory import WarehouseInventory
+    from app.models.foundation import Material, Product, Warehouse
+    from collections import defaultdict
+
+    keyword = (args.get("keyword") or "").strip()
+    wh_name = (args.get("warehouse_name") or "").strip()
+
+    wh = None
+    if wh_name:
+        wh = db.query(Warehouse).filter(Warehouse.name.like(f"%{wh_name}%")).first()
+        if not wh:
+            return f"未找到仓库「{wh_name}」"
+
+    q = db.query(WarehouseInventory)
+    if wh:
+        q = q.filter(WarehouseInventory.warehouse_id == wh.id)
+    rows = q.all()
+
+    if keyword:
+        mat_ids = {m.id for m in db.query(Material).filter(Material.name.like(f"%{keyword}%")).all()}
+        prod_ids = {p.id for p in db.query(Product).filter(Product.name_cn.like(f"%{keyword}%")).all()}
+        rows = [r for r in rows if r.material_id in mat_ids or r.product_id in prod_ids]
+
+    if not rows:
+        return "没有找到库存记录" + (f"「{keyword}」" if keyword else "")
+
+    agg = defaultdict(lambda: {"qty": 0, "batches": 0})
+    for r in rows:
+        key = (r.material_id, r.product_id, r.warehouse_id)
+        agg[key]["qty"] += r.quantity or 0
+        agg[key]["batches"] += 1
+
+    wh_cache, mat_cache, prod_cache = {}, {}, {}
+    lines = [f"📦 库存（{len(agg)} 项）："]
+    for (mid, pid, wid), v in list(agg.items())[:50]:
+        if wid not in wh_cache:
+            w = db.query(Warehouse).filter(Warehouse.id == wid).first()
+            wh_cache[wid] = w.name if w else "-"
+        name, unit = "-", ""
+        if mid:
+            if mid not in mat_cache:
+                m = db.query(Material).filter(Material.id == mid).first()
+                mat_cache[mid] = (m.name if m else "-", m.unit if m else "")
+            name, unit = mat_cache[mid]
+        elif pid:
+            if pid not in prod_cache:
+                p = db.query(Product).filter(Product.id == pid).first()
+                prod_cache[pid] = (p.name_cn if p else "-", p.unit if p else "")
+            name, unit = prod_cache[pid]
+        lines.append(f"  **{name}**｜{wh_cache[wid]}｜{v['qty']:g}{unit}｜{v['batches']}个批次")
+    return "\n".join(lines)
+
+
+def _execute_query_pending_approvals(args: dict, db: Session, user=None) -> str:
+    """列待审核单据（按用户权限过滤可见类型）"""
+    from app.models.purchase import PurchaseOrder
+    from app.models.sales import SalesOrder
+    from app.models.foundation import Supplier, Customer
+
+    otype = args.get("order_type")
+    can_po = user is not None and user.has_permission("menu:purchase:orders")
+    can_so = user is not None and user.has_permission("menu:sales:orders")
+
+    lines = []
+    if otype in (None, "purchase_order") and can_po:
+        pos = db.query(PurchaseOrder).filter(PurchaseOrder.status == "待审核").limit(20).all()
+        for po in pos:
+            sup = db.query(Supplier).filter(Supplier.id == po.supplier_id).first()
+            lines.append(f"  **{po.order_no}**｜{sup.name if sup else '-'}｜¥{po.total_amount or 0:,.2f}｜{po.order_date}")
+    if otype in (None, "sales_order") and can_so:
+        sos = db.query(SalesOrder).filter(SalesOrder.status == "待审核").limit(20).all()
+        for so in sos:
+            c = db.query(Customer).filter(Customer.id == so.customer_id).first()
+            lines.append(f"  **{so.order_no}**｜{c.name_cn if c else '-'}｜¥{so.total_amount or 0:,.2f}｜{so.order_date}")
+
+    if not lines:
+        if not (can_po or can_so):
+            return "您没有待审核单据的查看权限"
+        return "没有待审核的单据" + ("" if not otype else "（该类型）")
+    return "📋 待审核单据：\n" + "\n".join(lines)
+
+
+def _execute_approve_order(args: dict, db: Session, user=None) -> str:
+    from app.models.purchase import PurchaseOrder
+    from app.models.sales import SalesOrder
+
+    no = (args.get("order_no") or "").strip()
+    otype = args.get("order_type")
+    if not no:
+        return "❌ 缺少单据编号"
+    try:
+        if otype == "purchase_order":
+            o = db.query(PurchaseOrder).filter(PurchaseOrder.order_no == no).first()
+            if not o: return f"未找到采购订单「{no}」"
+            if o.status != "待审核": return f"订单 {no} 当前状态「{o.status}」，不能审核"
+            o.status = "已审核"
+            db.commit()
+            return f"✅ 采购订单 {no} 已审核"
+        elif otype == "sales_order":
+            o = db.query(SalesOrder).filter(SalesOrder.order_no == no).first()
+            if not o: return f"未找到销售订单「{no}」"
+            if o.status != "待审核": return f"订单 {no} 当前状态「{o.status}」，不能审核"
+            o.status = "已审"
+            # 与 UI 审核一致：为每个明细产品生成生产订单
+            from app.models.production import ProductionOrder
+            from app.utils.batch_no import generate_doc_no
+            mo_nos = []
+            for item in o.items:
+                item.production_status = "未生产"
+                prod = ProductionOrder(
+                    order_no=generate_doc_no(db, "MO", ProductionOrder, "order_no"),
+                    sales_order_id=o.id, sales_order_item_id=item.id,
+                    product_id=item.product_id, quantity=item.quantity,
+                    due_date=o.delivery_date, status="待确认",
+                    created_by=_operator_name(user),
+                )
+                db.add(prod); db.flush()
+                mo_nos.append(prod.order_no)
+            db.commit()
+            return f"✅ 销售订单 {no} 已审核，生成生产订单：{', '.join(mo_nos)}"
+        return "❌ 未知订单类型"
+    except Exception as e:
+        db.rollback()
+        return f"❌ 审核失败：{e}"
+
+
+def _execute_unapprove_order(args: dict, db: Session, user=None) -> str:
+    from app.models.purchase import PurchaseOrder, PurchaseReceipt, PurchaseInvoice
+
+    no = (args.get("order_no") or "").strip()
+    otype = args.get("order_type")
+    if otype != "purchase_order":
+        return "仅采购订单支持反审核"
+    if not no:
+        return "❌ 缺少单据编号"
+    try:
+        o = db.query(PurchaseOrder).filter(PurchaseOrder.order_no == no).first()
+        if not o: return f"未找到采购订单「{no}」"
+        if o.status != "已审核": return f"订单 {no} 当前状态「{o.status}」，不能反审核"
+        if db.query(PurchaseReceipt).filter(PurchaseReceipt.order_id == o.id).count() > 0:
+            return f"订单 {no} 已有关联入库单，无法反审核"
+        if db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == o.id).count() > 0:
+            return f"订单 {no} 已有关联发票，无法反审核"
+        o.status = "待审核"
+        db.commit()
+        return f"✅ 采购订单 {no} 已反审核"
+    except Exception as e:
+        db.rollback()
+        return f"❌ 反审核失败：{e}"
+
+
+# ==================== 操作手册检索 ====================
+
+MANUAL_PATH = Path(__file__).resolve().parents[3] / "docs" / "operations-manual.md"
+_manual_cache: dict = {"mtime": None, "sections": []}
+
+
+def _load_manual_sections() -> list:
+    """按 ## 标题切分操作手册为章节，mtime 变化时重新加载"""
+    try:
+        mtime = MANUAL_PATH.stat().st_mtime
+    except OSError:
+        return []
+    if _manual_cache["mtime"] == mtime:
+        return _manual_cache["sections"]
+    try:
+        text = MANUAL_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    sections, cur_title, cur_lines = [], None, []
+    for line in text.splitlines():
+        if line.startswith("## "):
+            if cur_title:
+                sections.append((cur_title, "\n".join(cur_lines)))
+            cur_title = line[3:].strip()
+            cur_lines = []
+        elif cur_title is not None:
+            cur_lines.append(line)
+    if cur_title:
+        sections.append((cur_title, "\n".join(cur_lines)))
+    _manual_cache.update(mtime=mtime, sections=sections)
+    return sections
+
+
+def _execute_query_manual(args: dict, db: Session, user=None) -> str:
+    """查操作手册：标题命中加权 3，正文命中加权 1，返回 Top3 章节节选"""
+    keyword = (args.get("keyword") or "").strip()
+    if not keyword:
+        return "请提供搜索关键词，例如「采购入库怎么操作」"
+    sections = _load_manual_sections()
+    if not sections:
+        return "操作手册暂不可用，请稍后再试"
+    hits = []
+    for title, body in sections:
+        score = 0
+        if keyword in title:
+            score += 3
+        score += body.count(keyword)
+        if score:
+            hits.append((score, title, body))
+    hits.sort(key=lambda x: -x[0])
+    if not hits:
+        return f"手册中未找到与「{keyword}」相关的内容"
+    lines = [f"📖 操作手册（找到 {len(hits)} 节）："]
+    for score, title, body in hits[:3]:
+        # 取关键词附近片段
+        idx = body.find(keyword)
+        start = max(0, idx - 80)
+        snippet = body[start:start + 300].replace("\n", " ").strip()
+        lines.append(f"\n**{title}**\n  …{snippet}…")
+    return "\n".join(lines)
 
 
 def _parse_date(val):
@@ -505,15 +749,118 @@ def _parse_date(val):
     except: return date.today()
 
 
+# ==================== 权限映射 ====================
+
+# 工具 → 所需菜单权限码。dict 表示按子类型（entity_type/order_type）分别校验；None 表示所有登录用户可用
+TOOL_PERMS = {
+    "query_entities": {
+        "customer": "menu:customers", "supplier": "menu:suppliers",
+        "material": "menu:materials", "product": "menu:products",
+        "receivable": "menu:sales:ar", "payable": "menu:purchase:ap",
+        "purchase_invoice": "menu:purchase:invoices", "sales_invoice": "menu:sales:invoices",
+    },
+    "create_order": {"purchase_order": "menu:purchase:orders", "sales_order": "menu:sales:orders"},
+    "create_collection": "menu:sales:collections",
+    "create_payment": "menu:purchase:payments",
+    "create_purchase_invoice": "menu:purchase:invoices",
+    "create_sales_invoice": "menu:sales:invoices",
+    "issue_materials": "menu:production:orders",
+    "production_receipt": "menu:production:orders",
+    "query_inventory": "menu:inventory",
+    "query_pending_approvals": None,  # 内部按权限过滤可见单据
+    "approve_order": {"purchase_order": "menu:purchase:orders", "sales_order": "menu:sales:orders"},
+    "unapprove_order": {"purchase_order": "menu:purchase:orders"},
+    "query_manual": None,
+}
+
+# 写操作工具（需要记审计日志）
+AUDIT_TOOLS = {
+    "create_order", "create_collection", "create_payment",
+    "create_purchase_invoice", "create_sales_invoice",
+    "issue_materials", "production_receipt",
+    "approve_order", "unapprove_order",
+}
+
+
+def _allowed_subtypes(user, rule: dict) -> list:
+    """返回用户有权限的子类型列表（如 order_type 枚举子集）"""
+    return [k for k, perm in rule.items() if user is not None and user.has_permission(perm)]
+
+
+def _filter_tools_for_user(user) -> list:
+    """按用户权限过滤 TOOLS：无权限的工具不发给 LLM"""
+    import copy
+    out = []
+    for tool in TOOLS:
+        name = tool["function"]["name"]
+        rule = TOOL_PERMS.get(name)
+        if rule is None:
+            out.append(tool)
+            continue
+        if isinstance(rule, dict):
+            allowed = _allowed_subtypes(user, rule)
+            if not allowed:
+                continue
+            t = copy.deepcopy(tool)
+            props = t["function"]["parameters"]["properties"]
+            for prop in props.values():
+                if "enum" in prop and any(k in prop["enum"] for k in rule):
+                    prop["enum"] = [k for k in prop["enum"] if k in allowed]
+            out.append(t)
+        elif user is not None and user.has_permission(rule):
+            out.append(tool)
+    return out
+
+
+def _check_tool_perm(user, name: str, args: dict) -> bool:
+    """执行前权限校验（双保险，防 LLM 绕过工具过滤）"""
+    rule = TOOL_PERMS.get(name)
+    if rule is None:
+        return True
+    if isinstance(rule, dict):
+        key = args.get("entity_type") or args.get("order_type")
+        perm = rule.get(key)
+        return perm is None or (user is not None and user.has_permission(perm))
+    return user is not None and user.has_permission(rule)
+
+
+def _log_operation(db: Session, user, instruction: str, tool_name: str, args: dict, result: str):
+    """写审计日志（写操作工具）"""
+    import re as _re
+    from app.models.system_config import OperationLog
+    try:
+        doc_no = ""
+        m = _re.search(r"\b(?:PO|SO|RC|PAY|FG|IS|MO)-\S+", result or "")
+        if m:
+            doc_no = m.group(0)
+        db.add(OperationLog(
+            user_id=user.id if user else None,
+            username=user.username if user else "AI",
+            role_code=user.role_code if user else None,
+            instruction=(instruction or "")[:1000],
+            tool_name=tool_name,
+            args_json=json.dumps(args, ensure_ascii=False, default=str)[:2000],
+            result=(result or "")[:500],
+            doc_no=doc_no,
+            success=0 if (result or "").startswith(("❌", "⛔")) else 1,
+        ))
+        db.commit()
+    except Exception:
+        db.rollback()
+
+
 TOOL_EXECUTORS = {k: globals()[f"_execute_{k}"] for k in
     ["query_entities", "create_order", "create_collection", "create_payment",
-     "create_purchase_invoice", "create_sales_invoice", "create_outsourcing",
-     "issue_materials", "production_receipt"]}
+     "create_purchase_invoice", "create_sales_invoice",
+     "issue_materials", "production_receipt",
+     "query_inventory", "query_pending_approvals",
+     "approve_order", "unapprove_order", "query_manual"]}
 
 
 # ==================== AI 调用 ====================
 
-def _call_llm(messages: list[dict], bot_config: BotConfig, api_key: str) -> dict | None:
+def _call_llm(messages: list[dict], bot_config: BotConfig, api_key: str,
+              tools: list | None = None, system_prompt: str | None = None) -> dict | None:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -523,10 +870,10 @@ def _call_llm(messages: list[dict], bot_config: BotConfig, api_key: str) -> dict
     )
     payload = {
         "model": bot_config.model or "deepseek-chat",
-        "messages": [{"role": "system", "content": bot_config.system_prompt or SYSTEM_PROMPT}] + messages,
+        "messages": [{"role": "system", "content": system_prompt or (bot_config.system_prompt or SYSTEM_PROMPT)}] + messages,
         "temperature": bot_config.temperature or 0.1,
         "max_tokens": bot_config.max_tokens or 8192,
-        "tools": TOOLS,
+        "tools": tools if tools is not None else TOOLS,
         "tool_choice": "auto",
     }
     try:
@@ -559,7 +906,20 @@ def _call_llm(messages: list[dict], bot_config: BotConfig, api_key: str) -> dict
 
 # ==================== 主流程 ====================
 
-def process_message(message: str, history: list[dict], db: Session) -> dict:
+def _capability_prompt(user, tools: list) -> str:
+    """动态能力清单：注入当前用户身份与可用工具"""
+    uname = user.display_name or user.username if user else "AI"
+    role = user.role_name if user and user.role_name else "未分配角色"
+    names = ", ".join(t["function"]["name"] for t in tools)
+    return (
+        "## 当前用户\n"
+        f"- 用户：{uname}（角色：{role}）\n"
+        f"- 可用工具：{names}\n"
+        "只使用以上可用工具；用户没有权限的操作，明确告知「您没有该操作的权限」。"
+    )
+
+
+def process_message(message: str, history: list[dict], db: Session, user=None) -> dict:
     config = _get_config(db)
     if not config:
         return {"reply": "AI 未配置", "state": "error", "history": history or []}
@@ -567,13 +927,16 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
     if not api_key:
         return {"reply": "API Key 未配置或解密失败", "state": "error", "history": history or []}
 
+    allowed_tools = _filter_tools_for_user(user)
+    system_prompt = (config.system_prompt or SYSTEM_PROMPT) + "\n\n" + _capability_prompt(user, allowed_tools)
+
     messages = list(history or [])
     messages.append({"role": "user", "content": message})
 
     for _ in range(3):
-        result = _call_llm(messages, config, api_key)
+        result = _call_llm(messages, config, api_key, tools=allowed_tools, system_prompt=system_prompt)
         if not result:
-            return {"reply": "AI 调用失败，请稍后重试或检查 AI 模型配置", "state": "error", "history": history or []}
+            return {"reply": "AI 调用失败，请稍后重试或检查 Agent设置", "state": "error", "history": history or []}
 
         choice = result["choices"][0]
         msg = choice["message"]
@@ -597,7 +960,7 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
                 assistant_msg["content"] = msg["content"]
             messages.append(assistant_msg)
 
-            # 逐个执行工具，追加 tool 结果
+            # 逐个执行工具，追加 tool 结果（权限校验 + 审计日志）
             for tc in msg["tool_calls"]:
                 fn = tc["function"]
                 name = fn["name"]
@@ -606,8 +969,15 @@ def process_message(message: str, history: list[dict], db: Session) -> dict:
                 except:
                     args = {}
 
-                executor = TOOL_EXECUTORS.get(name)
-                tool_result = executor(args, db) if executor else f"未知工具：{name}"
+                if not _check_tool_perm(user, name, args):
+                    tool_result = "⛔ 您没有执行该操作的权限，请向管理员申请相应菜单权限"
+                else:
+                    executor = TOOL_EXECUTORS.get(name)
+                    tool_result = executor(args, db, user) if executor else f"未知工具：{name}"
+
+                if name in AUDIT_TOOLS:
+                    _log_operation(db, user, message, name, args, tool_result)
+
                 messages.append({"role": "tool", "tool_call_id": tc["id"], "content": tool_result})
             continue
 

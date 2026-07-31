@@ -26,13 +26,14 @@
         <el-table-column prop="delivery_date" label="发货日期" width="110" sortable column-key="delivery_date" :filters="dateFilters" :filter-method="filterDate" />
         <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus" sortable />
         <el-table-column prop="created_at" label="创建时间" width="160" sortable />
-        <el-table-column label="操作" width="80" fixed="right">
+        <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="showDetail(row)">详情</el-button>
+            <el-button v-if="!row.is_return" link type="warning" @click="openReturn(row)">退货</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchList" style="margin-top: 12px" />
+      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchList" @current-change="fetchList" style="margin-top: 12px" />
     </el-card>
 
     <!-- 新建发货弹窗 -->
@@ -100,19 +101,39 @@
         <el-descriptions-item label="备注">{{ detailData.remark }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>
+
+    <!-- 退货弹窗 -->
+    <el-dialog v-model="returnVisible" :title="`销售退货 ${returnDeliveryNo}`" width="460px">
+      <el-alert type="warning" :closable="false" style="margin-bottom: 10px"
+        title="退货将把数量退回原批次（原发货成本），生成负向退货单并回退订单已发数量" />
+      <el-form label-width="90px">
+        <el-form-item label="发货数量">{{ $fq(returnOriginalQty) }}</el-form-item>
+        <el-form-item label="退货数量" required>
+          <el-input-number v-model="returnQty" :min="0.01" :max="returnOriginalQty" :controls="false" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="退货原因">
+          <el-input v-model="returnRemark" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="returnVisible = false">取消</el-button>
+        <el-button type="warning" :loading="returnLoading" @click="handleReturn">确认退货</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { salesApi, inventoryApi } from '../../api/business'
+import { foundationApi } from '../../api/foundation'
 
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 
 // 列筛选
 const dateFilters = ref([])
@@ -163,7 +184,7 @@ const detailData = ref({})
 async function fetchList() {
   loading.value = true
   try {
-    const res = await request.get('/sales/deliveries', { params: { page: page.value, page_size: pageSize.value } })
+    const res = await salesApi.deliveries.list({ page: page.value, page_size: pageSize.value })
     list.value = res.items || []
     total.value = res.total || 0
     // 更新列筛选
@@ -175,14 +196,14 @@ async function fetchList() {
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.orders.list({ page: 1, page_size: 100 })
     orderList.value = res.items || []
   } catch {}
 }
 
 async function fetchWarehouses() {
   try {
-    const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.warehouses.list({ page: 1, page_size: 100 })
     warehouseList.value = res.items || []
   } catch {}
 }
@@ -199,7 +220,7 @@ function openCreate() {
 async function onOrderChange() {
   if (!form.order_id) return
   try {
-    const res = await request.get(`/sales/orders/${form.order_id}`)
+    const res = await salesApi.orders.get(form.order_id, form.order_id)
     orderItems.value = res.items || []
     selectedItem.value = null
   } catch {}
@@ -217,7 +238,7 @@ function onItemRowClick(row) {
 async function loadBatches(productId) {
   if (!productId) { batchList.value = []; return }
   try {
-    const res = await request.get('/inventory/available-batches', { params: { product_id: productId } })
+    const res = await inventoryApi.availableBatches({ product_id: productId })
     batchList.value = res.items || []
   } catch { batchList.value = [] }
 }
@@ -232,7 +253,7 @@ async function handleSubmit() {
   if (!form.batch_no) { ElMessage.warning('请输入批次号'); return }
   submitting.value = true
   try {
-    await request.post('/sales/deliveries', { ...form })
+    await salesApi.deliveries.create({ ...form })
     ElMessage.success('发货成功')
     dialogVisible.value = false
     fetchList()
@@ -242,6 +263,41 @@ async function handleSubmit() {
 function showDetail(row) {
   detailData.value = row
   detailVisible.value = true
+}
+
+// ===== 退货 =====
+const returnVisible = ref(false)
+const returnLoading = ref(false)
+const returnDeliveryId = ref(null)
+const returnDeliveryNo = ref('')
+const returnOriginalQty = ref(0)
+const returnQty = ref(0)
+const returnRemark = ref('')
+
+function openReturn(row) {
+  returnDeliveryId.value = row.id
+  returnDeliveryNo.value = row.delivery_no
+  returnOriginalQty.value = Math.abs(row.quantity)
+  returnQty.value = Math.abs(row.quantity)
+  returnRemark.value = ''
+  returnVisible.value = true
+}
+
+async function handleReturn() {
+  if (!returnQty.value || returnQty.value <= 0) { ElMessage.warning('请输入退货数量'); return }
+  await ElMessageBox.confirm(
+    `确认退货 ${returnQty.value}？数量将退回原批次，订单已发数量同步回退。`,
+    '退货确认', { type: 'warning', confirmButtonText: '确认退货', cancelButtonText: '再想想' }
+  )
+  returnLoading.value = true
+  try {
+    const res = await salesApi.deliveries.return(returnDeliveryId.value, {
+      quantity: returnQty.value, remark: returnRemark.value,
+    })
+    ElMessage.success(res.message || '退货成功')
+    returnVisible.value = false
+    fetchList()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '退货失败') } finally { returnLoading.value = false }
 }
 
 onMounted(() => { fetchList(); fetchOrders(); fetchWarehouses() })

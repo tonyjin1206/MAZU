@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.1.0** | A Lightweight Trade Management Platform
+> **v2.5.0** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
@@ -37,10 +37,27 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/processes/{id}` | PUT/DELETE | 修改/删除工序 |
 | `/hscodes` | GET/POST | HS编码列表 / 新增 |
 | `/hscodes/{id}` | PUT/DELETE | 修改/删除HS编码 |
+| `/warehouses` | GET/POST | 仓库列表 / 新增 |
+| `/warehouses/{id}` | GET/PUT/DELETE | 仓库详情 / 修改 / 删除 |
+| `/currencies` | GET/POST | 币种列表 / 新增 |
+| `/currencies/{id}` | GET/PUT/DELETE | 币种详情 / 修改 / 删除 |
+| `/exchange-rates` | GET/POST | 汇率列表 / 新增（兑本位币）|
+| `/exchange-rates/{id}` | GET/DELETE | 汇率详情 / 删除 |
+| `/exchange-rates/latest` | GET | 各币种最新汇率（业务单据换算用）|
 
 ---
 
 ## 二、采购管理 (`/api/purchase`)
+
+### 采购需求 (`/requisitions`，v2.5.0 外购直采流程)
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/requisitions` | GET | 列表（按状态/关键词筛选）|
+| `/requisitions/{id}` | GET | 详情 |
+| `/requisitions/{id}/close` | POST | 关闭（仅待处理）→ MO 回待采购可重推 |
+| `/requisitions/{id}/to-purchase` | POST | 转采购订单（采购填供应商/单价/税率，数量可改）|
+
+状态流程: 待处理 → 已转单 → 采购入库完成 → MO 已入库；待处理可关闭 → MO 回待采购
 
 ### 采购订单 (`/orders`)
 | 路由 | 方法 | 说明 |
@@ -130,16 +147,18 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/productions/{id}` | GET/PUT/DELETE | 生产订单详情/修改/删除 |
 | `/productions/{id}/processes` | GET/POST | 工序列表/派产 |
 | `/productions/{id}/materials` | GET | BOM展开物料需求 |
-| `/outsourcing` | GET/POST | 委外工单列表/创建 |
-| `/outsourcing/{id}` | GET/PUT/DELETE | 详情/修改/删除 |
 | `/material-issues` | GET/POST | 发料记录列表/创建 |
 | `/material-issues/{id}` | DELETE | 取消发料 |
 | `/receipts` | GET/POST | 完工入库列表/创建（成品入库）|
 | `/receipts/{id}` | GET/DELETE | 详情/取消入库 |
 | `/processing-invoices` | GET/POST | 加工费发票列表/创建 |
 | `/processing-invoices/{id}` | GET/DELETE | 详情/删除 |
+| `/productions/{id}/set-type` | POST | 确认备货方式（自产/委外/外购，v2.5.0）|
+| `/productions/{id}/to-requisition` | POST | 外购型推采购需求（v2.5.0）|
 
-数据表: `ProductionOrder`, `ProductionProcess`, `OutsourcingOrder`, `MaterialIssueItem`, `ProductionReceipt`, `ProcessingInvoice`
+数据表: `ProductionOrder`（含 `production_type` 备货方式）, `ProductionProcess`, `OutsourcingOrder`, `MaterialIssueItem`, `ProductionReceipt`, `ProcessingInvoice`
+
+备货方式（v2.5.0）: MO 审核后状态=`待确认`，必须先确认备货方式 → 自产/委外=`待排产`（进工作台）｜外购=`待采购`（推采购需求 → 采购转单 → 入库联动）
 
 ---
 
@@ -147,13 +166,44 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/balance` | GET | 库存余额（数量+金额，实时）|
-| `/summary` | GET | 库存汇总（按仓库/物料）|
-| `/transactions` | GET | 库存流水（来源单据可穿透）|
-| `/trace/{batch_no}` | GET | 批次追溯（正反向追踪）|
+| `/balance` | GET | 库存余额（数量+金额；带日期=期初+期间收发+期末） |
+| `/summary` | GET | 库存汇总（按仓库/物料） |
+| `/transactions` | GET | 库存流水（来源单据可穿透，按 trans_type 筛选） |
+| `/trace/{batch_no}` | GET | 批次追溯（正反向追踪） |
 | `/available-batches` | GET | 可用批次列表 |
+| `/stocktakes` | POST/GET | 创建盘点单（自动带出仓库批次账面数）/ 列表 |
+| `/stocktakes/{id}` | GET/DELETE | 盘点详情 / 删除草稿 |
+| `/stocktakes/{id}/items/{item_id}` | PUT | 录实盘数（仅草稿） |
+| `/stocktakes/{id}/submit` | POST | 提交盘点 → 按差异生成盘盈/盘亏流水并更新台账 |
 
-库存变动自动触发：采购入库/取消入库、销售发货/取消、生产发料/完工入库。
+### 收发存 v2 记账模型（2026-07-31 重构）
+
+```
+单据层            记账层(流水 trans_type)         台账层(批次)        报表
+采购入库单    ──→ purchase_in                ──→ 新建批次 ──┐
+采购红冲单    ──→ purchase_return_out(负)     ──→ 扣批次   ──┤
+完工入库单    ──→ production_in              ──→ 新建批次 ──┤ 收发存报表
+生产领料      ──→ material_issue_out         ──→ 扣批次   ──┤ (期初+收-支=期末)
+委外发料      ──→ outsource_out              ──→ 扣批次   ──┤ 批次追溯
+销售发货      ──→ sale_out                   ──→ 扣批次   ──┤ 毛利计算
+销售退货单    ──→ sale_return_in(正)          ──→ 还批次   ──┘
+盘点单        ──→ stocktake_in / stocktake_out ──→ 调批次
+取消类        ──→ issue_cancel / receipt_cancel（仅限批次无下游时）
+```
+
+**核心规则**：所有反向业务记负数流水、不做物理删除 → 收发存恒等式（期初+收−支=期末）永远成立。
+
+| 规则 | 说明 |
+|------|------|
+| 取消完工入库 | 批次有**任何**其他出入库（发货/盘点/退货等）→ 禁止，走销售退货 |
+| 采购取消 | 仅限批次未消耗；补一条 purchase_return_out 冲销流水（保留审计） |
+| 采购红冲 | 批次已消耗场景：负向红冲单 + 冲销流水；红冲量 ≤ 批次当前剩余；回退订单 received_qty/状态 + 外购型 MO 状态 |
+| 销售退货 | 退回原批次、原发货成本；批次已清空则重建；回退订单 delivered_qty/状态；dashboard 毛利自动冲减 |
+| 盘点 | 差异=实盘−账面；盘盈 stocktake_in / 盘亏 stocktake_out（成本=批次当前成本）；盘亏不可超账面；提交后不可改/删 |
+| 完工入库成本 | 留空 = 自动结转（剩余投入×本次入库占比，最后一次全转）；可手改覆盖 |
+| 发料类型 | 自产工序=material_issue_out，委外工序=outsource_out（历史流水由 migrate_inventory_v2.py 拆分） |
+
+库存变动自动触发：采购入库/取消/红冲、销售发货/退货、生产发料/取消发料/完工入库/取消入库、盘点。
 
 ---
 
@@ -199,36 +249,51 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ---
 
-## 九、AI 智能助手 (`/api/chat`) — v2.0.0 新增
+## 九、AI 智能助手 (`/api/chat`) — v2.0.0 新增 | v2.3.0 悬浮常驻 + 权限 + 审核
 
 > 基于 Function Calling Agent 的自然语言对话式操作，无需手动操作菜单。
-> AI 助手名称: **Matsu**
+> AI 助手名称: **Matsu**，入口为页面右下角全局悬浮球（任何页面可用）。
 
 ### 核心文件
 - `backend/app/routers/bot_chat.py` — 对话路由 + 轻量会话管理（~70行）
-- `backend/app/utils/ai_chat.py` — AI Agent 引擎（工具定义 + 执行器 + LLM 调用）
+- `backend/app/utils/ai_chat.py` — AI Agent 引擎（工具定义 + 权限过滤 + 执行器 + 审计 + LLM 调用）
 - `backend/app/utils/crypto.py` — API Key Fernet 加密/解密
-- `backend/app/schemas/system_config.py` — `DEFAULT_SYSTEM_PROMPT` 定义
-- `frontend/src/views/system/BotChat.vue` — 聊天 UI（支持 Markdown 表格渲染）
+- `backend/app/models/system_config.py` — `OperationLog` 操作审计日志
+- `frontend/src/components/MatsuAssistant.vue` — 全局悬浮球聊天组件（挂 Layout.vue）
+- `frontend/src/composables/useBotChat.js` — 对话逻辑（悬浮组件 + 全屏页 BotChat.vue 共用）
+- `frontend/src/views/system/BotChat.vue` — 全屏聊天页（备用入口，路由保留）
 
-### 可用工具（9 个）
+### 可用工具（13 个）
 
-| 工具 | 函数 | 参数 | 说明 |
-|------|------|------|------|
-| query_entities | `_execute_query_entities` | entity_type, keyword | 查询客户/供应商/物料/产品/应收/应付/发票清单（模糊搜索+全部列出）|
-| create_order | `_execute_create_order` | order_type, supplier_name, customer_name, items[], order_date | 创建采购订单/销售订单（支持多明细行一次创建） |
-| create_collection | `_execute_create_collection` | customer_name, amount, collection_date, payment_method | 收款单 + 自动核销应收 |
-| create_payment | `_execute_create_payment` | supplier_name, amount, payment_date, payment_method | 付款单 + 自动核销应付 |
-| create_purchase_invoice | `_execute_create_purchase_invoice` | order_no, invoice_no, amount, invoice_date | 录入采购发票（关联采购单）|
-| create_sales_invoice | `_execute_create_sales_invoice` | order_no, invoice_no, amount, invoice_date | 录入销售发票（关联销售单）|
-| create_outsourcing | `_execute_create_outsourcing` | production_order_no, process_name, supplier_name, material_name, material_qty, outsource_qty, unit_price, due_date | 委外加工单 + 同步发料 |
-| issue_materials | `_execute_issue_materials` | production_order_no, material_name, quantity, warehouse_name | 生产领料/发料 |
-| production_receipt | `_execute_production_receipt` | production_order_no, quantity, warehouse_name, receipt_date | 生产完工入库 |
+| 工具 | 函数 | 参数 | 所需权限 | 说明 |
+|------|------|------|----------|------|
+| query_entities | `_execute_query_entities` | entity_type, keyword | 按实体对应菜单 | 查询客户/供应商/物料/产品/应收/应付/发票清单 |
+| query_inventory | `_execute_query_inventory` | keyword, warehouse_name | `menu:inventory` | 查当前库存（按名称/仓库汇总）|
+| query_pending_approvals | `_execute_query_pending_approvals` | order_type | 内部按权限过滤 | 列待审核单据 |
+| approve_order | `_execute_approve_order` | order_type, order_no | 对应菜单 | 审核采购/销售订单（销售审核联动生成生产订单）|
+| unapprove_order | `_execute_unapprove_order` | order_type, order_no | `menu:purchase:orders` | 反审核采购订单 |
+| query_manual | `_execute_query_manual` | keyword | 所有登录用户 | 查操作手册章节（docs/operations-manual.md 切块检索）|
+| create_order | `_execute_create_order` | order_type, items[], … | 对应菜单 | 创建采购/销售订单（多明细行）|
+| create_collection | `_execute_create_collection` | customer_name, amount, … | `menu:sales:collections` | 收款单 + 自动核销应收 |
+| create_payment | `_execute_create_payment` | supplier_name, amount, … | `menu:purchase:payments` | 付款单 + 自动核销应付 |
+| create_purchase_invoice | `_execute_create_purchase_invoice` | order_no, invoice_no, amount, … | `menu:purchase:invoices` | 录入采购发票 |
+| create_sales_invoice | `_execute_create_sales_invoice` | order_no, invoice_no, amount, … | `menu:sales:invoices` | 录入销售发票 |
+| issue_materials | `_execute_issue_materials` | production_order_no, material_name, quantity, … | `menu:production:orders` | 生产领料/发料 |
+| production_receipt | `_execute_production_receipt` | production_order_no, quantity, … | `menu:production:orders` | 生产完工入库 |
 
-### 工作流程（三步确认）
-1. **确认意图** — AI 问清用户要做什么（下单/收款/付款/发票/委外/发料/入库）
+### 权限体系（v2.3.0，A 方案：菜单权限即操作权限）
+- `TOOL_PERMS` 定义每个工具（或按 entity_type/order_type 子类型）所需菜单权限码
+- **双层校验**：① 发给 LLM 的 `tools` 已按权限过滤（无权限工具模型根本看不到，enum 同步裁剪）；② 执行前 `_check_tool_perm` 再校验一次
+- system prompt 动态注入当前用户角色 + 可用工具清单
+- 写操作工具（create_*/issue/production_receipt/approve/unapprove）落 `sys_operation_log` 审计日志（操作人/指令原文/工具/参数/结果/单据号）
+- AI 建单 `created_by`/`operator` 记真实用户名（原为 "AI"）
+- 审核接口（PO/SO approve）后端补 `require_permission`，UI 与 AI 同规则
+
+### 工作流程
+1. **确认意图** — AI 问清用户要做什么（下单/收款/付款/发票/发料/入库/审核）
 2. **收集字段** — 一次只问一个，用户回答了再问下一个
 3. **核对执行** — 列出全部字段让用户确认，用户说「对/是/确认」再执行
+4. **审核类** — 先列待审核清单 → 用户指定单号 → 确认后审核
 
 ### 技术实现
 - 引擎: OpenAI `tools` / `tool_choice: "auto"` 标准 Function Calling
@@ -237,7 +302,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 - DeepSeek 同时返回 `content` + `tool_calls`，优先处理 `tool_calls`
 
 ### 配置
-- 路径: 系统管理 → AI 模型配置 → 新建/编辑
+- 路径: 系统管理 → Agent设置 → 新建/编辑
 - 提示词支持自定义（写入 DB，实时生效，空时使用代码默认值 `SYSTEM_PROMPT`）
 - API Key 使用 `_get_api_key()` 单独解密，不修改 SQLAlchemy 模型对象，避免重复解密
 
@@ -250,13 +315,17 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/auth/login` | POST | 登录（返回 JWT token）|
 | `/auth/me` | GET | 当前用户信息 |
 | `/auth/me/permissions` | GET | 当前用户权限列表 |
-| `/auth/users` | GET/POST | 用户列表/创建 |
-| `/auth/users/{id}` | GET/PUT/DELETE | 详情/修改/删除 |
-| `/auth/roles` | GET/POST | 角色列表/创建 |
-| `/auth/roles/{id}` | GET/PUT/DELETE | 详情/修改/删除 |
-| `/auth/permissions` | GET | 权限定义列表 |
+| `/auth/users` | GET/POST | 用户列表/创建（**仅管理员**，v2.2.0 起 GET 也校验权限）|
+| `/auth/users/{id}` | GET/PUT/DELETE | 详情/修改/删除（**仅管理员**）|
+| `/auth/roles` | GET/POST | 角色列表/创建（**仅管理员**，v2.2.0 起 GET 也校验权限）|
+| `/auth/roles/{id}` | GET/PUT/DELETE | 详情/修改/删除（**仅管理员**）|
+| `/auth/permissions` | GET | 权限定义列表（**仅管理员**，v2.2.0 起校验权限）|
 
 权限模型: 基于角色的菜单级权限，角色按岗位配置（销售经理/采购经理/生产经理/财务经理/库管员），每个角色勾选可见菜单。
+
+> **v2.2.0 权限收紧**：用户/角色/权限的 4 个查询接口（GET /users、/users/{id}、/roles、/permissions）从"仅登录"收紧为"仅管理员"（`require_permission("menu:system:users")`）。各业务角色（销售/采购/生产/财务/库管员/只读）不含系统管理权限，访问返回 403；前端菜单本身也不对非管理员显示系统管理入口。
+
+> **v2.2.0 菜单级权限落地（前端）**：Layout 侧边栏 32 个菜单项 + 7 个分组按当前用户权限过滤（无权限的分组整组隐藏）；路由守卫校验 `meta.perm`，直接输 URL 访问无权限页面会被重定向回工作台并提示。权限清单与真实菜单已对齐（33 个权限码 = 32 菜单项 + 工作台）。
 
 ---
 
@@ -336,6 +405,43 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 ---
 
 ## 十三、版本变更记录
+
+### v2.5.0 (2026-07-31)
+- **新功能**: 备货方式确认（生产订单 `production_type`: 自产/委外/外购）— MO 审核后先确认备货方式才能继续；外购型不进入生产工作台，仅推采购需求
+- **新功能**: 外购直采流程 — 生产推采购需求（PR，只填数量）→ 采购「采购需求」页转采购订单（填供应商/单价/税率）→ 入库联动 MO 状态；PR 可关闭、MO 可重推；删除 PO 联动 PR/MO 状态回退
+- **新功能**: 采购订单支持成品采购（`po_order_item.product_id` 与 material_id 互斥）+ 产品「是否可外购」标记（can_purchase，MO 确认外购自动打勾）+ 选品下拉合并原材料与可外购成品
+- **新功能**: 委外商简化 — 删除独立委外商表（fd_outsourcer），供应商类型=委外 即委外商；工序 outsourcer_id 改指 fd_supplier.id
+- **新功能**: 汇率自动获取与维护 — 币种/汇率独立菜单；腾讯财经 qt.gtimg.cn 国内源自动拉取（无 key）+ 每日 09:00 定时任务 + 手动按钮；JPY/KRW 无交叉盘手动兜底；`GET /exchange-rates/latest` 供业务单据换算
+- **新功能**: 盘点管理独立菜单 + 独立权限码（menu:inventory:stocktake）— 盘点明细可新增/编辑/删除物料行（含账外批次），同批次重复 400，已提交锁定
+- **新功能**: 仓库维护界面（Warehouses.vue + menu:warehouses 权限闭环）
+- **修复**: 出入库仓库参照校验（采购入库/完工入库/销售出库/盘点建单校验 warehouse_id 存在且启用）
+- **修复**: 仓库/部门/员工/币种/贸易术语编辑 422（register_crud 无 update_schema 时 PUT body 兜底）
+- **修复**: _seed_rbac admin 权限翻倍 bug（autoflush=False 下补权限前 db.flush）+ 角色关联去重
+- **重构**: 测试数据基建 v2 — build_foundation 统一构建器（API 建真实档案）+ conftest 复用 _seed_rbac 单一数据源 + 状态机文档池 + 数据量 -78%
+
+### v2.4.0 (2026-07-31)
+- **新功能**: 库存收发存 v2 — 盘点闭环（盘盈/盘亏流水）/ 采购红冲（负向红冲单 + 冲销流水）/ 销售退货（回库流水）/ 发料类型拆分（material_issue_out vs outsource_out）/ 完工入库成本自动结转
+- **新功能**: 采购红冲量 ≤ 批次当前剩余；回退订单 received_qty/状态 + 外购型 MO 状态联动
+- **修复**: 取消完工入库保护（批次有后续出入库 → 禁止，走退货）；采购取消入库补冲销流水
+- **修复**: 收发存报表多批次合并取最新批次号；新流水类型（红冲/退货/盘点）纳入期初+收发+期末口径
+- **基础设施**: scripts/migrate_inventory_v2.py 迁移脚本（幂等）
+
+### v2.3.0 (2026-07-31)
+- **新功能**: AI 助手全系统化 — 菜单页改全局右下角悬浮球（M 图标），任意业务页面对话；操作能力扩展（查档案/查库存/建单/审核/收付款/发票/发料/完工入库）；工具执行受菜单权限控制 + 操作全程留痕
+- **新功能**: AI 助手可检索 docs/operations-manual.md 回答操作问题
+- **新功能**: 菜单级权限前端落地 — Layout 菜单按权限过滤（32 菜单项 + 7 分组）+ 路由守卫 meta.perm 校验；权限清单与真实菜单对齐（补 6 缺失权限码）；用户/角色/权限管理接口仅管理员
+
+### v2.2.0 (2026-07-31)
+- **新功能**: 自动化测试体系（阶段 0-5）— 契约测试 / 状态机测试 / 边界数据测试 / 架构检查 / E2E（Playwright 真实浏览器）
+- **新功能**: CI 持续集成（.github/workflows/ci.yml 三 job：后端 187 测试 + 前端构建 + E2E 34 测试）
+- **修复**: BUG#1 采购入库 500（po_receipt_item 支持成品：加 product_id 列、material_id 可空、删除回滚双路径）
+- **修复**: GET /auth/users 等 4 个接口加权限校验（仅管理员可访问用户/角色/权限）
+- **清理**: 委外残留（Outsourcings/ProductionReceipts 页面、mo_outsourcing 表、AI 工具 create_outsourcing 9→8）
+- **清理**: 12 个"定义了但后端没有"的 API（crudApi 方法子集对齐）
+- **规范**: 17 页面 109 处散写 request 全部迁移到 api/*.js 封装（97 处迁移 + 散写清零）
+- **规范**: Pydantic class Config → model_config = ConfigDict（44 处）
+- **规范**: 删除库存盘点 2 个未开发表（inv_stock_check 等）
+- **测试**: 测试报告 docs/test-report-1.md（最终版）+ docs/test-plan.md
 
 ### v2.1.0 (2026-07-30)
 - **新功能**: AI 采购/销售订单支持多明细行一次创建 — `create_order` 工具参数从单行字段升级为 `items` 数组，AI 可一句指令创建含多种物料的采购单或含多种产品的销售单

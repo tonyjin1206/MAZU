@@ -53,7 +53,7 @@
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.pageSize"
         :total="pagination.total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @size-change="fetchData"
         @current-change="fetchData"
@@ -73,7 +73,9 @@
           <el-input v-model="form.model" />
         </el-form-item>
         <el-form-item label="单位" prop="unit">
-          <el-input v-model="form.unit" />
+          <el-select v-model="form.unit" filterable allow-create placeholder="选择或输入">
+            <el-option v-for="u in unitOptions" :key="u" :label="u" :value="u" />
+          </el-select>
         </el-form-item>
         <el-form-item label="类别" prop="category">
           <el-select v-model="form.category" placeholder="请选择">
@@ -101,7 +103,7 @@ import { foundationApi } from '../../api/foundation'
 
 const loading = ref(false)
 const tableData = ref([])
-const pagination = ref({ page: 1, pageSize: 100, total: 0 })
+const pagination = ref({ page: 1, pageSize: 20, total: 0 })
 
 const searchForm = reactive({ code: '', name: '', spec: '', category: '' })
 
@@ -137,6 +139,8 @@ const dialogLoading = ref(false)
 const dialogMode = ref('create')
 const formRef = ref(null)
 const form = reactive({ id: null, name: '', spec: '', model: '', unit: '', category: '', purchase_price: 0 })
+
+const unitOptions = ['个', '套', '件', '条', '台', '双', '包', '箱', '组', '副', '张', '卷', '米', '千克', '克', '吨', '升', '毫升', '平方米', '立方米']
 
 const formRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],

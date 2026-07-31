@@ -18,6 +18,7 @@ from app.utils.auth import (
     get_password_hash,
     get_current_user,
     get_current_admin,
+    require_permission,
 )
 
 router = APIRouter()
@@ -86,7 +87,7 @@ def create_user(
 def list_users(
     keyword: str = Query(""),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取用户列表"""
     query = db.query(User)
@@ -103,7 +104,7 @@ def list_users(
 def get_user(
     user_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取单个用户"""
     user = db.query(User).filter(User.id == user_id).first()
@@ -169,7 +170,10 @@ PERMISSION_DEFS = [
     {"code": "menu:bom", "name": "BOM管理", "module": "基础档案", "description": ""},
     {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
     {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
+    {"code": "menu:warehouses", "name": "仓库管理", "module": "基础档案", "description": ""},
+    {"code": "menu:currencies", "name": "币种/汇率", "module": "基础档案", "description": ""},
     # 采购管理
+    {"code": "menu:purchase:requisitions", "name": "采购需求", "module": "采购管理", "description": ""},
     {"code": "menu:purchase:orders", "name": "采购订单", "module": "采购管理", "description": ""},
     {"code": "menu:purchase:receipts", "name": "采购入库", "module": "采购管理", "description": ""},
     {"code": "menu:purchase:invoices", "name": "采购发票", "module": "采购管理", "description": ""},
@@ -186,6 +190,7 @@ PERMISSION_DEFS = [
     {"code": "menu:production:orders", "name": "生产订单", "module": "生产管理", "description": ""},
     {"code": "menu:production:workspace", "name": "生产工作台", "module": "生产管理", "description": ""},
     {"code": "menu:production:invoices", "name": "加工费发票", "module": "生产管理", "description": ""},
+    {"code": "menu:production:receipts", "name": "完工入库", "module": "生产管理", "description": ""},
     {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
     # 库存管理
     {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},
@@ -194,13 +199,17 @@ PERMISSION_DEFS = [
     # 系统管理
     {"code": "menu:system:users", "name": "用户管理", "module": "系统管理", "description": ""},
     {"code": "menu:system:roles", "name": "角色管理", "module": "系统管理", "description": ""},
-]
+    {"code": "menu:system:wecom", "name": "企业微信配置", "module": "系统管理", "description": ""},
+    {"code": "menu:system:bot", "name": "Agent设置", "module": "系统管理", "description": ""},
+    {"code": "menu:system:bot-chat", "name": "AI 助手", "module": "系统管理", "description": ""},
+    {"code": "menu:system:reminders", "name": "预警提醒设置", "module": "系统管理", "description": ""},
+    ]
 
 
 @router.get("/permissions", response_model=list[PermissionGroup])
 def list_permissions(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取所有权限（按模块分组）"""
     # 先从数据库查
@@ -235,7 +244,7 @@ def list_permissions(
 @router.get("/roles", response_model=list[RoleOut])
 def list_roles(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:system:users")),
 ):
     """获取角色列表"""
     roles = db.query(Role).order_by(Role.id).all()

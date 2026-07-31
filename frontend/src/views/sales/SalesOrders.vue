@@ -78,7 +78,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
 
@@ -107,11 +107,11 @@
 
         <el-card>
           <el-table :data="filteredItemList" v-loading="itemLoading" stripe border size="small">
-            <el-table-column prop="order_no" label="订单号" min-width="140" sortable />
+            <el-table-column prop="order_no" label="订单号" width="140" sortable show-overflow-tooltip />
             <el-table-column prop="order_date" label="订单日期" width="110" sortable column-key="order_date_i" :filters="itemDateFilters" :filter-method="filterItemDate" />
-            <el-table-column prop="customer_name" label="客户" width="160" sortable column-key="customer_name_i" :filters="itemCustomerFilters" :filter-method="filterItemCustomer" />
+            <el-table-column prop="customer_name" label="客户" width="160" sortable show-overflow-tooltip column-key="customer_name_i" :filters="itemCustomerFilters" :filter-method="filterItemCustomer" />
             <el-table-column prop="product_code" label="产品编码" width="100" sortable column-key="product_code" :filters="prodCodeFilters" :filter-method="filterProdCode" />
-            <el-table-column prop="product_name" label="产品名称" min-width="140" sortable column-key="product_name" :filters="prodNameFilters" :filter-method="filterProdName" />
+            <el-table-column prop="product_name" label="产品名称" min-width="140" sortable show-overflow-tooltip column-key="product_name" :filters="prodNameFilters" :filter-method="filterProdName" />
             <el-table-column prop="quantity" label="数量" width="80" align="right" sortable />
             <el-table-column prop="unit_price" label="单价" width="100" align="right" sortable>
               <template #default="{ row }">{{ $fm(row.unit_price) }}</template>
@@ -127,15 +127,15 @@
                 <el-tag v-else size="small">{{ row.production_status }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="180" fixed="right">
+            <el-table-column label="操作" width="250" fixed="right">
               <template #default="{ row }">
-                <el-button link type="primary" size="small" @click="openOrderDialog(row.order_id)">查看订单</el-button>
+                <el-button link type="primary" size="small" @click="openProductionDialog(row)">查看生产订单</el-button>
                 <el-button v-if="!row.has_active_mo" link type="primary" size="small" @click="editOrderItem(row)">修改</el-button>
                 <el-button v-if="!row.has_active_mo" link type="primary" size="small" @click="reProduceItem(row)">重发生产</el-button>
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="itemQueryParams.page" v-model:page-size="itemQueryParams.page_size" :total="itemTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchOrderItems" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="itemQueryParams.page" v-model:page-size="itemQueryParams.page_size" :total="itemTotal" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchOrderItems" @current-change="fetchOrderItems" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -169,7 +169,13 @@
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="付款条款">
-              <el-input v-model="orderForm.payment_terms" placeholder="TT/LC" :disabled="viewMode" />
+              <el-select v-model="orderForm.payment_terms" placeholder="选择" style="width: 100%" :disabled="viewMode">
+                <el-option label="TT 电汇" value="TT" />
+                <el-option label="LC 信用证" value="LC" />
+                <el-option label="DP 付款交单" value="DP" />
+                <el-option label="DA 承兑交单" value="DA" />
+                <el-option label="OA 赊销" value="OA" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -290,13 +296,37 @@
         <el-button type="primary" :loading="itemSubmitting" @click="handleItemUpdate">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 查看生产订单弹窗 -->
+    <el-dialog v-model="productionDialogVisible" title="生产订单" width="800px" destroy-on-close>
+      <el-empty v-if="productionList.length === 0" description="该销售订单暂无生产订单" />
+      <el-table v-else :data="productionList" border size="small" style="width: 100%">
+        <el-table-column prop="order_no" label="生产订单号" min-width="140" />
+        <el-table-column prop="product_name" label="产品" min-width="140" />
+        <el-table-column prop="quantity" label="数量" width="80" align="right" />
+        <el-table-column prop="received_qty" label="已入库" width="80" align="right" />
+        <el-table-column label="状态" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.status === '已完成' || row.status === '已入库'" type="success" size="small">{{ row.status }}</el-tag>
+            <el-tag v-else-if="row.status === '已关闭'" type="info" size="small">{{ row.status }}</el-tag>
+            <el-tag v-else type="warning" size="small">{{ row.status }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="due_date" label="计划完成日" width="110" />
+        <el-table-column prop="created_at" label="创建日期" width="110" />
+      </el-table>
+      <template #footer>
+        <el-button @click="productionDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import { salesApi, productionApi } from '../../api/business'
+import { foundationApi } from '../../api/foundation'
 
 // ========== 页签 ==========
 const activeTab = ref('orders')
@@ -305,7 +335,7 @@ const activeTab = ref('orders')
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
-const queryParams = reactive({ page: 1, page_size: 100 })
+const queryParams = reactive({ page: 1, page_size: 20 })
 
 const searchForm = reactive({
   keyword: '', dateRange: null, amountMin: '', amountMax: '',
@@ -345,7 +375,7 @@ function filterCustomer(val, row) { filterCustomerVal.value = val; return true }
 const itemLoading = ref(false)
 const orderItemList = ref([])
 const itemTotal = ref(0)
-const itemQueryParams = reactive({ page: 1, page_size: 100 })
+const itemQueryParams = reactive({ page: 1, page_size: 20 })
 const itemSearchForm = reactive({ keyword: '', production_status: '' })
 
 // 明细列筛选
@@ -390,7 +420,7 @@ async function fetchOrderItems() {
     const params = { page: itemQueryParams.page, page_size: itemQueryParams.page_size }
     if (itemSearchForm.keyword) params.keyword = itemSearchForm.keyword
     if (itemSearchForm.production_status) params.production_status = itemSearchForm.production_status
-    const res = await request.get('/sales/order-items', { params })
+    const res = await salesApi.orders.listItems(params)
     orderItemList.value = res.items || []
     itemTotal.value = res.total || 0
     // 更新列筛选
@@ -415,10 +445,28 @@ function openOrderDialog(orderId) {
   openDialog(row)
 }
 
+// ========== 查看生产订单（按销售订单联查） ==========
+const productionDialogVisible = ref(false)
+const productionList = ref([])
+
+async function openProductionDialog(row) {
+  // 联查该明细行（row.id = sales_order_item_id）对应的生产订单
+  if (!row?.id) { ElMessage.warning('缺少明细行ID'); return }
+  productionDialogVisible.value = true
+  productionList.value = []
+  try {
+    const res = await productionApi.productions.list({ sales_order_item_id: row.id, page_size: 50 })
+    productionList.value = res.items || []
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '查询生产订单失败')
+    productionDialogVisible.value = false
+  }
+}
+
 async function editOrderItem(row) {
   // 实时获取最新状态
   try {
-    const res = await request.get(`/sales/orders/${row.order_id}`)
+    const res = await salesApi.orders.get(row.order_id, row.order_id)
     const item = (res.items || []).find(i => i.id === row.id)
     if (!item) { ElMessage.warning('明细行不存在'); return }
     if (item.production_status !== '未生产') {
@@ -440,7 +488,7 @@ async function editOrderItem(row) {
 async function reProduceItem(row) {
   // 实时获取最新状态
   try {
-    const res = await request.get(`/sales/orders/${row.order_id}`)
+    const res = await salesApi.orders.get(row.order_id, row.order_id)
     const item = (res.items || []).find(i => i.id === row.id)
     if (!item) { ElMessage.warning('明细行不存在'); return }
     if (item.production_status !== '未生产') {
@@ -450,7 +498,7 @@ async function reProduceItem(row) {
   } catch { return }
   await ElMessageBox.confirm(`确定对明细行「${row.product_name}」重发生产？`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${row.order_id}/items/${row.id}/re-produce`)
+    const res = await salesApi.orders.reProduce(row.order_id, row.id, row.order_id)
     ElMessage.success(res.message || '重发生产成功')
     fetchOrderItems()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '重发生产失败') }
@@ -490,7 +538,7 @@ async function fetchData() {
     }
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
-    const res = await request.get('/sales/orders', { params })
+    const res = await salesApi.orders.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     dateFilters.value = [...new Set(dataList.value.map(r => r.order_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
@@ -499,16 +547,16 @@ async function fetchData() {
 }
 
 async function loadCustomers() {
-  try { const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } }); customerList.value = res.items || [] } catch {}
+  try { const res = await foundationApi.customers.list({ page: 1, page_size: 100 }); customerList.value = res.items || [] } catch {}
 }
 async function loadCurrencies() {
-  try { const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 100 } }); currencyList.value = res.items || [] } catch {}
+  try { const res = await foundationApi.currencies.list({ page: 1, page_size: 100 }); currencyList.value = res.items || [] } catch {}
 }
 async function loadTradeTerms() {
-  try { const res = await request.get('/foundation/trade-terms', { params: { page: 1, page_size: 100 } }); tradeTermList.value = res.items || [] } catch {}
+  try { const res = await foundationApi.tradeTerms.list({ page: 1, page_size: 100 }); tradeTermList.value = res.items || [] } catch {}
 }
 async function loadProducts() {
-  try { const res = await request.get('/foundation/products', { params: { page: 1, page_size: 100 } }); productList.value = res.items || [] } catch {}
+  try { const res = await foundationApi.products.list({ page: 1, page_size: 100 }); productList.value = res.items || [] } catch {}
 }
 
 function openCreate() {
@@ -527,7 +575,7 @@ async function openDialog(row) {
   viewMode.value = true
   editMode.value = false
   try {
-    const res = await request.get(`/sales/orders/${row.id}`)
+    const res = await salesApi.orders.get(row.id, row.id)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
   } catch {}
@@ -580,7 +628,7 @@ async function handleSubmit() {
       total_amount_excl_tax: parseFloat(item.total_amount_excl_tax) || 0,
       tax_rate: parseFloat(item.tax_rate) || 13,
     }))
-    await request.post('/sales/orders', {
+    await salesApi.orders.create({
       customer_id: orderForm.customer_id, currency_id: orderForm.currency_id,
       trade_term_id: orderForm.trade_term_id, payment_terms: orderForm.payment_terms,
       order_date: orderForm.order_date, delivery_date: orderForm.delivery_date,
@@ -595,7 +643,7 @@ async function handleSubmit() {
 async function handleApprove(row) {
   await ElMessageBox.confirm(`审核订单 ${row.order_no}？审核后将生成生产订单。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${row.id}/approve`)
+    const res = await salesApi.orders.approve(row.id, row.id)
     ElMessage.success(res.message || '审核成功')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
@@ -604,7 +652,7 @@ async function handleApprove(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除订单 ${row.order_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/sales/orders/${row.id}`)
+    await salesApi.orders.delete(row.id, row.id)
     ElMessage.success('删除成功')
     fetchData()
   } catch {}
@@ -614,7 +662,7 @@ async function openEdit(row) {
   editMode.value = true
   viewMode.value = false
   try {
-    const res = await request.get(`/sales/orders/${row.id}`)
+    const res = await salesApi.orders.get(row.id, row.id)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
   } catch {}
@@ -636,13 +684,7 @@ async function handleUpdate() {
       total_amount_excl_tax: parseFloat(item.total_amount_excl_tax) || 0,
       tax_rate: parseFloat(item.tax_rate) || 13,
     }))
-    await request.put(`/sales/orders/${orderForm.id}`, {
-      customer_id: orderForm.customer_id, currency_id: orderForm.currency_id,
-      trade_term_id: orderForm.trade_term_id, payment_terms: orderForm.payment_terms,
-      order_date: orderForm.order_date, delivery_date: orderForm.delivery_date,
-      remark: orderForm.remark, exchange_rate: orderForm.exchange_rate,
-      items,
-    })
+    await salesApi.orders.update(orderForm.id, orderForm.id)
     ElMessage.success('修改成功')
     dialogVisible.value = false
     editMode.value = false
@@ -676,13 +718,7 @@ async function handleItemUpdate() {
     const price = parseFloat(itemEditForm.unit_price) || 0
     const rate = parseFloat(itemEditForm.tax_rate) || 13
     const total = qty * price
-    await request.put(`/sales/orders/${itemEditForm.order_id}/items/${itemEditForm.id}`, {
-      product_id: itemEditForm.product_id,
-      quantity: qty,
-      unit_price: price,
-      tax_rate: rate,
-      total_amount: total,
-    })
+    await salesApi.orders.updateItem(itemEditForm.order_id, itemEditForm.id, itemEditForm.order_id)
     ElMessage.success('明细行已修改')
     itemEditVisible.value = false
     fetchOrderItems()

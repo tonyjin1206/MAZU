@@ -37,10 +37,11 @@
       </el-table-column>
       <el-table-column prop="item_count" label="明细项" width="80" align="center" sortable />
       <el-table-column prop="receipt_date" label="入库日期" width="120" column-key="receipt_date" :filters="dateFilters" :filter-method="filterDate" sortable />
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="showDetail(row)">详情</el-button>
-          <el-button link type="danger" @click="handleCancel(row)">取消入库</el-button>
+          <el-button v-if="!row.is_red" link type="warning" @click="openRed(row)">红冲</el-button>
+          <el-button v-if="!row.is_red" link type="danger" @click="handleCancel(row)">取消</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -49,7 +50,7 @@
         v-model:current-page="queryParams.page"
         v-model:page-size="queryParams.pageSize"
         :total="total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @change="fetchData"
         style="margin-top: 16px"
@@ -152,6 +153,33 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+
+    <!-- 红冲弹窗 -->
+    <el-dialog v-model="redVisible" :title="`红冲入库单 ${redReceiptNo}`" width="720px">
+      <el-alert type="warning" :closable="false" style="margin-bottom: 10px"
+        title="红冲生成负向红冲单并扣减批次库存（不超过当前剩余），保留审计轨迹；订单已入库数量同步回退" />
+      <el-table :data="redItems" v-loading="redLoading" stripe size="small">
+        <el-table-column label="物料" min-width="140">
+          <template #default="{ row }">{{ row.name }} <el-tag size="small" type="info">{{ row.code }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="batch_no" label="批次号" width="140" />
+        <el-table-column prop="original_qty" label="原入库" width="90" align="right" />
+        <el-table-column label="红冲数量" width="130">
+          <template #default="{ row }">
+            <el-input-number v-model="row.red_qty" :min="0" :max="Math.abs(row.original_qty)" :controls="false" size="small" style="width: 100%" />
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-form label-width="70px" style="margin-top: 10px">
+        <el-form-item label="红冲原因">
+          <el-input v-model="redRemark" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="redVisible = false">取消</el-button>
+        <el-button type="warning" :loading="redLoading" @click="handleRed">确认红冲</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -161,7 +189,6 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { purchaseApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
 
 const route = useRoute()
 
@@ -170,7 +197,7 @@ const autoFillMode = ref(false)
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
-const queryParams = reactive({ page: 1, pageSize: 100 })
+const queryParams = reactive({ page: 1, pageSize: 20 })
 
 // 搜索条件
 const searchForm = reactive({
@@ -347,7 +374,7 @@ async function handleSubmit() {
 
 async function showDetail(row) {
   try {
-    const res = await request.get(`/purchase/receipts/${row.id}`)
+    const res = await purchaseApi.receipts.get(row.id, row.id)
     detail.value = res
     detailVisible.value = true
   } catch {
@@ -357,16 +384,61 @@ async function showDetail(row) {
 
 async function handleCancel(row) {
   await ElMessageBox.confirm(
-    `确定取消入库单 ${row.receipt_no}？库存、批次数据将同步回滚。`,
+    `确定取消入库单 ${row.receipt_no}？仅当批次未被消耗时可用；库存、批次数据将同步回滚。`,
     '提示', { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '再想想' }
   )
   try {
-    await request.delete(`/purchase/receipts/${row.id}`)
+    await purchaseApi.receipts.delete(row.id, row.id)
     ElMessage.success('入库已取消，库存已回滚')
     fetchData()
   } catch (e) {
     ElMessage.error(e.response?.data?.detail || '取消失败')
   }
+}
+
+// ===== 红冲 =====
+const redVisible = ref(false)
+const redLoading = ref(false)
+const redReceiptId = ref(null)
+const redReceiptNo = ref('')
+const redItems = ref([])
+const redRemark = ref('')
+
+async function openRed(row) {
+  redVisible.value = true
+  redLoading.value = true
+  redReceiptId.value = row.id
+  redReceiptNo.value = row.receipt_no
+  redRemark.value = ''
+  try {
+    const res = await purchaseApi.receipts.get(row.id, row.id)
+    redItems.value = (res.items || []).map(it => ({
+      id: it.id,
+      name: it.material_name || it.product_name || '',
+      code: it.material_code || it.product_code || '',
+      batch_no: it.batch_no,
+      original_qty: it.quantity,
+      red_qty: Math.abs(it.quantity),  // 默认全部（后端会按剩余自动收敛）
+    }))
+  } catch (e) { ElMessage.error('加载入库单失败') } finally { redLoading.value = false }
+}
+
+async function handleRed() {
+  const items = redItems.value
+    .filter(it => it.red_qty > 0)
+    .map(it => ({ receipt_item_id: it.id, quantity: Math.abs(it.red_qty) }))
+  if (!items.length) { ElMessage.warning('请至少填写一项红冲数量'); return }
+  await ElMessageBox.confirm(
+    `对入库单 ${redReceiptNo} 发起红冲？将生成负向红冲单并扣减批次库存，保留审计轨迹。`,
+    '红冲确认', { type: 'warning', confirmButtonText: '确认红冲', cancelButtonText: '再想想' }
+  )
+  redLoading.value = true
+  try {
+    const res = await purchaseApi.receipts.red(redReceiptId.value, { items, remark: redRemark.value })
+    ElMessage.success(res.message || '红冲成功')
+    redVisible.value = false
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '红冲失败') } finally { redLoading.value = false }
 }
 
 onMounted(async () => {
@@ -379,7 +451,7 @@ onMounted(async () => {
   if (orderId) {
     autoFillMode.value = true
     try {
-      const res = await request.get('/purchase/orders/' + orderId)
+      const res = await purchaseApi.orders.get(orderId)
       if (res && res.items) {
         const batchNo = 'BATCH-' + Date.now()
         // 直接赋值，不用 openDialog（避免重置 items）

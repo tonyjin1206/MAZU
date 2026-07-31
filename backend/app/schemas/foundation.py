@@ -1,7 +1,7 @@
 """基础档案 Schemas"""
 
 from datetime import date, datetime
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
 
 # ==================== 材料 ====================
@@ -43,8 +43,7 @@ class MaterialOut(BaseModel):
     remark: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 产品 ====================
@@ -62,6 +61,7 @@ class ProductCreate(BaseModel):
     hs_code: str = ""
     refund_rate: float = 13
     tax_rate: float = 13
+    can_purchase: int = 0
     remark: str = ""
 
 
@@ -74,6 +74,7 @@ class ProductUpdate(BaseModel):
     estimated_cost: float | None = None
     sale_price: float | None = None
     hs_code_id: int | None = None
+    can_purchase: int | None = None
     remark: str | None = None
     is_active: int | None = None
 
@@ -89,11 +90,11 @@ class ProductOut(BaseModel):
     estimated_cost: float
     sale_price: float
     hs_code_id: int | None
+    can_purchase: int = 0
     is_active: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== BOM ====================
@@ -127,8 +128,7 @@ class BomItemOut(BaseModel):
     process_id: int | None
     sort_order: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 工序 ====================
@@ -154,8 +154,7 @@ class ProcessOut(BaseModel):
     unit_price: float
     is_active: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 部门 ====================
@@ -172,8 +171,7 @@ class DepartmentOut(BaseModel):
     name: str
     parent_id: int | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 人员 ====================
@@ -196,8 +194,7 @@ class EmployeeOut(BaseModel):
     phone: str | None
     position: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 客户 ====================
@@ -250,8 +247,7 @@ class CustomerOut(BaseModel):
     is_active: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 供应商 ====================
@@ -303,26 +299,7 @@ class SupplierOut(BaseModel):
     is_active: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
-
-
-# ==================== 委外商 ====================
-
-class OutsourcerCreate(BaseModel):
-    supplier_id: int
-    lead_time: int = 7
-
-
-class OutsourcerOut(BaseModel):
-    id: int
-    supplier_id: int
-    supplier_name: str | None = None
-    lead_time: int
-    is_active: int
-
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 仓库 ====================
@@ -344,8 +321,7 @@ class WarehouseOut(BaseModel):
     manager: str | None
     is_active: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 币种 ====================
@@ -365,8 +341,7 @@ class CurrencyOut(BaseModel):
     is_base: int
     is_active: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ExchangeRateCreate(BaseModel):
@@ -385,8 +360,17 @@ class ExchangeRateOut(BaseModel):
     source: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_currency_code(cls, data):
+        """从 relationship 填充币种代码（register_crud 列表只 model_validate ORM 对象）"""
+        if not isinstance(data, dict):
+            currency = getattr(data, "currency", None)
+            if currency is not None:
+                data.currency_code = currency.code
+        return data
 
 
 # ==================== HS编码 ====================
@@ -439,8 +423,7 @@ class HsCodeOut(BaseModel):
     is_active: int
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 贸易术语 ====================
@@ -457,8 +440,7 @@ class TradeTermOut(BaseModel):
     name: str
     description: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 产品工艺路线模板 ====================
@@ -481,5 +463,4 @@ class ProductProcessTemplateOut(BaseModel):
     default_unit_price: float | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

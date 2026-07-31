@@ -25,7 +25,7 @@ class WecomConfig(Base):
 
 
 class BotConfig(Base):
-    """AI 模型配置"""
+    """Agent设置"""
     __tablename__ = "sys_bot_config"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -70,6 +70,23 @@ class ReminderConfig(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     user = relationship("User", foreign_keys=[user_id])
+
+
+class OperationLog(Base):
+    """AI 助手操作审计日志"""
+    __tablename__ = "sys_operation_log"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("sys_user.id"), comment="操作人ID")
+    username = Column(String(64), nullable=False, comment="操作人用户名")
+    role_code = Column(String(64), comment="操作人角色编码")
+    instruction = Column(Text, comment="用户原始指令")
+    tool_name = Column(String(64), nullable=False, comment="工具名")
+    args_json = Column(Text, comment="工具参数JSON")
+    result = Column(String(512), comment="执行结果摘要")
+    doc_no = Column(String(64), comment="关联单据号")
+    success = Column(Integer, default=1, comment="1=成功 0=失败")
+    created_at = Column(DateTime, default=func.now())
 
 
 class ReminderLog(Base):

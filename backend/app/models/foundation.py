@@ -44,6 +44,7 @@ class Product(Base):
     sale_price = Column(Float, default=0, comment="销售单价")
     hs_code_id = Column(Integer, ForeignKey("fd_hs_code.id"), comment="关联HS编码")
     default_bom_id = Column(Integer, comment="默认BOM ID")
+    can_purchase = Column(Integer, default=0, comment="是否可外购: 0=否 1=是(成品可被采购订单选择)")
     is_active = Column(Integer, default=1, comment="1=启用 0=停用")
     remark = Column(Text, comment="备注")
     created_at = Column(DateTime, default=func.now())
@@ -94,13 +95,13 @@ class ProductProcess(Base):
     product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False)
     process_id = Column(Integer, ForeignKey("fd_process.id"), nullable=False)
     seq = Column(Integer, nullable=False, default=0, comment="工序序号")
-    default_outsourcer_id = Column(Integer, ForeignKey("fd_outsourcer.id"), comment="默认委外商")
+    default_outsourcer_id = Column(Integer, ForeignKey("fd_supplier.id"), comment="默认委外商(供应商)")
     default_unit_price = Column(Float, default=0, comment="默认加工单价")
     created_at = Column(DateTime, default=func.now())
 
     product = relationship("Product", backref="process_templates")
     process = relationship("Process")
-    default_outsourcer = relationship("Outsourcer")
+    default_outsourcer = relationship("Supplier")
 
 
 # ==================== 组织架构 ====================
@@ -182,21 +183,6 @@ class Supplier(Base):
     remark = Column(Text)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-
-class Outsourcer(Base):
-    """委外加工商（供应商的委外类型，独立管理方便筛选）"""
-    __tablename__ = "fd_outsourcer"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    supplier_id = Column(Integer, ForeignKey("fd_supplier.id"), nullable=False, comment="关联供应商")
-    process_ids = Column(String(256), comment="可加工工序ID列表(逗号分隔)")
-    unit_price_note = Column(String(256), comment="加工单价说明")
-    lead_time = Column(Integer, default=7, comment="标准交期(天)")
-    is_active = Column(Integer, default=1)
-    created_at = Column(DateTime, default=func.now())
-
-    supplier = relationship("Supplier", backref="outsourcers")
 
 
 # ==================== 仓库 ====================

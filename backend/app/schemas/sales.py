@@ -1,7 +1,7 @@
 """销售模块 Schemas — 报价单、销售订单、销售发货、报关单、销售发票、应收账款、收款、收款核销"""
 
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ==================== 报价单 ====================
@@ -54,8 +54,7 @@ class SalesQuoteOut(BaseModel):
     created_by: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 销售订单 ====================
@@ -129,8 +128,7 @@ class SalesOrderOut(BaseModel):
     created_at: datetime
     updated_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 销售发货 ====================
@@ -172,8 +170,7 @@ class SalesDeliveryOut(BaseModel):
     operator: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 报关单 ====================
@@ -224,8 +221,7 @@ class CustomsDeclarationOut(BaseModel):
     created_at: datetime
     updated_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 销售发票 ====================
@@ -280,8 +276,7 @@ class SalesInvoiceOut(BaseModel):
     remark: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 应收账款 ====================
@@ -326,8 +321,7 @@ class AccountsReceivableOut(BaseModel):
     created_at: datetime
     updated_at: datetime | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 收款记录 ====================
@@ -373,8 +367,7 @@ class CollectionOut(BaseModel):
     operator: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 收款核销明细 ====================
@@ -398,5 +391,4 @@ class CollectionAllocationOut(BaseModel):
     allocated_amount: float
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

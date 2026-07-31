@@ -28,6 +28,9 @@
         <el-table-column prop="spec" label="规格" min-width="140" sortable column-key="spec" :filters="specFilters" :filter-method="filterSpec" />
         <el-table-column prop="unit" label="单位" width="100" align="center" sortable column-key="unit" :filters="unitFilters" :filter-method="filterUnit" />
         <el-table-column label="销售价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.sale_price) }}</template></el-table-column>
+        <el-table-column label="可外购" width="80" align="center">
+          <template #default="{ row }"><el-tag :type="row.can_purchase ? 'success' : 'info'" size="small">{{ row.can_purchase ? '是' : '否' }}</el-tag></template>
+        </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -35,7 +38,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
+      <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="500px">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
@@ -49,7 +52,9 @@
           <el-input v-model="form.spec" />
         </el-form-item>
         <el-form-item label="单位" prop="unit">
-          <el-input v-model="form.unit" />
+          <el-select v-model="form.unit" filterable allow-create placeholder="选择或输入">
+            <el-option v-for="u in unitOptions" :key="u" :label="u" :value="u" />
+          </el-select>
         </el-form-item>
         <el-form-item label="销售价" prop="sale_price">
           <el-input type="number" v-model="form.sale_price" :precision="2" :min="0" style="width: 100%" />
@@ -62,6 +67,9 @@
         </el-form-item>
         <el-form-item label="征税率%" prop="tax_rate">
           <el-input type="number" v-model="form.tax_rate" :min="0" :max="17" />
+        </el-form-item>
+        <el-form-item label="是否可外购" prop="can_purchase">
+          <el-switch v-model="form.can_purchase" :active-value="1" :inactive-value="0" active-text="是" inactive-text="否" />
         </el-form-item>
         <el-form-item label="选择已有HS" prop="hs_code_id">
           <el-select v-model="form.hs_code_id" placeholder="(可选)选择已有HS编码" clearable filterable style="width: 100%" @change="onHsCodeSelect">
@@ -84,7 +92,7 @@ import { foundationApi } from '../../api/foundation'
 
 const loading = ref(false)
 const tableData = ref([])
-const pagination = ref({ page: 1, pageSize: 100, total: 0 })
+const pagination = ref({ page: 1, pageSize: 20, total: 0 })
 const searchForm = reactive({ code: '', name_cn: '', spec: '' })
 
 // 列筛选
@@ -114,7 +122,9 @@ const dialogLoading = ref(false)
 const dialogMode = ref('create')
 const formRef = ref(null)
 const hsCodeOptions = ref([])
-const form = reactive({ id: null, name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code: '', refund_rate: 13, tax_rate: 13, hs_code_id: null })
+const form = reactive({ id: null, name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code: '', refund_rate: 13, tax_rate: 13, hs_code_id: null, can_purchase: 0 })
+
+const unitOptions = ['个', '套', '件', '条', '台', '双', '包', '箱', '组', '副', '张', '卷', '米', '千克', '克', '吨', '升', '毫升', '平方米', '立方米']
 
 onMounted(() => {
   fetchData()
@@ -191,6 +201,7 @@ function openDialog(mode, row = {}) {
     form.refund_rate = row.refund_rate || (row.hs_code_obj && row.hs_code_obj.refund_rate) || 13
     form.tax_rate = row.tax_rate || (row.hs_code_obj && row.hs_code_obj.tax_rate) || 13
     form.hs_code_id = row.hs_code_id || null
+    form.can_purchase = row.can_purchase || 0
   } else {
     form.id = null
     form.name_cn = ''
@@ -202,6 +213,7 @@ function openDialog(mode, row = {}) {
     form.refund_rate = 13
     form.tax_rate = 13
     form.hs_code_id = null
+    form.can_purchase = 0
   }
   dialogVisible.value = true
 }

@@ -8,6 +8,25 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 
 
+class PurchaseRequisition(Base):
+    """采购需求（生产推式生成，采购转采购订单）"""
+    __tablename__ = "po_requisition"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    requisition_no = Column(String(64), unique=True, nullable=False, comment="需求单号: PR-YYYYMMDD-NNN")
+    production_order_id = Column(Integer, ForeignKey("mo_production.id"), nullable=False, comment="来源生产订单")
+    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False, comment="产品")
+    quantity = Column(Float, nullable=False, comment="需求数量")
+    status = Column(String(16), default="待处理", comment="状态: 待处理/已转单/已关闭")
+    remark = Column(Text)
+    created_by = Column(String(32))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    production = relationship("ProductionOrder", foreign_keys=[production_order_id])
+    product = relationship("Product")
+
+
 class PurchaseOrder(Base):
     """采购订单"""
     __tablename__ = "po_order"
@@ -41,7 +60,9 @@ class PurchaseOrderItem(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     order_id = Column(Integer, ForeignKey("po_order.id"), nullable=False)
-    material_id = Column(Integer, ForeignKey("fd_material.id"), nullable=False, comment="材料")
+    material_id = Column(Integer, ForeignKey("fd_material.id"), comment="原材料(与product_id互斥)")
+    product_id = Column(Integer, ForeignKey("fd_product.id"), comment="成品(与material_id互斥)")
+    requisition_id = Column(Integer, ForeignKey("po_requisition.id"), comment="来源采购需求(可选)")
     quantity = Column(Float, nullable=False, comment="数量")
     unit_price = Column(Float, default=0, comment="单价(外币)")
     unit_price_local = Column(Float, default=0, comment="单价(本币)")
@@ -52,6 +73,7 @@ class PurchaseOrderItem(Base):
     remark = Column(Text)
 
     material = relationship("Material")
+    product = relationship("Product")
 
 
 class PurchaseReceipt(Base):
@@ -63,8 +85,10 @@ class PurchaseReceipt(Base):
     order_id = Column(Integer, ForeignKey("po_order.id"), nullable=False, comment="关联采购订单")
     warehouse_id = Column(Integer, ForeignKey("fd_warehouse.id"), nullable=False, comment="入库仓库")
     receipt_date = Column(Date, nullable=False, default=date.today, comment="入库日期")
-    status = Column(String(16), default="已入库", comment="状态: 已入库/已退货")
+    status = Column(String(16), default="已入库", comment="状态: 已入库/已红冲")
     total_qty = Column(Float, default=0)
+    is_red = Column(Integer, default=0, comment="1=红冲单(负向)")
+    red_of_receipt_id = Column(Integer, comment="被红冲的原入库单ID")
     remark = Column(Text)
     operator = Column(String(32))
     created_at = Column(DateTime, default=func.now())
@@ -81,13 +105,16 @@ class PurchaseReceiptItem(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     receipt_id = Column(Integer, ForeignKey("po_receipt.id"), nullable=False)
     order_item_id = Column(Integer, ForeignKey("po_order_item.id"), comment="关联订单明细")
-    material_id = Column(Integer, ForeignKey("fd_material.id"), nullable=False)
+    # material_id 与 product_id 互斥：材料采购入材料、成品采购入成品（v2.1.0）
+    material_id = Column(Integer, ForeignKey("fd_material.id"), nullable=True)
+    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=True)
     quantity = Column(Float, nullable=False, comment="入库数量")
     unit_price = Column(Float, default=0, comment="入库单价")
     batch_no = Column(String(64), nullable=False, comment="批次号: YYYYMMDD-NNN")
     remark = Column(Text)
 
     material = relationship("Material")
+    product = relationship("Product")
 
 
 class PurchaseInvoice(Base):

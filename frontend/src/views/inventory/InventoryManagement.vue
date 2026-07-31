@@ -83,7 +83,7 @@
                 </template>
               </el-table-column>
             </template>
-            <el-table-column label="来源" width="60">
+            <el-table-column label="来源" width="120">
               <template #default="{ row }">
                 <el-tag v-if="row.source_type === 'purchase'" type="success" size="small">采购</el-tag>
                 <el-tag v-else-if="row.source_type === 'production'" type="primary" size="small">生产</el-tag>
@@ -91,7 +91,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
 
@@ -152,7 +152,7 @@
             <el-table-column prop="source_doc_type" label="单据" width="100" />
             <el-table-column prop="source_doc_no" label="单据号" width="140" />
           </el-table>
-          <el-pagination v-model:current-page="transPage" v-model:page-size="transPageSize" :total="transTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchTransactions" @current-change="fetchTransactions" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="transPage" v-model:page-size="transPageSize" :total="transTotal" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchTransactions" @current-change="fetchTransactions" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -162,7 +162,8 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '@/api/request'
+import { inventoryApi } from '../../api/business'
+import { foundationApi } from '../../api/foundation'
 
 const activeTab = ref('balance')
 const warehouseList = ref([])
@@ -172,7 +173,7 @@ const balanceList = ref([])
 const balanceLoading = ref(false)
 const balanceTotal = ref(0)
 const balancePage = ref(1)
-const balancePageSize = ref(100)
+const balancePageSize = ref(20)
 const balanceQuery = reactive({ warehouse_id: null, type: '', keyword: '', dateRange: null })
 const balancePeriod = ref(false) // 是否显示期间视图
 
@@ -188,7 +189,7 @@ async function fetchBalance() {
       params.start_date = balanceQuery.dateRange[0]
       params.end_date = balanceQuery.dateRange[1]
     }
-    const res = await request.get('/inventory/balance', { params })
+    const res = await inventoryApi.balance(params)
     balanceList.value = res.items || []
     balanceTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally { balanceLoading.value = false }
@@ -234,14 +235,14 @@ const transactionList = ref([])
 const transLoading = ref(false)
 const transTotal = ref(0)
 const transPage = ref(1)
-const transPageSize = ref(100)
+const transPageSize = ref(20)
 const transQuery = reactive({ warehouse_id: null, type: '', direction: '', keyword: '', material_id: null, product_id: null })
 
 const transTypeMap = {
   purchase_in: '采购入库', production_in: '完工入库',
-  sale_out: '销售出库', outsource_out: '委外发料',
-  transfer_in: '调拨入库', transfer_out: '调拨出库',
-  check_in: '盘点盘盈', check_out: '盘点盘亏',
+  sale_out: '销售出库', outsource_out: '委外发料', material_issue_out: '生产领料',
+  purchase_return_out: '采购红冲', sale_return_in: '销售退货',
+  stocktake_in: '盘点盘盈', stocktake_out: '盘点盘亏',
   issue_cancel: '取消发料', receipt_cancel: '取消入库',
 }
 function transTypeLabel(type) { return transTypeMap[type] || type }
@@ -256,7 +257,7 @@ async function fetchTransactions() {
     if (transQuery.keyword) params.keyword = transQuery.keyword
     if (transQuery.material_id) params.material_id = transQuery.material_id
     if (transQuery.product_id) params.product_id = transQuery.product_id
-    const res = await request.get('/inventory/transactions', { params })
+    const res = await inventoryApi.transactions(params)
     transactionList.value = res.items || []
     transTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally { transLoading.value = false }
@@ -322,7 +323,7 @@ function getTransSummary({ columns, data }) {
 }
 
 onMounted(() => {
-  request.get('/foundation/warehouses', { params: { page_size: 50 } }).then(res => {
+  foundationApi.warehouses.list({ page_size: 50 }).then(res => {
     warehouseList.value = res.items || []
   }).catch(() => {})
   fetchBalance()

@@ -25,6 +25,9 @@
     <el-card>
       <el-table :data="batchList" border stripe v-loading="loading" size="small" style="width: 100%">
         <el-table-column prop="batch_no" label="批次号" width="160" />
+        <el-table-column label="物料/产品" min-width="140">
+          <template #default="{ row }">{{ row.material_name || row.product_name || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="warehouse" label="仓库" width="120" />
         <el-table-column label="库存数量" width="100" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
         <el-table-column prop="in_date" label="入库日期" width="110" />
@@ -39,7 +42,7 @@
 
     <!-- 追溯结果 -->
     <el-card v-if="traceData.length > 0" style="margin-top: 12px">
-      <template #header><span>批次追溯 — {{ traceBatchNo }}</span></template>
+      <template #header><span>批次追溯 — {{ traceBatchNo }}<span v-if="traceItemName" style="color: #909399; margin-left: 8px">{{ traceItemName }}</span></span></template>
       <el-timeline>
         <el-timeline-item v-for="t in traceData" :key="t.id" :timestamp="t.date" :color="t.quantity > 0 ? '#67c23a' : '#e6a23c'">
           {{ { purchase_in: '采购入库', production_in: '完工入库', sale_out: '销售出库', outsource_out: '委外发料' }[t.type] || t.type }}
@@ -60,11 +63,13 @@ const warehouseList = ref([])
 const batchList = ref([])
 const traceData = ref([])
 const traceBatchNo = ref('')
+const traceItemName = ref('')
 const loading = ref(false)
 const query = reactive({ batch_no: '', keyword: '', warehouse_id: null })
 
 onMounted(async () => {
   try { warehouseList.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch {}
+  search()
 })
 
 async function search() {
@@ -82,11 +87,12 @@ async function search() {
 async function trace(batchNo) {
   traceBatchNo.value = batchNo
   const res = await productionApi.batch.trace(batchNo)
+  traceItemName.value = res.item_name || ''
   traceData.value = res.trace || []
 }
 
 function reset() {
   query.batch_no = ''; query.keyword = ''; query.warehouse_id = null
-  batchList.value = []; traceData.value = []
+  search()
 }
 </script>

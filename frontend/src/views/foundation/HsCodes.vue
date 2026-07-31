@@ -34,7 +34,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 16px" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
+      <el-pagination style="margin-top: 16px" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增HS编码' : '编辑HS编码'" width="550px">
@@ -83,7 +83,7 @@ const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const saving = ref(false)

@@ -8,7 +8,7 @@ from app.models.auth import User
 from app.models.foundation import (
     Material, Product, BomItem, Process,
     Department, Employee,
-    Customer, Supplier, Outsourcer,
+    Customer, Supplier,
     Warehouse, Currency, ExchangeRate,
     HsCode, TradeTerm,
     Company, CompanyContact,
@@ -23,7 +23,6 @@ from app.schemas.foundation import (
     EmployeeCreate, EmployeeOut,
     CustomerCreate, CustomerUpdate, CustomerOut,
     SupplierCreate, SupplierUpdate, SupplierOut,
-    OutsourcerCreate, OutsourcerOut,
     WarehouseCreate, WarehouseOut,
     CurrencyCreate, CurrencyOut,
     ExchangeRateCreate, ExchangeRateOut,
@@ -43,6 +42,7 @@ register_crud(router, Department,     DepartmentCreate, None,             Depart
 register_crud(router, Employee,       EmployeeCreate,   None,             EmployeeOut,   "employees",   "基础档案-人员",   search_fields=["code", "name"])
 register_crud(router, Warehouse,      WarehouseCreate,  None,             WarehouseOut,  "warehouses",  "基础档案-仓库",   search_fields=["code", "name"])
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
+register_crud(router, ExchangeRate,   ExchangeRateCreate, None,           ExchangeRateOut, "exchange-rates", "基础档案-汇率", search_fields=["currency_id"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])
 
@@ -145,7 +145,7 @@ def create_product_with_hs(
         code=code, name_cn=data.name_cn, name_en=data.name_en or "",
         spec=data.spec, model=data.model or "", unit=data.unit,
         estimated_cost=data.estimated_cost or 0, sale_price=data.sale_price or 0,
-        hs_code_id=hs_code_id, remark=data.remark or "",
+        hs_code_id=hs_code_id, can_purchase=data.can_purchase or 0, remark=data.remark or "",
     )
     db.add(product)
     db.commit()
@@ -223,49 +223,23 @@ def delete_product(item_id: int, db: Session = Depends(get_db), current_user: Us
     return {"message": "产品已删除"}
 
 
-# ==================== 委外商自定义创建（验证供应商类型）====================
-
-@router.post("/outsourcers", tags=["基础档案-委外商"])
-def create_outsourcer(
-    data: OutsourcerCreate,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """创建委外商，验证供应商类型必须为委外"""
-    supplier = db.query(Supplier).filter(Supplier.id == data.supplier_id).first()
-    if not supplier:
-        raise HTTPException(400, "供应商不存在")
-    if supplier.supplier_type != "委外":
-        raise HTTPException(400, f"供应商「{supplier.name}」类型为「{supplier.supplier_type}」，不可作为委外商，请先修改供应商类型为「委外」")
-    out = Outsourcer(supplier_id=data.supplier_id, lead_time=data.lead_time or 7)
-    db.add(out)
-    db.commit()
-    db.refresh(out)
-    return OutsourcerOut.model_validate(out)
-
+# ==================== 委外商（供应商类型=委外，不单独建表） ====================
 
 @router.get("/outsourcers", tags=["基础档案-委外商"])
 def list_outsourcers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+                     keyword: str = Query(""),
                      db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    query = db.query(Outsourcer)
+    """委外商列表 = 供应商中 supplier_type=委外 的档案"""
+    query = db.query(Supplier).filter(Supplier.supplier_type == "委外")
+    if keyword:
+        query = query.filter(Supplier.name.like(f"%{keyword}%") | Supplier.code.like(f"%{keyword}%"))
     total = query.count()
-    items = query.order_by(Outsourcer.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    items = query.order_by(Supplier.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size, "items": [
-        OutsourcerOut.model_validate(o) for o in items
+        {"id": s.id, "supplier_id": s.id, "code": s.code, "name": s.name,
+         "contact_person": s.contact_person, "phone": s.phone, "is_active": s.is_active}
+        for s in items
     ]}
-
-
-@router.delete("/outsourcers/{item_id}", tags=["基础档案-委外商"])
-def delete_outsourcer(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    item = db.query(Outsourcer).filter(Outsourcer.id == item_id).first()
-    if not item:
-        raise HTTPException(404, "委外商不存在")
-    if hasattr(item, "is_active"):
-        item.is_active = 0
-    else:
-        db.delete(item)
-    db.commit()
-    return {"message": "委外商已删除"}
 
 
 # ==================== 客户自定义创建（自动编码 CU+6位流水）====================
@@ -554,6 +528,57 @@ def get_latest_rates(db: Session = Depends(get_db), current_user: User = Depends
     return result
 
 
+@router.post("/exchange-rates/fetch", tags=["基础档案-汇率"])
+def fetch_latest_rates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """手动触发：从腾讯财经（国内源）拉取最新汇率并入库
+
+    拉取全部非本位币种兑本位币汇率；同币种+同日已存在 → 更新（source=API），否则新建。
+    """
+    from datetime import date as _date
+    from app.services.exchange_rate_fetcher import fetch_rates, convert_to_base
+
+    currencies = db.query(Currency).filter(Currency.is_active == 1).all()
+    base = next((c for c in currencies if c.is_base == 1), None)
+    codes = [c.code for c in currencies if not (base and c.id == base.id)]
+    if not codes:
+        raise HTTPException(400, "没有可拉取的币种（请先维护币种档案）")
+
+    rates_cny = fetch_rates(codes)
+    if not rates_cny:
+        raise HTTPException(502, "汇率获取失败：腾讯财经不可达或返回为空，请检查网络后重试")
+
+    rates = convert_to_base(rates_cny, base.code if base else "CNY")
+    today = _date.today()
+    updated, created, failed = 0, 0, []
+    for c in currencies:
+        if base and c.id == base.id:
+            continue
+        rate_val = rates.get(c.code)
+        if rate_val is None:
+            failed.append(c.code)
+            continue
+        row = db.query(ExchangeRate).filter(
+            ExchangeRate.currency_id == c.id,
+            ExchangeRate.rate_date == today,
+        ).first()
+        if row:
+            row.rate = rate_val
+            row.source = "API"
+            updated += 1
+        else:
+            db.add(ExchangeRate(currency_id=c.id, rate=rate_val,
+                                rate_date=today, source="API"))
+            created += 1
+    db.commit()
+    return {
+        "message": f"汇率更新完成：新增 {created}，更新 {updated}，失败 {len(failed)}",
+        "created": created, "updated": updated,
+        "failed": failed, "base": base.code if base else "CNY",
+        "rate_date": today.isoformat(),
+        "rates": {c.code: rates.get(c.code) for c in currencies if not (base and c.id == base.id)},
+    }
+
+
 @router.get("/processes-select", tags=["基础档案-选择器"])
 def processes_select(
     keyword: str = "",
@@ -588,15 +613,13 @@ def outsourcers_select(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """委外商选择器"""
-    from sqlalchemy.orm import joinedload
-    query = db.query(Outsourcer).filter(Outsourcer.is_active == 1)
+    """委外商选择器 = 供应商中 supplier_type=委外 的档案"""
+    query = db.query(Supplier).filter(Supplier.supplier_type == "委外", Supplier.is_active == 1)
     if keyword:
-        query = query.join(Supplier).filter(Supplier.name.like(f"%{keyword}%"))
-    items = query.limit(100).all()
-    return [{"id": o.id, "supplier_id": o.supplier_id,
-             "name": o.supplier.name if o.supplier else "",
-             "lead_time": o.lead_time} for o in items]
+        query = query.filter(Supplier.name.like(f"%{keyword}%") | Supplier.code.like(f"%{keyword}%"))
+    items = query.order_by(Supplier.id.desc()).limit(100).all()
+    return [{"id": s.id, "supplier_id": s.id, "code": s.code,
+             "name": s.name, "lead_time": 7} for s in items]
 
 
 # ==================== 客户/供应商/产品/材料下拉数据 ====================
@@ -661,6 +684,38 @@ def materials_select(
         query = query.filter(Material.name.like(f"%{keyword}%") | Material.code.like(f"%{keyword}%"))
     items = query.order_by(Material.id.desc()).limit(100).all()
     return [{"id": m.id, "code": m.code, "name": m.name, "spec": m.spec, "model": m.model, "unit": m.unit, "purchase_price": m.purchase_price} for m in items]
+
+
+@router.get("/procurement-items-select", tags=["基础档案-选择器"])
+def procurement_items_select(
+    keyword: str = "",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """采购选品：原材料 + 可外购成品"""
+    results = []
+    # 材料
+    mat_query = db.query(Material).filter(Material.is_active == 1)
+    if keyword:
+        mat_query = mat_query.filter(Material.name.like(f"%{keyword}%") | Material.code.like(f"%{keyword}%"))
+    for m in mat_query.order_by(Material.id.desc()).limit(100).all():
+        results.append({
+            "id": m.id, "type": "material", "code": m.code, "name": m.name,
+            "spec": m.spec or "", "model": m.model or "", "unit": m.unit,
+            "purchase_price": m.purchase_price,
+        })
+    # 可外购成品
+    prod_query = db.query(Product).filter(Product.is_active == 1, Product.can_purchase == 1)
+    if keyword:
+        prod_query = prod_query.filter(
+            Product.name_cn.like(f"%{keyword}%") | Product.code.like(f"%{keyword}%"))
+    for p in prod_query.order_by(Product.id.desc()).limit(100).all():
+        results.append({
+            "id": p.id, "type": "product", "code": p.code, "name": p.name_cn,
+            "spec": p.spec or "", "model": p.model or "", "unit": p.unit,
+            "purchase_price": p.estimated_cost,
+        })
+    return results
 
 
 @router.get("/currencies", tags=["基础档案-选择器"])

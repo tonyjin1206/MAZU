@@ -21,7 +21,9 @@ class ProductionOrder(Base):
     bom_id = Column(Integer, comment="使用的BOM ID")
     start_date = Column(Date, comment="计划开始日")
     due_date = Column(Date, comment="计划完成日")
-    status = Column(String(16), default="待排产", comment="状态: 待排产/已排产/生产中/已完成/部分入库/已入库/已关闭")
+    status = Column(String(16), default="待确认", comment="状态: 待确认/待排产/已排产/生产中/已完成/部分入库/已入库/待采购/采购中/已关闭")
+    production_type = Column(String(16), comment="备货方式: 自产/委外/外购")
+    requisition_id = Column(Integer, ForeignKey("po_requisition.id"), comment="外购时关联的采购需求")
     total_material_cost = Column(Float, default=0, comment="物料成本合计(全部发出)")
     total_process_cost = Column(Float, default=0, comment="加工费合计(全部完工)")
     received_qty = Column(Float, default=0, comment="已入库数量")
@@ -63,7 +65,7 @@ class ProductionProcess(Base):
     production_id = Column(Integer, ForeignKey("mo_production.id"), nullable=False)
     process_id = Column(Integer, ForeignKey("fd_process.id"), nullable=False)
     seq = Column(Integer, nullable=False, default=0, comment="工序序号")
-    outsourcer_id = Column(Integer, ForeignKey("fd_outsourcer.id"), comment="委外商(空=自产)")
+    outsourcer_id = Column(Integer, ForeignKey("fd_supplier.id"), comment="委外商(供应商,空=自产)")
     unit_price = Column(Float, default=0, comment="加工单价")
     process_qty = Column(Float, default=0, comment="加工数量(默认=订单数量)")
     process_amount = Column(Float, default=0, comment="加工费金额(=process_qty*unit_price)")
@@ -71,7 +73,7 @@ class ProductionProcess(Base):
 
     production = relationship("ProductionOrder", back_populates="processes")
     process = relationship("Process")
-    outsourcer = relationship("Outsourcer")
+    outsourcer = relationship("Supplier")
 
 
 class ProductionReceipt(Base):
@@ -121,47 +123,14 @@ class ProcessingInvoice(Base):
     created_at = Column(DateTime, default=func.now())
 
 
-# ==================== 以下为旧模型（保留兼容，新代码不再使用） ====================
-
-class OutsourcingOrder(Base):
-    """委外工单（旧，以被 ProductionProcess 替代）"""
-    __tablename__ = "mo_outsourcing"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    outsource_no = Column(String(64), unique=True, nullable=False, comment="委外单号: OS-YYYYMMDD-NNN")
-    production_id = Column(Integer, ForeignKey("mo_production.id"), nullable=False, comment="关联生产订单")
-    outsourcer_id = Column(Integer, ForeignKey("fd_outsourcer.id"), nullable=False, comment="委外商")
-    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False)
-    quantity = Column(Float, nullable=False, comment="加工数量")
-    unit_price = Column(Float, default=0, comment="加工单价")
-    total_amount = Column(Float, default=0, comment="加工费总额")
-    process_id = Column(Integer, ForeignKey("fd_process.id"), comment="工序")
-    start_date = Column(Date, comment="发料日期")
-    due_date = Column(Date, comment="约定交期")
-    status = Column(String(16), default="待发料", comment="状态: 待发料/已发料/加工中/已入库/已完成/已关闭")
-    material_status = Column(String(16), default="未发料", comment="发料状态: 未发料/部分发料/已发料")
-    received_qty = Column(Float, default=0, comment="已入库数量")
-    remark = Column(Text)
-    created_by = Column(String(32))
-    created_at = Column(DateTime, default=func.now())
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
-
-    outsourcer = relationship("Outsourcer")
-    product = relationship("Product")
-    process = relationship("Process")
-    material_issues = relationship("MaterialIssueItem", backref="outsourcing", lazy="selectin")
-    receipts = relationship("OutsourceReceiptItem", backref="outsourcing", lazy="selectin")
-
-
 class MaterialIssueItem(Base):
-    """发料记录（支持新旧两套：outsource_id=旧，production_id+process_id=新）"""
+    """发料记录（关联生产订单+工序）"""
     __tablename__ = "mo_material_issue"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     issue_no = Column(String(64), nullable=False, comment="发料单号")
-    outsource_id = Column(Integer, ForeignKey("mo_outsourcing.id"), comment="旧:关联委外工单")
-    production_id = Column(Integer, ForeignKey("mo_production.id"), comment="新:关联生产订单")
-    process_id = Column(Integer, ForeignKey("mo_production_process.id"), comment="新:关联工序")
+    production_id = Column(Integer, ForeignKey("mo_production.id"), comment="关联生产订单")
+    process_id = Column(Integer, ForeignKey("mo_production_process.id"), comment="关联工序")
     material_id = Column(Integer, ForeignKey("fd_material.id"), nullable=False)
     batch_no = Column(String(64), nullable=False, comment="发料批次号")
     quantity = Column(Float, nullable=False, comment="发料数量")
@@ -173,26 +142,4 @@ class MaterialIssueItem(Base):
     created_at = Column(DateTime, default=func.now())
 
     material = relationship("Material")
-    warehouse = relationship("Warehouse")
-
-
-class OutsourceReceiptItem(Base):
-    """委外完工入库明细（旧，以被 ProductionReceipt 替代）"""
-    __tablename__ = "mo_outsource_receipt"
-
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    receipt_no = Column(String(64), nullable=False, comment="入库单号: FR-YYYYMMDD-NNN")
-    outsource_id = Column(Integer, ForeignKey("mo_outsourcing.id"), nullable=False)
-    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False)
-    batch_no = Column(String(64), nullable=False, comment="入库批次号(成品): FG-YYYYMMDD-NNN")
-    quantity = Column(Float, nullable=False, comment="入库数量")
-    unit_price = Column(Float, default=0, comment="加工单价")
-    total_amount = Column(Float, default=0, comment="加工费金额")
-    receipt_date = Column(Date, nullable=False, default=date.today, comment="入库日期")
-    warehouse_id = Column(Integer, ForeignKey("fd_warehouse.id"), nullable=False)
-    remark = Column(Text)
-    operator = Column(String(32))
-    created_at = Column(DateTime, default=func.now())
-
-    product = relationship("Product")
     warehouse = relationship("Warehouse")

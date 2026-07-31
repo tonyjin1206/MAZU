@@ -1,45 +1,67 @@
 <template>
   <div>
-    <el-card>
-      <template #header></template>
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="汇总" name="summary">
-          <el-table :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
-            <el-table-column prop="customer_name" label="客户" min-width="180">
-              <template #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.customer_name }}</span></template>
-            </el-table-column>
-            <el-table-column label="应收笔数" width="80" align="center"><template #default="{ row }">{{ row.count }}</template></el-table-column>
-            <el-table-column label="应收金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-            <el-table-column label="已收金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_collected) }}</template></el-table-column>
-            <el-table-column label="余额" width="130" align="right">
-              <template #default="{ row }"><span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span></template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-
-        <el-tab-pane label="明细" name="detail">
-          <el-table :data="cdList" border stripe v-loading="cdLoading" style="width: 100%" :summary-method="cdTotal" show-summary>
-            <el-table-column prop="customer_name" label="客户" min-width="140" />
-            <el-table-column prop="ar_date" label="应收日期" width="110" />
-            <el-table-column prop="ar_no" label="应收单号" width="160" />
-            <el-table-column label="应收金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ar_amount) }}</template></el-table-column>
-            <el-table-column prop="cr_date" label="收款日期" width="110" />
-            <el-table-column prop="collection_no" label="收款单号" width="160" />
-            <el-table-column label="收款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
-            <el-table-column label="余额" width="110" align="right">
-              <template #default="{ row }"><span :style="{ color: (row.ar_amount - row.collected_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ar_amount - row.collected_amount) }}</span></template>
-            </el-table-column>
-            <el-table-column label="操作" width="120" align="center" fixed="right">
-              <template #default="{ row }">
-                <el-button v-if="!row.collection_no" type="primary" size="small" @click="openCollectionByDetail(row)">收款</el-button>
-                <el-button v-else type="success" size="small" @click="viewCollection(row)">查看收款单</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+    <!-- 查询条件（整体风格） -->
+    <el-card style="margin-bottom: 12px">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <el-button type="primary" @click="search">查询</el-button>
+          <el-button @click="resetSearch">重置</el-button>
+        </div>
+      </template>
+      <el-form :inline="true">
+        <el-form-item label="客户">
+          <el-input v-model="searchKeyword" placeholder="客户名称" clearable style="width: 220px" @keyup.enter="search" />
+        </el-form-item>
+      </el-form>
     </el-card>
 
+    <!-- 汇总 -->
+    <el-card style="margin-bottom: 12px">
+      <template #header><span style="font-weight: 600">汇总</span></template>
+      <el-table :data="summaryList" border stripe size="small" v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
+        <el-table-column prop="customer_name" label="客户" min-width="180">
+          <template #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.customer_name }}</span></template>
+        </el-table-column>
+        <el-table-column label="应收笔数" width="80" align="center"><template #default="{ row }">{{ row.count }}</template></el-table-column>
+        <el-table-column label="应收金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
+        <el-table-column label="已收金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_collected) }}</template></el-table-column>
+        <el-table-column label="余额" width="130" align="right">
+          <template #default="{ row }">
+            <span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- 明细 -->
+    <el-card id="ar-detail-card">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="font-weight: 600">明细</span>
+          <el-tag v-if="cdFilter" closable type="info" size="small" @close="clearCdFilter">{{ cdFilter }}</el-tag>
+        </div>
+      </template>
+      <el-table :data="collectionDetailList" border stripe size="small" v-loading="cdLoading" style="width: 100%" :summary-method="cdTotal" show-summary>
+        <el-table-column prop="customer_name" label="客户" min-width="140" />
+        <el-table-column prop="ar_date" label="应收日期" width="110" />
+        <el-table-column prop="ar_no" label="应收单号" width="160" />
+        <el-table-column label="应收金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ar_amount) }}</template></el-table-column>
+        <el-table-column prop="cr_date" label="收款日期" width="110" />
+        <el-table-column prop="collection_no" label="收款单号" width="160" />
+        <el-table-column label="收款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
+        <el-table-column label="余额" width="110" align="right">
+          <template #default="{ row }"><span :style="{ color: (row.ar_amount - row.collected_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ar_amount - row.collected_amount) }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="!row.collection_no" type="primary" size="small" @click="openCollectionByDetail(row)">收款</el-button>
+            <el-button v-else type="success" size="small" @click="viewCollection(row)">查看收款单</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- 收款弹窗 -->
     <el-dialog v-model="dialogVisible" title="收款" width="500px" destroy-on-close>
       <el-form :model="form" label-width="100px">
         <el-form-item label="客户"><el-input :model-value="form.customer_name" disabled /></el-form-item>
@@ -85,15 +107,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import { salesApi } from '../../api/business'
 
-const activeTab = ref('summary')
 const loading = ref(false)
 const list = ref([])
 const total = ref(0)
-const page = ref(1)
 const searchKeyword = ref('')
 const dialogVisible = ref(false)
 const submitting = ref(false)
@@ -111,28 +131,7 @@ const form = reactive({
   collection_date: '', payment_method: '银行转账', remark: '',
 })
 
-async function fetchData() {
-  loading.value = true
-  try {
-    const res = await request.get('/sales/ar', { params: { page: 1, page_size: 100 } })
-    list.value = res.items || []
-    total.value = res.total || 0
-  } catch {} finally { loading.value = false }
-}
-
-watch(activeTab, (tab) => { if (tab === 'detail') { if (!cdFilter.value) cdFilter.value = ' '; fetchCD() } })
-
-async function fetchCD() {
-  if (!cdFilter.value) return
-  cdLoading.value = true
-  try {
-    const res = await request.get('/sales/ar/collection-detail')
-    cdList.value = (res.items || []).filter(r =>
-      (r.customer_name || '').toLowerCase().includes(cdFilter.value.toLowerCase())
-    )
-  } finally { cdLoading.value = false }
-}
-
+// 汇总：按客户分组（前端过滤）
 const summaryList = computed(() => {
   const groups = {}
   list.value.forEach(r => {
@@ -147,6 +146,16 @@ const summaryList = computed(() => {
     arr = arr.filter(g => g.customer_name.toLowerCase().includes(kw))
   }
   return arr
+})
+
+// 明细：全量拉取，前端按 cdFilter 过滤
+const collectionDetailList = computed(() => {
+  let items = [...cdList.value]
+  if (cdFilter.value) {
+    const kw = cdFilter.value.toLowerCase()
+    items = items.filter(r => (r.customer_name || '').toLowerCase().includes(kw))
+  }
+  return items.sort((a, b) => (a.ar_date || '').localeCompare(b.ar_date || ''))
 })
 
 function summaryTotal({ columns }) {
@@ -166,18 +175,53 @@ function cdTotal({ columns }) {
   const sums = []
   columns.forEach((col, i) => {
     if (i === 0) { sums[i] = '合计'; return }
-    if (col.label === '应收金额') sums[i] = '¥' + cdList.value.reduce((s, r) => s + (r.ar_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
-    else if (col.label === '收款金额') sums[i] = '¥' + cdList.value.reduce((s, r) => s + (r.collected_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
- else if (col.label === '余额') sums[i] = '¥' + cdList.value.reduce((s, r) => s + (r.ar_amount || 0) - (r.collected_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    if (col.label === '应收金额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.ar_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    else if (col.label === '收款金额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.collected_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    else if (col.label === '余额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.ar_amount || 0) - (r.collected_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
     else sums[i] = ''
   })
   return sums
 }
 
+async function fetchData() {
+  loading.value = true
+  try {
+    const res = await salesApi.ar.list({ page: 1, page_size: 100 })
+    list.value = res.items || []
+    total.value = res.total || 0
+  } catch {} finally { loading.value = false }
+}
+
+async function fetchCD() {
+  cdLoading.value = true
+  try {
+    const res = await salesApi.ar.collectionDetail()
+    cdList.value = res.items || []
+  } finally { cdLoading.value = false }
+}
+
+// 查询 / 重置（整体风格）
+function search() {
+  fetchData()
+  fetchCD()
+}
+
+function resetSearch() {
+  searchKeyword.value = ''
+  cdFilter.value = ''
+  search()
+}
+
+// 点击汇总行 → 明细按该客户过滤并定位
 function showDetail(row) {
   cdFilter.value = row.customer_name
-  activeTab.value = 'detail'
   fetchCD()
+  const el = document.getElementById('ar-detail-card')
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+function clearCdFilter() {
+  cdFilter.value = ''
 }
 
 function openCollection(row) {
@@ -195,7 +239,7 @@ async function handleSubmit() {
   if (amount > form.balance) { ElMessage.warning('收款金额不能超过余额'); return }
   submitting.value = true
   try {
-    await request.post('/sales/collections', {
+    await salesApi.collections.create({
       customer_id: form.customer_id,
       amount, amount_fc: amount, currency_id: 2, exchange_rate: 7.2,
       collection_date: form.collection_date || new Date().toISOString().slice(0, 10),
@@ -223,7 +267,7 @@ function openCollectionByDetail(row) {
 async function viewCollection(row) {
   if (!row.collection_id) return
   try {
-    const res = await request.get(`/sales/collections/${row.collection_id}`)
+    const res = await salesApi.collections.get(row.collection_id, row.collection_id)
     collectionDetail.value = res
     collectionDetailVisible.value = true
   } catch {
@@ -231,7 +275,10 @@ async function viewCollection(row) {
   }
 }
 
-onMounted(fetchData)
+onMounted(() => {
+  fetchData()
+  fetchCD()
+})
 </script>
 
 <style scoped>
