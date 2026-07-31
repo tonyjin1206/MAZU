@@ -71,6 +71,17 @@ def list_quotes(
 
 # ==================== 销售订单 ====================
 
+def _recalc_order_totals(order):
+    """按明细行重算订单头金额（改明细后必须调用）"""
+    total_amount_fc = round(sum((i.total_amount or 0) for i in order.items), 2)
+    exchange_rate = order.exchange_rate or 1
+    order.total_amount = total_amount_fc
+    order.total_amount_local = round(total_amount_fc * exchange_rate, 2)
+    order.tax_amount = round(sum((i.tax_amount or 0) for i in order.items) * exchange_rate, 2)
+    order.total_amount_excl_tax = round(sum((i.total_amount_excl_tax or 0) for i in order.items), 2)
+    order.total_amount_excl_tax_local = round(
+        sum((i.total_amount_excl_tax or 0) for i in order.items) * exchange_rate, 2)
+
 @router.post("/orders", tags=["销售管理"])
 def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """创建销售订单（定制产品触发生产）"""
@@ -362,6 +373,8 @@ def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db),
     for ex in existing:
         if ex.id not in sent_ids and ex.production_status in (None, "", "未生产"):
             db.delete(ex)
+    # 明细有变动，重算订单头金额
+    _recalc_order_totals(order)
     db.commit()
     db.refresh(order)
     return {"message": "销售订单已更新"}
@@ -1143,5 +1156,9 @@ def update_order_item(
     tax_rate_val = item.tax_rate or 13
     item.total_amount_excl_tax = round((item.total_amount or 0) / (1 + tax_rate_val / 100), 2)
     item.tax_amount = round((item.total_amount or 0) - (item.total_amount_excl_tax or 0), 2)
+    # 重算订单头金额
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if order:
+        _recalc_order_totals(order)
     db.commit()
     return {"message": "明细行已修改，关联待排产生产订单已删除"}
