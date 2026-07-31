@@ -431,18 +431,14 @@ if len(MO_LIST) > 1:
                 data={"unit_price": 5, "process_qty": MO2["quantity"]})
         expect_status("工序完工(正向) 200", r, 200)
 
-        # 取消完工接口不存在（405/404）→ 记录为功能缺失，不算失败
-        r = api("POST", f"/production/productions/{MID2}/processes/{procs2[0]['id']}/cancel-finish", token=T)
-        if r.status_code in (404, 405):
-            SKIP += 1
-            KNOWN.append(("取消工序完工接口不存在",
-                          "POST /processes/{id}/cancel-finish 返回 404/405，无取消完工功能（反操作缺失）"))
-            print(f"  ⚠️  [功能缺失] 取消完工接口不存在 (404/405)")
+        # 取消完工（revert 接口）→ 重新完工
+        r = api("POST", f"/production/productions/{MID2}/processes/{procs2[0]['id']}/revert", token=T)
+        expect_status("取消完工(revert) 200", r, 200)
 
         # 重新完工（幂等验证）
         r = api("POST", f"/production/productions/{MID2}/processes/{procs2[0]['id']}/finish", token=T,
                 data={"unit_price": 5, "process_qty": MO2["quantity"]})
-        expect_status("重复完工(幂等) 200", r, 200)
+        expect_status("重新完工 200", r, 200)
 
 # E3. 删除发票 → 重新开票
 r = api("POST", "/purchase/invoices", token=T, data={

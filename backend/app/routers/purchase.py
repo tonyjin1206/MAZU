@@ -342,6 +342,9 @@ def create_receipt(
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == data.order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
+    # 状态校验：待审核/已关闭订单不可入库
+    if order.status in ("待审核", "已关闭", "已取消"):
+        raise HTTPException(400, f"订单状态「{order.status}」不允许入库")
 
     # 生成入库单号
     from app.utils.batch_no import generate_doc_no
@@ -582,6 +585,12 @@ def create_invoice(
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
+
+    # 发票号唯一性校验（数据库唯一约束冲突 → 409 业务错误）
+    existing_inv = db.query(PurchaseInvoice).filter(
+        PurchaseInvoice.invoice_no == data.invoice_no).first()
+    if existing_inv:
+        raise HTTPException(409, f"发票号已存在: {data.invoice_no}")
 
     invoice = PurchaseInvoice(
         invoice_no=data.invoice_no,
