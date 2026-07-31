@@ -189,10 +189,10 @@ function loadColumnOrder() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
     if (saved.length) {
-      // 按保存顺序重排，缺失的列补在后面
       const savedSet = new Set(saved)
       const others = defaultColumns.filter(c => !savedSet.has(c.prop))
-      return [...defaultColumns.filter(c => savedSet.has(c.prop)), ...others]
+      // 按保存的顺序返回，缺失的列补在后面
+      return [...saved.map(prop => defaultColumns.find(c => c.prop === prop)).filter(Boolean), ...others]
     }
   } catch (e) { /* 忽略损坏的存储 */ }
   return [...defaultColumns]
