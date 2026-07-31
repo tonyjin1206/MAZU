@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.2.0** | A Lightweight Trade Management Platform
+> **v2.5.0** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
@@ -48,6 +48,16 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 ---
 
 ## 二、采购管理 (`/api/purchase`)
+
+### 采购需求 (`/requisitions`，v2.5.0 外购直采流程)
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/requisitions` | GET | 列表（按状态/关键词筛选）|
+| `/requisitions/{id}` | GET | 详情 |
+| `/requisitions/{id}/close` | POST | 关闭（仅待处理）→ MO 回待采购可重推 |
+| `/requisitions/{id}/to-purchase` | POST | 转采购订单（采购填供应商/单价/税率，数量可改）|
+
+状态流程: 待处理 → 已转单 → 采购入库完成 → MO 已入库；待处理可关闭 → MO 回待采购
 
 ### 采购订单 (`/orders`)
 | 路由 | 方法 | 说明 |
@@ -143,8 +153,12 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/receipts/{id}` | GET/DELETE | 详情/取消入库 |
 | `/processing-invoices` | GET/POST | 加工费发票列表/创建 |
 | `/processing-invoices/{id}` | GET/DELETE | 详情/删除 |
+| `/productions/{id}/set-type` | POST | 确认备货方式（自产/委外/外购，v2.5.0）|
+| `/productions/{id}/to-requisition` | POST | 外购型推采购需求（v2.5.0）|
 
-数据表: `ProductionOrder`, `ProductionProcess`, `OutsourcingOrder`, `MaterialIssueItem`, `ProductionReceipt`, `ProcessingInvoice`
+数据表: `ProductionOrder`（含 `production_type` 备货方式）, `ProductionProcess`, `OutsourcingOrder`, `MaterialIssueItem`, `ProductionReceipt`, `ProcessingInvoice`
+
+备货方式（v2.5.0）: MO 审核后状态=`待确认`，必须先确认备货方式 → 自产/委外=`待排产`（进工作台）｜外购=`待采购`（推采购需求 → 采购转单 → 入库联动）
 
 ---
 
@@ -391,6 +405,31 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 ---
 
 ## 十三、版本变更记录
+
+### v2.5.0 (2026-07-31)
+- **新功能**: 备货方式确认（生产订单 `production_type`: 自产/委外/外购）— MO 审核后先确认备货方式才能继续；外购型不进入生产工作台，仅推采购需求
+- **新功能**: 外购直采流程 — 生产推采购需求（PR，只填数量）→ 采购「采购需求」页转采购订单（填供应商/单价/税率）→ 入库联动 MO 状态；PR 可关闭、MO 可重推；删除 PO 联动 PR/MO 状态回退
+- **新功能**: 采购订单支持成品采购（`po_order_item.product_id` 与 material_id 互斥）+ 产品「是否可外购」标记（can_purchase，MO 确认外购自动打勾）+ 选品下拉合并原材料与可外购成品
+- **新功能**: 委外商简化 — 删除独立委外商表（fd_outsourcer），供应商类型=委外 即委外商；工序 outsourcer_id 改指 fd_supplier.id
+- **新功能**: 汇率自动获取与维护 — 币种/汇率独立菜单；腾讯财经 qt.gtimg.cn 国内源自动拉取（无 key）+ 每日 09:00 定时任务 + 手动按钮；JPY/KRW 无交叉盘手动兜底；`GET /exchange-rates/latest` 供业务单据换算
+- **新功能**: 盘点管理独立菜单 + 独立权限码（menu:inventory:stocktake）— 盘点明细可新增/编辑/删除物料行（含账外批次），同批次重复 400，已提交锁定
+- **新功能**: 仓库维护界面（Warehouses.vue + menu:warehouses 权限闭环）
+- **修复**: 出入库仓库参照校验（采购入库/完工入库/销售出库/盘点建单校验 warehouse_id 存在且启用）
+- **修复**: 仓库/部门/员工/币种/贸易术语编辑 422（register_crud 无 update_schema 时 PUT body 兜底）
+- **修复**: _seed_rbac admin 权限翻倍 bug（autoflush=False 下补权限前 db.flush）+ 角色关联去重
+- **重构**: 测试数据基建 v2 — build_foundation 统一构建器（API 建真实档案）+ conftest 复用 _seed_rbac 单一数据源 + 状态机文档池 + 数据量 -78%
+
+### v2.4.0 (2026-07-31)
+- **新功能**: 库存收发存 v2 — 盘点闭环（盘盈/盘亏流水）/ 采购红冲（负向红冲单 + 冲销流水）/ 销售退货（回库流水）/ 发料类型拆分（material_issue_out vs outsource_out）/ 完工入库成本自动结转
+- **新功能**: 采购红冲量 ≤ 批次当前剩余；回退订单 received_qty/状态 + 外购型 MO 状态联动
+- **修复**: 取消完工入库保护（批次有后续出入库 → 禁止，走退货）；采购取消入库补冲销流水
+- **修复**: 收发存报表多批次合并取最新批次号；新流水类型（红冲/退货/盘点）纳入期初+收发+期末口径
+- **基础设施**: scripts/migrate_inventory_v2.py 迁移脚本（幂等）
+
+### v2.3.0 (2026-07-31)
+- **新功能**: AI 助手全系统化 — 菜单页改全局右下角悬浮球（M 图标），任意业务页面对话；操作能力扩展（查档案/查库存/建单/审核/收付款/发票/发料/完工入库）；工具执行受菜单权限控制 + 操作全程留痕
+- **新功能**: AI 助手可检索 docs/operations-manual.md 回答操作问题
+- **新功能**: 菜单级权限前端落地 — Layout 菜单按权限过滤（32 菜单项 + 7 分组）+ 路由守卫 meta.perm 校验；权限清单与真实菜单对齐（补 6 缺失权限码）；用户/角色/权限管理接口仅管理员
 
 ### v2.2.0 (2026-07-31)
 - **新功能**: 自动化测试体系（阶段 0-5）— 契约测试 / 状态机测试 / 边界数据测试 / 架构检查 / E2E（Playwright 真实浏览器）
