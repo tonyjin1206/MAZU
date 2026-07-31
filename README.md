@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS)
 
-> **v2.2.0** — Mazu Trade System — A Lightweight Trade Management Platform  
+> **v2.5.0** — Mazu Trade System — A Lightweight Trade Management Platform  
 > 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化  
 > **支持 AI 智能助手对话式操作**
 
@@ -25,6 +25,20 @@ python launcher.py
 **默认账户：** `admin` / `admin123`
 
 ### Windows 手动启动
+
+> 💡 推荐使用仓库根目录的开发脚本（自动清除 `PYTHONPATH`，避免 Hermes 等其他环境的
+> site-packages 抢占项目依赖版本）：
+
+```bash
+# 终端 1：启动后端（清 PYTHONPATH + 开发热重载）
+./dev.sh        # git-bash；Windows 资源管理器可直接双击 dev.bat
+
+# 终端 2：启动前端
+cd frontend
+npm run dev
+```
+
+手动等效方式：
 
 ```powershell
 # 终端 1：启动后端
@@ -75,11 +89,11 @@ python launcher.py --help
 ## 功能模块
 
 ```
-基础档案 → 客户 / 供应商 / 物料 / 产品 / BOM / 工序 / HS编码
-采购管理 → 采购订单 → 采购入库 → 采购发票 → 应付账款 → 付款
+基础档案 → 客户 / 供应商 / 物料 / 产品 / BOM / 工序 / HS编码 / 币种汇率（自动获取+手工维护）/ 仓库维护
+采购管理 → 采购需求（外购转单）/ 采购订单（含成品采购）→ 采购入库 → 采购发票 → 应付账款 → 付款
 销售管理 → 销售订单 → 销售发货 → 销售发票 → 应收账款 → 收款
-生产管理 → 生产订单 → 派产 → 发料 → 完工 → 成品入库 / 委外 / 加工费发票
-库存管理 → 收发存报表 / 库存流水 / 批次追溯 / 盘点（盘盈盘亏）/ 采购红冲 / 销售退货
+生产管理 → 生产订单（自产/委外/外购备货方式）→ 派产 → 发料 → 完工 → 成品入库 / 委外 / 加工费发票 / 外购直采推采购需求
+库存管理 → 收发存报表 / 库存流水 / 批次追溯 / 盘点（独立菜单·盘盈盘亏）/ 采购红冲 / 销售退货 / 出入库仓库参照校验
 退税申报 → 申报期管理 / 发票关联 / 状态跟踪
 AI 助手 → 右下角悬浮球随时对话 / 档案与库存查询 / 创建与审核单据 / 收付款 / 发票录入 / 发料入库 / 操作手册问答（按菜单权限控制，全程留痕）
 管理驾驶舱 → 现金收支 / 应收应付账龄 / 销售毛利分析（支持穿透查询）
@@ -113,7 +127,12 @@ AI 助手 → 右下角悬浮球随时对话 / 档案与库存查询 / 创建与
 
 ```bash
 # 后端全套（契约/状态机/边界/全流程/收发存v2，213 个用例）
-cd backend && ERP_DEV=1 python -m pytest tests/ -q
+# 推荐：自动清除 PYTHONPATH（防依赖污染），支持透传 pytest 参数
+./test.sh                     # git-bash / macOS / Linux；Windows 可双击 test.bat
+./test.sh -k 汇率             # 例：按关键字过滤
+
+# 等效手动命令：
+cd backend && env -u PYTHONPATH ERP_DEV=1 venv/Scripts/python.exe -m pytest tests/ -q
 
 # 架构检查（废弃表/散写 request/弃用 API）
 python scripts/check_architecture.py
