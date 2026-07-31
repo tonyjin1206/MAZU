@@ -45,9 +45,11 @@ class TestInventoryV2:
         cny = api(client, "POST", "/api/foundation/currencies",
                   {"code": f"CNY{n}", "name": "人民币", "symbol": "¥", "is_base": 1}, h)
         wh_rm = api(client, "POST", "/api/foundation/warehouses",
-                    {"code": f"RM{n}", "name": "原料仓", "wh_type": "原料仓"}, h)["id"]
+                    {"code": f"RM{n}", "name": "原料仓", "wh_type": "原料仓",
+                     "address": "浙江省绍兴市柯桥区轻纺城大道88号", "manager": "王建国"}, h)["id"]
         wh_fg = api(client, "POST", "/api/foundation/warehouses",
-                    {"code": f"FG{n}", "name": "成品仓", "wh_type": "成品仓"}, h)["id"]
+                    {"code": f"FG{n}", "name": "成品仓", "wh_type": "成品仓",
+                     "address": "浙江省绍兴市柯桥区滨海工业区1号", "manager": "刘芳"}, h)["id"]
         mat = api(client, "POST", "/api/foundation/materials",
                   {"name": f"棉纱{tag}", "code": f"MAT{n}", "spec": "32S", "unit": "吨",
                    "category": "原材料", "purchase_price": 32.0}, h)["id"]
@@ -504,3 +506,32 @@ class TestInventoryV2:
         assert resp.status_code == 400, "已提交盘点单不可修改"
         resp = client.delete(f"/api/inventory/stocktakes/{st_id}", headers=h)
         assert resp.status_code == 400, "已提交盘点单不可删除"
+
+        # ===== 新增明细行（账外批次盘盈） =====
+        st4 = api(client, "POST", "/api/inventory/stocktakes",
+                  {"warehouse_id": base["wh_rm"]}, h)
+        st4_id = st4["id"]
+        # 新增一个账外批次（台账不存在）：账面自动 0
+        add = api(client, "POST", f"/api/inventory/stocktakes/{st4_id}/items", {
+            "material_id": base["mat"], "batch_no": "EXTRA-001",
+            "actual_qty": 12, "unit_cost": 5.0,
+        }, h)
+        assert add and add["book_qty"] == 0, f"账外批次账面应为 0，实际 {add}"
+        # 重复批次 → 拒绝
+        resp = client.post(f"/api/inventory/stocktakes/{st4_id}/items", json={
+            "material_id": base["mat"], "batch_no": "EXTRA-001", "actual_qty": 1}, headers=h)
+        assert resp.status_code == 400, "同批次重复录入应被拒"
+        # 删除该行
+        resp = client.delete(f"/api/inventory/stocktakes/{st4_id}/items/{add['id']}", headers=h)
+        assert resp.status_code == 200, "草稿行应可删除"
+        # 再加回并提交 → 台账创建 + 盘盈入账
+        add2 = api(client, "POST", f"/api/inventory/stocktakes/{st4_id}/items", {
+            "material_id": base["mat"], "batch_no": "EXTRA-001",
+            "actual_qty": 12, "unit_cost": 5.0,
+        }, h)
+        api(client, "POST", f"/api/inventory/stocktakes/{st4_id}/submit", {}, h)
+        bal4 = api(client, "GET",
+                   "/api/inventory/balance?type=material&keyword=棉纱&page_size=20", None, h)
+        extra = next((r for r in bal4["items"] if r["batch_no"] == "EXTRA-001"), None)
+        assert extra and extra["quantity"] == 12, f"账外批次应盘盈入账 12，实际 {extra}"
+        assert extra["unit_cost"] == 5.0, f"账外批次成本应为 5，实际 {extra.get('unit_cost')}"

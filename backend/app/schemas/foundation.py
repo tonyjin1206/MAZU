@@ -362,6 +362,16 @@ class ExchangeRateOut(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @model_validator(mode="before")
+    @classmethod
+    def fill_currency_code(cls, data):
+        """从 relationship 填充币种代码（register_crud 列表只 model_validate ORM 对象）"""
+        if not isinstance(data, dict):
+            currency = getattr(data, "currency", None)
+            if currency is not None:
+                data.currency_code = currency.code
+        return data
+
 
 # ==================== HS编码 ====================
 

@@ -517,6 +517,11 @@ def create_receipt(
     if order.status in ("待审核", "已关闭", "已取消"):
         raise HTTPException(400, f"订单状态「{order.status}」不允许入库")
 
+    # 仓库参照校验：必须存在于仓库档案且启用
+    wh = db.query(Warehouse).filter(Warehouse.id == data.warehouse_id, Warehouse.is_active == 1).first()
+    if not wh:
+        raise HTTPException(400, f"仓库档案不存在或已停用 (id={data.warehouse_id})，请先在「基础档案-仓库管理」维护")
+
     # 生成入库单号
     from app.utils.batch_no import generate_doc_no
     from app.models.purchase import PurchaseReceipt

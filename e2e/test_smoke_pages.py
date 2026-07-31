@@ -17,6 +17,8 @@ PAGES = [
     "/foundation/suppliers",
     "/foundation/hs-codes",
     "/foundation/processes",
+    "/foundation/warehouses",
+    "/foundation/currencies",
     # 采购
     "/purchase/requisitions",
     "/purchase/orders",

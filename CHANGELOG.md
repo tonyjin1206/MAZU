@@ -1,5 +1,33 @@
 # Changelog
 
+## v2.5.0 (2026-07-31)
+
+### 汇率自动获取与维护
+- **币种/汇率独立菜单**：基础档案 → 币种/汇率（币种档案管理 + 汇率维护）
+- **汇率自动获取（国内源）**：腾讯财经 `qt.gtimg.cn`（无 key、国内可达），手动按钮或**每日 09:00 定时任务**拉取全部非本位币种兑本位币汇率入库（`source=API`）；同币种+同日 upsert；JPY/KRW 腾讯无交叉盘 → 失败列表提示，手动维护兜底
+- **汇率手工维护**：选币种 → 填兑本位币汇率 → 生效日期；同币种+同日查重；列表显示「1 USD = 7.10 CNY」语义；编辑/删除
+- **汇率列表币种名称修复**：`ExchangeRateOut` 从 relationship 填充 `currency_code`（此前 register_crud 返回 null 导致前端币种列空白）
+- **接口**：`GET /exchange-rates/latest`（业务单据换算用）、`POST /exchange-rates/fetch`（手动触发拉取）
+
+### 本地 bug 收尾
+- **仓库档案编辑 422**：`register_crud` 无 update_schema 时 PUT body 用 `dict = Body(...)` 兜底（一处修复覆盖 Warehouse/Department/Employee/Currency/TradeTerm 五实体）+ 回归测试
+- **出入库仓库参照校验**：采购入库/完工入库/销售出库/盘点建单校验 `warehouse_id` 必须存在于仓库档案且启用（否则 400）—— 前端选择器与后端校验闭环
+- **权限种子修复**：`_seed_rbac` admin 补权限前 `db.flush()`（SessionLocal `autoflush=False` 导致每次启动 admin 权限翻倍的 bug）+ 角色关联去重（production 前缀与 inventory 硬编码重叠）
+- **测试权限断言动态化**：admin 权限数 = 全量码数动态对比，不再硬编码（加权限码不再连锁改断言）
+
+### 盘点管理独立菜单 + 明细增强
+- 盘点管理独立权限码 `menu:inventory:stocktake` + 独立页面（不再做页签）
+- 盘点明细可新增/编辑/删除物料行（含**账外批次**：提交时自动创建台账行，成本用录入值）；同批次重复录入 400；已提交不可改/删
+- 仓库档案前端维护界面（Warehouses.vue + `menu:warehouses` 权限闭环）
+
+### 测试数据基建 v2（重构）
+- **统一构建器**：`tests/test_data.py` 的 `build_foundation()` 通过 API 创建全套真实档案（2仓/2供应商/2客户/4物料/2产品/4工序 + BOM/工艺路线），共享 fixture `foundation`（session 级）；**禁止各测试文件自建档案**（消除 RM990001/WH-BND/WH-BOT 等垃圾数据）
+- **权限种子单一数据源**：conftest 复用 `app/main.py` 的 `_seed_rbac`（删除双份定义，杜绝漂移）
+- **textile 全流程 v4**：3 订单 → **1 订单**（单客户×单产品走完全流程 + 盘点/红冲/退货/拆类型/成本自动结转/仓库参照校验）
+- **状态机矩阵文档池**：按 (单据, 动作) 复用文档，`_set_status` 重置状态 —— 单据量 112 → ~16，覆盖度不变
+- **数据量**：跑完全量测试库内单据 97 → 22（-78%）；仓库档案全部字段完整（含 address/manager）
+- **README 测试数据规范**：新测试必须复用/扩展统一构建器，禁止另建档案
+
 ## v2.4.0 (2026-07-31)
 
 ### 库存收发存 v2（重构）

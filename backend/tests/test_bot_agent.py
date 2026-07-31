@@ -36,7 +36,8 @@ def base_data(client, admin_token):
     cny = client.post(f"{BASE}/foundation/currencies", json={
         "code": "CNY-BOT", "name": "人民币-BOT", "symbol": "¥", "is_base": 1}, headers=h).json()["id"]
     wh = client.post(f"{BASE}/foundation/warehouses", json={
-        "code": "WH-BOT", "name": "主仓-BOT", "wh_type": "原料仓"}, headers=h).json()["id"]
+        "code": "WH-BOT", "name": "主仓-BOT", "wh_type": "原料仓",
+        "address": "浙江省绍兴市柯桥区", "manager": "BOT测试员"}, headers=h).json()["id"]
     sup = client.post(f"{BASE}/foundation/suppliers", json={
         "name": "BOT测试供应商", "contact_person": "王", "phone": "13800000000",
         "tax_id": "91330100BOT", "address": "杭州", "supplier_type": "供应商"}, headers=h).json()["id"]

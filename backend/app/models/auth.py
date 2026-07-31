@@ -89,13 +89,29 @@ class User(Base):
 
     @property
     def permission_codes(self) -> set:
-        """获取用户有效权限码集合"""
+        """获取用户有效权限码集合（admin 角色=全量权限，动态查询不依赖快照）"""
         if not self.role:
             return set()
+        if self.role.code == "admin":
+            from sqlalchemy.orm import object_session
+            session = object_session(self)
+            if session is None:
+                from app.database import SessionLocal
+                session = SessionLocal()
+                close = True
+            else:
+                close = False
+            try:
+                return {p.code for p in session.query(Permission).all()}
+            finally:
+                if close:
+                    session.close()
         return {rp.permission_code for rp in self.role.role_permissions}
 
     def has_permission(self, code: str) -> bool:
-        """检查用户是否有指定权限"""
+        """检查用户是否有指定权限（管理员永远全权限）"""
+        if self.role and self.role.code == "admin":
+            return True
         return code in self.permission_codes
 
     def __repr__(self):

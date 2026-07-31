@@ -1,6 +1,8 @@
 """FastAPI 应用工厂"""
 
+import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,6 +28,8 @@ def _seed_rbac(db):
         {"code": "menu:bom", "name": "BOM管理", "module": "基础档案", "description": ""},
         {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
         {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
+        {"code": "menu:warehouses", "name": "仓库管理", "module": "基础档案", "description": ""},
+        {"code": "menu:currencies", "name": "币种/汇率", "module": "基础档案", "description": ""},
         # 采购管理
         {"code": "menu:purchase:requisitions", "name": "采购需求", "module": "采购管理", "description": ""},
         {"code": "menu:purchase:orders", "name": "采购订单", "module": "采购管理", "description": ""},
@@ -48,6 +52,7 @@ def _seed_rbac(db):
         {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
         # 库存管理
         {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},
+        {"code": "menu:inventory:stocktake", "name": "盘点管理", "module": "库存管理", "description": ""},
         # 退税管理
         {"code": "menu:tax", "name": "退税申报", "module": "退税管理", "description": ""},
         # 系统管理
@@ -70,7 +75,8 @@ def _seed_rbac(db):
     foundation = [c for c in all_codes if c.startswith("menu:customers") or c.startswith("menu:suppliers")
                   or c.startswith("menu:materials") or c.startswith("menu:products")
                   or c.startswith("menu:bom") or c.startswith("menu:processes")
-                  or c.startswith("menu:hs-codes")]
+                  or c.startswith("menu:hs-codes") or c.startswith("menu:warehouses")
+                  or c.startswith("menu:currencies")]
     purchase_all = [c for c in all_codes if c.startswith("menu:purchase:")]
     purchase_base = [c for c in purchase_all if not c.endswith(("invoices", "ap", "payments"))]
     purchase_finance = [c for c in purchase_all if c.endswith(("invoices", "ap", "payments"))]
@@ -78,7 +84,7 @@ def _seed_rbac(db):
     sales_base = [c for c in sales_all if not c.endswith(("invoices", "ar", "collections"))]
     sales_finance = [c for c in sales_all if c.endswith(("invoices", "ar", "collections"))]
     production = [c for c in all_codes if c.startswith("menu:production:")]
-    inventory = ["menu:inventory", "menu:production:batch"]
+    inventory = ["menu:inventory", "menu:inventory:stocktake", "menu:production:batch"]
     tax = ["menu:tax"]
     sys_menu = [c for c in all_codes if c.startswith("menu:system:")]
 
@@ -110,12 +116,21 @@ def _seed_rbac(db):
                         description=rd["description"], is_system=rd["is_system"])
             db.add(role)
             db.flush()
-            # 关联权限
-            for pc in rd["permissions"]:
+            # 关联权限（去重：production 前缀列表与 inventory 硬编码的 menu:production:batch 重叠）
+            for pc in dict.fromkeys(rd["permissions"]):
                 perm = db.query(Permission).filter(Permission.code == pc).first()
                 if perm:
                     db.add(RolePermission(role_id=role.id, permission_code=pc))
         if rd["code"] == "admin":
+            # 管理员 = 全量权限：每次启动补齐缺失关联（只加不删，防快照过期）
+            db.flush()  # 先落库新建角色的关联（SessionLocal autoflush=False，否则 exists 查不到会重复插入）
+            for pc in all_codes:
+                exists = db.query(RolePermission).filter(
+                    RolePermission.role_id == role.id,
+                    RolePermission.permission_code == pc,
+                ).first()
+                if not exists:
+                    db.add(RolePermission(role_id=role.id, permission_code=pc))
             admin_role = role
 
     # ====== 默认管理员用户 ======
@@ -136,6 +151,33 @@ def _seed_rbac(db):
     print("✅ RBAC 种子数据已初始化")
 
 
+# ====== 常用币种种子数据 ======
+
+BASE_CURRENCIES = [
+    {"code": "CNY", "name": "人民币", "symbol": "¥", "is_base": 1},
+    {"code": "USD", "name": "美元", "symbol": "$", "is_base": 0},
+    {"code": "EUR", "name": "欧元", "symbol": "€", "is_base": 0},
+    {"code": "JPY", "name": "日元", "symbol": "¥", "is_base": 0},
+    {"code": "GBP", "name": "英镑", "symbol": "£", "is_base": 0},
+    {"code": "HKD", "name": "港币", "symbol": "HK$", "is_base": 0},
+    {"code": "AUD", "name": "澳元", "symbol": "A$", "is_base": 0},
+]
+
+
+def _seed_currencies(db):
+    """预置常用币种（幂等：code 已存在则跳过）"""
+    from app.models.foundation import Currency
+    added = 0
+    for c in BASE_CURRENCIES:
+        existing = db.query(Currency).filter(Currency.code == c["code"]).first()
+        if not existing:
+            db.add(Currency(**c))
+            added += 1
+    if added:
+        db.commit()
+        print(f"✅ 已预置 {added} 个常用币种")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期"""
@@ -144,9 +186,36 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         _seed_rbac(db)
+        _seed_currencies(db)
     finally:
         db.close()
+    # 每日汇率定时任务（每天 09:00 从腾讯财经拉取一次，失败静默次日重试）
+    task = asyncio.create_task(_daily_rate_task())
     yield
+    task.cancel()
+
+
+async def _daily_rate_task():
+    """每天 09:00 拉取汇率入库（国内源腾讯财经）；任务随进程生命周期运行"""
+    import logging
+    logger = logging.getLogger("daily_rate")
+    while True:
+        now = datetime.now()
+        next_run = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        await asyncio.sleep(max(1.0, (next_run - now).total_seconds()))
+        try:
+            from app.routers.foundation import fetch_latest_rates
+            from app.database import SessionLocal as _SL
+            _db = _SL()
+            try:
+                result = fetch_latest_rates(_db, current_user=None)
+                logger.info(f"每日汇率更新: {result.get('message', '')}")
+            finally:
+                _db.close()
+        except Exception as e:
+            logger.error(f"每日汇率更新失败: {e}")
 
 
 def create_app() -> FastAPI:

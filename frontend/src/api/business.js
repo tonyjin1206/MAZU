@@ -186,6 +186,8 @@ export const inventoryApi = {
     get: (id) => request.get(`/inventory/stocktakes/${id}`),
     create: (data) => request.post('/inventory/stocktakes', data),
     updateItem: (stocktakeId, itemId, data) => request.put(`/inventory/stocktakes/${stocktakeId}/items/${itemId}`, data),
+    addItem: (stocktakeId, data) => request.post(`/inventory/stocktakes/${stocktakeId}/items`, data),
+    removeItem: (stocktakeId, itemId) => request.delete(`/inventory/stocktakes/${stocktakeId}/items/${itemId}`),
     submit: (id) => request.post(`/inventory/stocktakes/${id}/submit`),
     remove: (id) => request.delete(`/inventory/stocktakes/${id}`),
   },

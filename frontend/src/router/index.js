@@ -18,6 +18,8 @@ const routes = [
       { path: 'foundation/suppliers', name: 'Suppliers', component: () => import('../views/foundation/Suppliers.vue'), meta: { perm: 'menu:suppliers' } },
       { path: 'foundation/hs-codes', name: 'HsCodes', component: () => import('../views/foundation/HsCodes.vue'), meta: { perm: 'menu:hs-codes' } },
       { path: 'foundation/processes', name: 'Processes', component: () => import('../views/foundation/Processes.vue'), meta: { perm: 'menu:processes' } },
+      { path: 'foundation/warehouses', name: 'Warehouses', component: () => import('../views/foundation/Warehouses.vue'), meta: { perm: 'menu:warehouses' } },
+      { path: 'foundation/currencies', name: 'CurrencyRates', component: () => import('../views/foundation/CurrencyRates.vue'), meta: { perm: 'menu:currencies' } },
 
       // 采购管理
       { path: 'purchase/requisitions', name: 'PurchaseRequisitions', component: () => import('../views/purchase/PurchaseRequisitions.vue'), meta: { perm: 'menu:purchase:requisitions' } },
@@ -44,6 +46,7 @@ const routes = [
 
       // 库存管理
       { path: 'inventory/management', name: 'InventoryManagement', component: () => import('../views/inventory/InventoryManagement.vue'), meta: { perm: 'menu:inventory' } },
+      { path: 'inventory/stocktakes', name: 'StocktakeManagement', component: () => import('../views/inventory/StocktakeManagement.vue'), meta: { perm: 'menu:inventory:stocktake' } },
 
       // 退税管理
       { path: 'tax-refund/declarations', name: 'TaxRefund', component: () => import('../views/taxRefund/TaxRefundDeclarations.vue'), meta: { perm: 'menu:tax' } },

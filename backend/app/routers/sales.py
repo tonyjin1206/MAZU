@@ -15,7 +15,7 @@ def _parse_date(val):
         return None
 from app.database import get_db
 from app.models.auth import User
-from app.models.foundation import Customer, Product, Currency, HsCode, TradeTerm
+from app.models.foundation import Customer, Product, Currency, HsCode, TradeTerm, Warehouse
 from app.models.sales import (
     SalesQuote, SalesOrder, SalesOrderItem,
     SalesDelivery, CustomsDeclaration,
@@ -481,12 +481,18 @@ def create_delivery(data: dict, db: Session = Depends(get_db), current_user: Use
     if not inventory or inventory.quantity < qty_to_ship:
         raise HTTPException(400, f"批次 {data['batch_no']} 库存不足")
 
+    # 仓库参照校验：必须存在于仓库档案且启用（出库仓 = 发货指定或台账原仓）
+    ship_wh_id = data.get("warehouse_id") or inventory.warehouse_id
+    wh = db.query(Warehouse).filter(Warehouse.id == ship_wh_id, Warehouse.is_active == 1).first()
+    if not wh:
+        raise HTTPException(400, f"仓库档案不存在或已停用 (id={ship_wh_id})，请先在「基础档案-仓库管理」维护")
+
     delivery = SalesDelivery(
         delivery_no=delivery_no,
         order_id=order.id,
         order_item_id=order_item.id,
         product_id=product_id,
-        warehouse_id=data.get("warehouse_id") or inventory.warehouse_id,
+        warehouse_id=ship_wh_id,
         batch_no=data["batch_no"],
         quantity=qty_to_ship,
         unit_price=order_item.unit_price,

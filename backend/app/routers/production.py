@@ -933,6 +933,11 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     if qty <= 0:
         raise HTTPException(400, "入库数量必须大于 0")
 
+    # 仓库参照校验：必须存在于仓库档案且启用
+    wh = db.query(Warehouse).filter(Warehouse.id == warehouse_id, Warehouse.is_active == 1).first()
+    if not wh:
+        raise HTTPException(400, f"仓库档案不存在或已停用 (id={warehouse_id})，请先在「基础档案-仓库管理」维护")
+
     # 成本：显式传入(非空)则用传入值；否则按 剩余投入 × 本次占比 自动结转（可改）
     remaining_qty = max(0, (prod.quantity or 0) - (prod.received_qty or 0))
     ratio = min(1.0, qty / remaining_qty) if remaining_qty > 0 else 1.0

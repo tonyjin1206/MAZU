@@ -42,6 +42,7 @@ register_crud(router, Department,     DepartmentCreate, None,             Depart
 register_crud(router, Employee,       EmployeeCreate,   None,             EmployeeOut,   "employees",   "基础档案-人员",   search_fields=["code", "name"])
 register_crud(router, Warehouse,      WarehouseCreate,  None,             WarehouseOut,  "warehouses",  "基础档案-仓库",   search_fields=["code", "name"])
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
+register_crud(router, ExchangeRate,   ExchangeRateCreate, None,           ExchangeRateOut, "exchange-rates", "基础档案-汇率", search_fields=["currency_id"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])
 
@@ -525,6 +526,57 @@ def get_latest_rates(db: Session = Depends(get_db), current_user: User = Depends
             "rate_date": rate.rate_date.isoformat(),
         })
     return result
+
+
+@router.post("/exchange-rates/fetch", tags=["基础档案-汇率"])
+def fetch_latest_rates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """手动触发：从腾讯财经（国内源）拉取最新汇率并入库
+
+    拉取全部非本位币种兑本位币汇率；同币种+同日已存在 → 更新（source=API），否则新建。
+    """
+    from datetime import date as _date
+    from app.services.exchange_rate_fetcher import fetch_rates, convert_to_base
+
+    currencies = db.query(Currency).filter(Currency.is_active == 1).all()
+    base = next((c for c in currencies if c.is_base == 1), None)
+    codes = [c.code for c in currencies if not (base and c.id == base.id)]
+    if not codes:
+        raise HTTPException(400, "没有可拉取的币种（请先维护币种档案）")
+
+    rates_cny = fetch_rates(codes)
+    if not rates_cny:
+        raise HTTPException(502, "汇率获取失败：腾讯财经不可达或返回为空，请检查网络后重试")
+
+    rates = convert_to_base(rates_cny, base.code if base else "CNY")
+    today = _date.today()
+    updated, created, failed = 0, 0, []
+    for c in currencies:
+        if base and c.id == base.id:
+            continue
+        rate_val = rates.get(c.code)
+        if rate_val is None:
+            failed.append(c.code)
+            continue
+        row = db.query(ExchangeRate).filter(
+            ExchangeRate.currency_id == c.id,
+            ExchangeRate.rate_date == today,
+        ).first()
+        if row:
+            row.rate = rate_val
+            row.source = "API"
+            updated += 1
+        else:
+            db.add(ExchangeRate(currency_id=c.id, rate=rate_val,
+                                rate_date=today, source="API"))
+            created += 1
+    db.commit()
+    return {
+        "message": f"汇率更新完成：新增 {created}，更新 {updated}，失败 {len(failed)}",
+        "created": created, "updated": updated,
+        "failed": failed, "base": base.code if base else "CNY",
+        "rate_date": today.isoformat(),
+        "rates": {c.code: rates.get(c.code) for c in currencies if not (base and c.id == base.id)},
+    }
 
 
 @router.get("/processes-select", tags=["基础档案-选择器"])

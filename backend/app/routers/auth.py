@@ -170,6 +170,8 @@ PERMISSION_DEFS = [
     {"code": "menu:bom", "name": "BOM管理", "module": "基础档案", "description": ""},
     {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
     {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
+    {"code": "menu:warehouses", "name": "仓库管理", "module": "基础档案", "description": ""},
+    {"code": "menu:currencies", "name": "币种/汇率", "module": "基础档案", "description": ""},
     # 采购管理
     {"code": "menu:purchase:requisitions", "name": "采购需求", "module": "采购管理", "description": ""},
     {"code": "menu:purchase:orders", "name": "采购订单", "module": "采购管理", "description": ""},

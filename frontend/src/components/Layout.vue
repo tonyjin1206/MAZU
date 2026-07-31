@@ -45,7 +45,7 @@
         </el-sub-menu>
 
         <!-- 1. 基础档案 -->
-        <el-sub-menu index="foundation" v-if="hasPerm('menu:customers') || hasPerm('menu:suppliers') || hasPerm('menu:materials') || hasPerm('menu:products') || hasPerm('menu:bom') || hasPerm('menu:processes') || hasPerm('menu:hs-codes')">
+        <el-sub-menu index="foundation" v-if="hasPerm('menu:customers') || hasPerm('menu:suppliers') || hasPerm('menu:materials') || hasPerm('menu:products') || hasPerm('menu:bom') || hasPerm('menu:processes') || hasPerm('menu:hs-codes') || hasPerm('menu:warehouses') || hasPerm('menu:currencies')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-layer-group"/></svg>
             <span>基础档案</span>
@@ -57,6 +57,8 @@
           <el-menu-item index="/foundation/bom" v-if="hasPerm('menu:bom')">BOM管理</el-menu-item>
           <el-menu-item index="/foundation/processes" v-if="hasPerm('menu:processes')">工序管理</el-menu-item>
           <el-menu-item index="/foundation/hs-codes" v-if="hasPerm('menu:hs-codes')">HS编码/退税率</el-menu-item>
+          <el-menu-item index="/foundation/warehouses" v-if="hasPerm('menu:warehouses')">仓库管理</el-menu-item>
+          <el-menu-item index="/foundation/currencies" v-if="hasPerm('menu:currencies')">币种/汇率</el-menu-item>
         </el-sub-menu>
 
         <!-- 2. 销售管理 -->
@@ -99,12 +101,13 @@
         </el-sub-menu>
 
         <!-- 5. 库存管理 -->
-        <el-sub-menu index="inventory" v-if="hasPerm('menu:inventory') || hasPerm('menu:production:batch')">
+        <el-sub-menu index="inventory" v-if="hasPerm('menu:inventory') || hasPerm('menu:inventory:stocktake') || hasPerm('menu:production:batch')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-database-set"/></svg>
             <span>库存管理</span>
           </template>
           <el-menu-item index="/inventory/management" v-if="hasPerm('menu:inventory')">库存收发存</el-menu-item>
+          <el-menu-item index="/inventory/stocktakes" v-if="hasPerm('menu:inventory:stocktake')">盘点管理</el-menu-item>
           <el-menu-item index="/production/inventory" v-if="hasPerm('menu:production:batch')">批次追溯</el-menu-item>
         </el-sub-menu>
 
@@ -174,6 +177,8 @@ const pageTitle = computed(() => {
     '/foundation/customers': '客户管理',
     '/foundation/suppliers': '供应商管理',
     '/foundation/hs-codes': 'HS编码/退税率管理',
+    '/foundation/warehouses': '仓库管理',
+    '/foundation/currencies': '币种/汇率',
     '/foundation/processes': '工序管理',
     '/purchase/requisitions': '采购需求',
     '/purchase/orders': '采购订单',
@@ -192,6 +197,7 @@ const pageTitle = computed(() => {
     '/production/invoices': '加工费发票',
     '/production/inventory': '批次库存/追溯',
     '/inventory/management': '库存管理',
+    '/inventory/stocktakes': '盘点管理',
     '/tax-refund/declarations': '退税申报',
     '/system/users': '用户管理',
     '/system/roles': '角色管理',

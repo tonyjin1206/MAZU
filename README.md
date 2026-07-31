@@ -112,7 +112,7 @@ AI 助手 → 右下角悬浮球随时对话 / 档案与库存查询 / 创建与
 ## 自动化测试
 
 ```bash
-# 后端全套（契约/状态机/边界/全流程/收发存v2，212 个用例）
+# 后端全套（契约/状态机/边界/全流程/收发存v2，213 个用例）
 cd backend && ERP_DEV=1 python -m pytest tests/ -q
 
 # 架构检查（废弃表/散写 request/弃用 API）
@@ -123,3 +123,24 @@ cd e2e && ERP_DEV=1 python -m pytest -q
 
 # CI：.github/workflows/ci.yml 三 job（后端 + 前端构建 + E2E）
 ```
+
+### 测试数据规范（重要，新增测试必须遵守）
+
+**统一数据构建器：`backend/tests/test_data.py`**
+
+1. **所有测试共用一套基础档案构建**：`build_foundation(client, headers)` 通过 API 创建全套真实档案
+   （2 仓库 / 2 供应商 / 2 客户 / 4 物料 / 2 产品 / 4 工序 + BOM + 工艺路线），
+   共享 fixture 为 `foundation`（conftest.py，session 级）。
+2. **禁止在各自测试文件里另建基础档案**（历史教训：各文件独立建仓库导致
+   RM990001 / WH-BND / WH-BOT 等垃圾数据堆积、仓库字段不全、数据量失控）。
+   新测试需要新档案 → 在 `test_data.py` 的 `build_foundation` 上扩展。
+3. **仓库档案必须字段完整**（code/name/wh_type/address/manager）—— 后端出入库/盘点
+   接口会对 `warehouse_id` 做仓库档案参照校验（不存在或停用 → 400），
+   测试数据必须走真实档案创建，禁止直接灌 SQL。
+4. **数据少而真实**：纺织真实业务数据（棉纱/坯布/印染），单个流程测试 1~2 个订单，
+   不搞批量刷数。
+5. 单元式测试（如库存 v2 的 6 个场景）允许独立小数据集（保证隔离），
+   但必须复用 `test_data.py` 的真实数据风格与完整字段，禁止自造垃圾 code。
+
+**测试库注意**：pytest 复用 `backend/data/erp.db`（同一数据库），每次运行前自动清空业务表并重建种子。
+跑完测试后如需干净开发库，执行 `python scripts/reset_local_db.py`（白名单保留系统表）。

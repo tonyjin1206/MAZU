@@ -20,7 +20,8 @@ def base_data(client, admin_token):
     cny = client.post(f"{BASE}/foundation/currencies", json={
         "code": "CNY-BND", "name": "人民币-边界", "symbol": "¥", "is_base": 1}, headers=h).json()["id"]
     wh = client.post(f"{BASE}/foundation/warehouses", json={
-        "code": "WH-BND", "name": "主仓-边界", "wh_type": "原料仓"}, headers=h).json()["id"]
+        "code": "WH-BND", "name": "主仓-边界", "wh_type": "原料仓",
+        "address": "浙江省绍兴市柯桥区", "manager": "边界测试员"}, headers=h).json()["id"]
     sup = client.post(f"{BASE}/foundation/suppliers", json={
         "name": "边界供应商", "contact_person": "王", "phone": "13800000000",
         "tax_id": "91330100BND", "address": "杭州", "supplier_type": "供应商"}, headers=h).json()["id"]
@@ -281,3 +282,38 @@ def test_rbac_low_privilege_blocked(client, admin_token):
     # 正常权限内的接口可用（不误伤）
     code, _ = _call(client, "GET", f"{BASE}/inventory/balance", None, keeper_h)
     assert code < 500, f"库管员访问库存应可用，实际 {code}"
+
+
+# ==================== 无 Update schema 实体的编辑回归 ====================
+
+def test_crud_update_without_update_schema(client, auth_headers):
+    """无 Update schema 的实体（Warehouse/Department/Currency/TradeTerm/Employee）
+    编辑接口必须接受 body 且 200（回归：base_crud update_schema=None 曾导致
+    PUT 422 "missing query data" —— data 被 FastAPI 当成 query 参数）"""
+    h = auth_headers
+    # 仓库：创建 → 编辑 → 校验字段更新
+    wh = client.post(f"{BASE}/foundation/warehouses", json={
+        "code": "WH-UPD1", "name": "编辑回归仓", "wh_type": "原料仓"}, headers=h)
+    assert wh.status_code < 400, wh.text
+    wh_id = wh.json()["id"]
+    resp = client.put(f"{BASE}/foundation/warehouses/{wh_id}", json={
+        "name": "编辑回归仓改", "address": "杭州", "manager": "张三"}, headers=h)
+    assert resp.status_code == 200, f"仓库编辑应 200，实际 {resp.status_code}: {resp.text[:200]}"
+    got = client.get(f"{BASE}/foundation/warehouses/{wh_id}", headers=h).json()
+    assert got["name"] == "编辑回归仓改" and got["address"] == "杭州" and got["manager"] == "张三", got
+
+    # 币种：创建 → 编辑
+    cny = client.post(f"{BASE}/foundation/currencies", json={
+        "code": "CUPD1", "name": "编辑回归币", "symbol": "$", "is_base": 0}, headers=h)
+    assert cny.status_code < 400, cny.text
+    resp = client.put(f"{BASE}/foundation/currencies/{cny.json()['id']}", json={
+        "name": "编辑回归币改"}, headers=h)
+    assert resp.status_code == 200, f"币种编辑应 200，实际 {resp.status_code}: {resp.text[:200]}"
+
+    # 部门：创建 → 编辑
+    dept = client.post(f"{BASE}/foundation/departments", json={
+        "code": "DUPD1", "name": "编辑回归部"}, headers=h)
+    assert dept.status_code < 400, dept.text
+    resp = client.put(f"{BASE}/foundation/departments/{dept.json()['id']}", json={
+        "name": "编辑回归部改"}, headers=h)
+    assert resp.status_code == 200, f"部门编辑应 200，实际 {resp.status_code}: {resp.text[:200]}"

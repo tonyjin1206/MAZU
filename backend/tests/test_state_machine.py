@@ -28,31 +28,17 @@ TABLE_MAP = {
 # ==================== 基础数据 ====================
 
 @pytest.fixture(scope="module")
-def base_data(client, admin_token):
-    """最小基础数据（模块级只建一次）：货币/仓库/供应商/客户/物料/产品"""
-    h = {"Authorization": f"Bearer {admin_token}"}
-    cny = client.post(f"{BASE}/foundation/currencies", json={
-        "code": "CNY-SM", "name": "人民币-状态机", "symbol": "¥", "is_base": 1}, headers=h).json()["id"]
-    wh = client.post(f"{BASE}/foundation/warehouses", json={
-        "code": "WH-SM", "name": "主仓-状态机", "wh_type": "原料仓"}, headers=h).json()["id"]
-    sup_resp = client.post(f"{BASE}/foundation/suppliers", json={
-        "name": "测试供应商", "contact_person": "王", "phone": "13800000000",
-        "tax_id": "91330100TEST", "address": "杭州", "supplier_type": "供应商"}, headers=h)
-    assert sup_resp.status_code < 400, f"suppliers 创建失败: {sup_resp.status_code} {sup_resp.text[:300]}"
-    sup = sup_resp.json()["id"]
-    cust = client.post(f"{BASE}/foundation/customers", json={
-        "name_cn": "测试客户", "country": "中国", "contact_person": "李",
-        "phone": "13900000000", "tax_id": "91330000TEST", "address": "上海"}, headers=h).json()["id"]
-    mat = client.post(f"{BASE}/foundation/materials", json={
-        "name": "测试材料", "spec": "A级", "unit": "KG",
-        "category": "原材料", "purchase_price": 10}, headers=h).json()["id"]
-    prod = client.post(f"{BASE}/foundation/products", json={
-        "name_cn": "测试产品", "spec": "标准", "unit": "米",
-        "sale_price": 50}, headers=h).json()["id"]
-    proc = client.post(f"{BASE}/foundation/processes", json={
-        "code": "P1", "name": "测试工序", "unit_price": 1}, headers=h).json()["id"]
-    return {"cny": cny, "wh": wh, "sup": sup, "cust": cust,
-            "mat": mat, "prod": prod, "proc": proc}
+def base_data(foundation):
+    """基础数据：复用共享 foundation（tests/test_data.py 统一构建器），不再自建档案"""
+    return {
+        "cny": foundation["cny"]["id"],
+        "wh": foundation["wh_rm"],
+        "sup": foundation["sup"],
+        "cust": foundation["cust"][0],
+        "mat": foundation["mats"]["精梳棉纱32S"],
+        "prod": foundation["prods"]["纯棉坯布"]["id"],
+        "proc": foundation["procs"]["整经"],
+    }
 
 
 def _set_status(doc_type: str, doc_id: int, status: str):
@@ -174,8 +160,22 @@ def test_pr_state_machine(client, auth_headers, base_data, action, status):
                 _make_pr)
 
 
+# 文档池：按 (doc_type, action) 复用同一张单据（每个用例 _set_status 重置状态）
+# 单据量从 状态×动作 全量组合 降到 动作数（MO 60→6、PO 25→5、SO 21→3、PR 6→2）
+_doc_pool = {}
+
+
+def _get_doc(client, h, base, doc_type, action, maker):
+    key = (doc_type, action)
+    doc_id = _doc_pool.get(key)
+    if doc_id is None:
+        doc_id = maker(client, h, base)
+        _doc_pool[key] = doc_id
+    return doc_id
+
+
 def _run_matrix(client, h, base, doc_type, action, status, rule, maker):
-    doc_id = maker(client, h, base)
+    doc_id = _get_doc(client, h, base, doc_type, action, maker)
     _set_status(doc_type, doc_id, status)
 
     # MO 派产要求先维护工艺路线
@@ -244,6 +244,9 @@ def _run_matrix(client, h, base, doc_type, action, status, rule, maker):
         assert resp.status_code < 400, (
             f"[{doc_type}.{action}] 状态「{status}」应允许但被拒: "
             f"{resp.status_code} {resp.text[:200]}")
+        if action == "delete":
+            # 删除成功 → 文档销毁，从池中移除（后续用例重建）
+            _doc_pool.pop((doc_type, action), None)
     else:
         assert 400 <= resp.status_code < 500, (
             f"[{doc_type}.{action}] 状态「{status}」应拒绝但返回 {resp.status_code}: {resp.text[:200]}")

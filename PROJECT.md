@@ -37,6 +37,13 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/processes/{id}` | PUT/DELETE | 修改/删除工序 |
 | `/hscodes` | GET/POST | HS编码列表 / 新增 |
 | `/hscodes/{id}` | PUT/DELETE | 修改/删除HS编码 |
+| `/warehouses` | GET/POST | 仓库列表 / 新增 |
+| `/warehouses/{id}` | GET/PUT/DELETE | 仓库详情 / 修改 / 删除 |
+| `/currencies` | GET/POST | 币种列表 / 新增 |
+| `/currencies/{id}` | GET/PUT/DELETE | 币种详情 / 修改 / 删除 |
+| `/exchange-rates` | GET/POST | 汇率列表 / 新增（兑本位币）|
+| `/exchange-rates/{id}` | GET/DELETE | 汇率详情 / 删除 |
+| `/exchange-rates/latest` | GET | 各币种最新汇率（业务单据换算用）|
 
 ---
 

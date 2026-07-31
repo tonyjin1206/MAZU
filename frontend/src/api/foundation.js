@@ -58,7 +58,10 @@ function crudApi(prefix, methods = ['list', 'get', 'create', 'update', 'delete',
     select: (keyword) => request.get(`/foundation/${prefix}-select`, { params: { keyword } }),
   }
   const obj = {}
-  for (const m of methods) obj[m] = map[m]
+  for (const m of methods) {
+    obj[m] = map[m]
+    if (m === 'delete') obj.remove = map.delete  // 别名兼容（历史页面用 remove 调用）
+  }
   return obj
 }
 
@@ -72,6 +75,8 @@ export const foundationApi = {
   outsourcers: crudApi('outsourcers', ['list', 'select']),
   warehouses: crudApi('warehouses'),
   currencies: crudApi('currencies', ['list', 'get', 'create', 'update', 'delete']),
+  exchangeRates: crudApi('exchange-rates', ['list', 'create', 'update', 'delete']),
+  fetchExchangeRates: () => request.post('/foundation/exchange-rates/fetch'),
   hsCodes: crudApi('hs-codes', ['list', 'create', 'update', 'delete']),
   tradeTerms: crudApi('trade-terms', ['list', 'get', 'create', 'update', 'delete']),
 
