@@ -93,12 +93,12 @@
         </el-form-item>
         <el-form-item label="单位" prop="unit">
           <el-select v-model="form.unit" placeholder="请选择" filterable allow-create style="width: 100%">
-            <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.key" />
+            <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="类别" prop="category">
           <el-select v-model="form.category" placeholder="请选择" style="width: 100%">
-            <el-option v-for="o in categoryOptions" :key="o.key" :label="o.label" :value="o.key" />
+            <el-option v-for="o in categoryOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="单价" prop="purchase_price">

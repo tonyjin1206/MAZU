@@ -66,7 +66,7 @@
         </el-form-item>
         <el-form-item label="单位" prop="unit">
           <el-select v-model="form.unit" placeholder="请选择" style="width: 100%">
-            <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.key" />
+            <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="退税率(%)" prop="refund_rate">

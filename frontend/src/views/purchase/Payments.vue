@@ -87,7 +87,7 @@
         </el-form-item>
         <el-form-item label="付款方式">
           <el-select v-model="editForm.payment_method" placeholder="请选择" style="width: 100%">
-            <el-option v-for="o in paymentMethodOptions" :key="o.key" :label="o.label" :value="o.key" />
+            <el-option v-for="o in paymentMethodOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="备注" style="width: 100%">

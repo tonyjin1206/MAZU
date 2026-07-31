@@ -24,7 +24,7 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="searchForm.supplier_type" placeholder="类型" clearable style="width: 120px">
-            <el-option v-for="o in supplierTypeOptions" :key="o.key" :label="o.label" :value="o.key" />
+            <el-option v-for="o in supplierTypeOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -136,7 +136,7 @@
         </el-form-item>
         <el-form-item label="类型" prop="supplier_type">
           <el-select v-model="form.supplier_type" style="width: 100%">
-            <el-option v-for="o in supplierTypeOptions" :key="o.key" :label="o.label" :value="o.key" />
+            <el-option v-for="o in supplierTypeOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="供货范围" prop="supply_range">

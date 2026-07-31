@@ -45,8 +45,15 @@
         <el-form-item label="显示名称" prop="param_label">
           <el-input v-model="form.param_label" placeholder="下拉框里看到的文字，如：原材料" />
         </el-form-item>
-        <el-form-item label="参数值" prop="param_key">
-          <el-input v-model="form.param_key" placeholder="存入数据的值，一般与显示名称一致" />
+        <el-form-item label="参数值">
+          <el-input :model-value="form.param_key" disabled>
+            <template #append>
+              <el-button v-if="!editId" @click="regenerateKey">重新编号</el-button>
+            </template>
+          </el-input>
+          <div style="font-size: 12px; color: #909399; line-height: 1.5; margin-top: 4px">
+            系统自动编号（01、02、03…），不用手动填。下拉选中后存入数据的是显示名称，编号仅作内部标识。
+          </div>
         </el-form-item>
         <el-form-item label="排序" prop="sort_order">
           <el-input-number v-model="form.sort_order" :min="0" :max="999" />
@@ -127,9 +134,23 @@ async function loadGroup() {
   } catch { list.value = [] } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
+function nextParamKey() {
+  // 组内下一个编号：取现有两位数字编号最大值 +1
+  let max = 0
+  for (const r of list.value) {
+    const n = parseInt(r.param_key, 10)
+    if (!isNaN(n) && n > max) max = n
+  }
+  return String(max + 1).padStart(2, '0')
+}
+
+function regenerateKey() {
+  form.param_key = nextParamKey()
+}
+
 function openCreate() {
   editId.value = null
-  Object.assign(form, { group_name: activeGroup.value || groups.value[0] || '', param_label: '', param_key: '', sort_order: (list.value.length || 0) + 1, remark: '' })
+  Object.assign(form, { group_name: activeGroup.value || groups.value[0] || '', param_label: '', param_key: nextParamKey(), sort_order: (list.value.length || 0) + 1, remark: '' })
   dialogVisible.value = true
 }
 

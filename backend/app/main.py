@@ -139,26 +139,26 @@ def _seed_params(db):
 
     defaults = [
         # 供应商类型
-        ("supplier_type", "原材料", "原材料", 1, "供应商类型"),
-        ("supplier_type", "委外", "委外", 2, "供应商类型"),
-        ("supplier_type", "辅料", "辅料", 3, "供应商类型"),
+        ("supplier_type", "01", "原材料", 1, "供应商类型"),
+        ("supplier_type", "02", "委外", 2, "供应商类型"),
+        ("supplier_type", "03", "辅料", 3, "供应商类型"),
         # 材料类别
-        ("material_category", "原材料", "原材料", 1, "原辅材料类别"),
-        ("material_category", "辅料", "辅料", 2, "原辅材料类别"),
-        ("material_category", "包装材料", "包装材料", 3, "原辅材料类别"),
+        ("material_category", "01", "原材料", 1, "原辅材料类别"),
+        ("material_category", "02", "辅料", 2, "原辅材料类别"),
+        ("material_category", "03", "包装材料", 3, "原辅材料类别"),
         # 计量单位
-        ("unit", "个", "个", 1, "计量单位"),
-        ("unit", "件", "件", 2, "计量单位"),
-        ("unit", "套", "套", 3, "计量单位"),
-        ("unit", "台", "台", 4, "计量单位"),
-        ("unit", "千克", "千克", 5, "计量单位"),
-        ("unit", "米", "米", 6, "计量单位"),
-        ("unit", "平方米", "平方米", 7, "计量单位"),
-        ("unit", "立方米", "立方米", 8, "计量单位"),
+        ("unit", "01", "个", 1, "计量单位"),
+        ("unit", "02", "件", 2, "计量单位"),
+        ("unit", "03", "套", 3, "计量单位"),
+        ("unit", "04", "台", 4, "计量单位"),
+        ("unit", "05", "千克", 5, "计量单位"),
+        ("unit", "06", "米", 6, "计量单位"),
+        ("unit", "07", "平方米", 7, "计量单位"),
+        ("unit", "08", "立方米", 8, "计量单位"),
         # 付款方式
-        ("payment_method", "银行转账", "银行转账", 1, "收付款方式"),
-        ("payment_method", "现金", "现金", 2, "收付款方式"),
-        ("payment_method", "承兑汇票", "承兑汇票", 3, "收付款方式"),
+        ("payment_method", "01", "银行转账", 1, "收付款方式"),
+        ("payment_method", "02", "现金", 2, "收付款方式"),
+        ("payment_method", "03", "承兑汇票", 3, "收付款方式"),
     ]
     for group, key, label, sort, remark in defaults:
         db.add(SystemParam(group_name=group, param_key=key, param_label=label, sort_order=sort, remark=remark))
