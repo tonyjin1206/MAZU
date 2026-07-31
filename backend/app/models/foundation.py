@@ -2,7 +2,7 @@
 
 from datetime import date
 from sqlalchemy import (
-    Column, Integer, String, Float, Date, DateTime, Text, ForeignKey, func
+    Column, Integer, String, Float, Date, DateTime, Text, ForeignKey, func, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -316,3 +316,19 @@ class CompanyContact(Base):
     phone = Column(String(32), comment="电话")
     email = Column(String(128), comment="邮箱")
     created_at = Column(DateTime, default=func.now())
+
+
+class SystemParam(Base):
+    """参数设置 — 统一维护下拉选项（供应商类型/材料类别/计量单位/付款方式等）"""
+    __tablename__ = "fd_system_param"
+    __table_args__ = (UniqueConstraint("group_name", "param_key", name="uq_param_group_key"),)
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    group_name = Column(String(32), nullable=False, index=True, comment="参数组: supplier_type/material_category/unit/payment_method")
+    param_key = Column(String(32), nullable=False, comment="参数值(存入业务表的值)")
+    param_label = Column(String(64), nullable=False, comment="显示名称(下拉里看到的文字)")
+    sort_order = Column(Integer, default=0, comment="排序(小的在前)")
+    remark = Column(String(128), comment="备注")
+    is_active = Column(Integer, default=1, comment="1=启用 0=停用")
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())

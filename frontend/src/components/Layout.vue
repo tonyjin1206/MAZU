@@ -51,6 +51,7 @@
           <el-menu-item index="/foundation/bom"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-Directory-tree"/></svg>BOM管理</el-menu-item>
           <el-menu-item index="/foundation/processes"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-switch"/></svg>工序管理</el-menu-item>
           <el-menu-item index="/foundation/hs-codes"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file-SQL"/></svg>HS编码/退税率</el-menu-item>
+          <el-menu-item index="/foundation/params"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-setting"/></svg>参数设置</el-menu-item>
         </el-sub-menu>
 
         <!-- 2. 销售管理 -->

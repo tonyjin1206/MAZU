@@ -507,3 +507,43 @@ class ProductProcessTemplateOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ==================== 参数设置 ====================
+
+class SystemParamCreate(BaseModel):
+    group_name: str
+    param_key: str
+    param_label: str
+    sort_order: int = 0
+    remark: str = ""
+
+
+class SystemParamUpdate(BaseModel):
+    param_key: str | None = None
+    param_label: str | None = None
+    sort_order: int | None = None
+    remark: str | None = None
+    is_active: int | None = None
+
+
+class SystemParamOut(BaseModel):
+    id: int
+    group_name: str
+    param_key: str
+    param_label: str
+    sort_order: int
+    remark: str = ""
+    is_active: int
+
+    class Config:
+        from_attributes = True
+
+
+class SystemParamOptionOut(BaseModel):
+    """下拉选项（只含启用项）"""
+    key: str
+    label: str
+
+    class Config:
+        from_attributes = True

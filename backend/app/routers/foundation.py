@@ -13,6 +13,7 @@ from app.models.foundation import (
     HsCode, TradeTerm,
     Company, CompanyContact,
     ProductProcess,
+    SystemParam,
 )
 from app.models.sales import (
     SalesQuote, SalesOrder, SalesDelivery, CustomsDeclaration,
@@ -40,11 +41,42 @@ from app.schemas.foundation import (
     HsCodeCreate, HsCodeUpdate, HsCodeOut,
     TradeTermCreate, TradeTermOut,
     ProductProcessTemplateItem, ProductProcessTemplateOut,
+    SystemParamCreate, SystemParamUpdate, SystemParamOut, SystemParamOptionOut,
 )
 from app.routers.base_crud import register_crud
 from app.utils.auth import get_current_user
 
 router = APIRouter()
+
+# ==================== 参数设置（专用路由，必须注册在通用 CRUD 之前）====================
+
+@router.get("/params/groups", response_model=list[str], tags=["基础档案-参数设置"])
+def list_param_groups(db: Session = Depends(get_db)):
+    """所有参数组名（按名称排序）"""
+    rows = db.query(SystemParam.group_name).distinct().order_by(SystemParam.group_name).all()
+    return [r[0] for r in rows]
+
+
+@router.get("/params/options", response_model=list[SystemParamOptionOut], tags=["基础档案-参数设置"])
+def list_param_options(group: str = Query(..., description="参数组名"), db: Session = Depends(get_db)):
+    """某参数组的启用选项（供下拉选择）"""
+    rows = (db.query(SystemParam)
+            .filter(SystemParam.group_name == group, SystemParam.is_active == 1)
+            .order_by(SystemParam.sort_order, SystemParam.id)
+            .all())
+    return [{"key": r.param_key, "label": r.param_label} for r in rows]
+
+
+@router.get("/params/group/{group_name}", response_model=dict, tags=["基础档案-参数设置"])
+def list_params_by_group(group_name: str, db: Session = Depends(get_db)):
+    """某参数组的完整列表（含停用项，供维护页）"""
+    rows = (db.query(SystemParam)
+            .filter(SystemParam.group_name == group_name)
+            .order_by(SystemParam.sort_order, SystemParam.id)
+            .all())
+    items = [SystemParamOut.model_validate(r).model_dump() for r in rows]
+    return {"total": len(items), "items": items}
+
 
 # ==================== 注册所有基础档案 CRUD ====================
 
@@ -55,6 +87,18 @@ register_crud(router, Warehouse,      WarehouseCreate,  None,             Wareho
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])
+register_crud(router, SystemParam,    SystemParamCreate, SystemParamUpdate, SystemParamOut, "params",      "基础档案-参数设置", search_fields=["group_name", "param_key", "param_label"])
+
+
+@router.delete("/params/{item_id}/hard", tags=["基础档案-参数设置"])
+def hard_delete_param(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """物理删除参数（通用 CRUD 是软删除，会与唯一约束冲突导致无法重建同名参数）"""
+    item = db.query(SystemParam).filter(SystemParam.id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="参数不存在")
+    db.delete(item)
+    db.commit()
+    return {"message": "已删除"}
 
 
 # ==================== 材料自定义创建（自动编码 RM+6位流水）====================

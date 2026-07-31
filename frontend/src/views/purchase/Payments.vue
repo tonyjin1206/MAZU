@@ -87,9 +87,7 @@
         </el-form-item>
         <el-form-item label="付款方式">
           <el-select v-model="editForm.payment_method" placeholder="请选择" style="width: 100%">
-            <el-option label="银行转账" value="银行转账" />
-            <el-option label="现金" value="现金" />
-            <el-option label="承兑汇票" value="承兑汇票" />
+            <el-option v-for="o in paymentMethodOptions" :key="o.key" :label="o.label" :value="o.key" />
           </el-select>
         </el-form-item>
         <el-form-item label="备注" style="width: 100%">
@@ -109,6 +107,12 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '../../api/request'
+
+// 付款方式选项（来自参数设置）
+const paymentMethodOptions = ref([])
+async function loadPaymentMethods() {
+  try { paymentMethodOptions.value = await request.get('/foundation/params/options', { params: { group: 'payment_method' } }) || [] } catch { paymentMethodOptions.value = [] }
+}
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_payment_columns'
@@ -143,6 +147,7 @@ const editForm = reactive({
 })
 
 onMounted(fetchList)
+loadPaymentMethods()
 
 async function fetchList() {
   loading.value = true

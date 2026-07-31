@@ -8,6 +8,7 @@ from app.models.foundation import (
     Customer, Supplier, Outsourcer,
     Warehouse, Currency, ExchangeRate,
     HsCode, TradeTerm,
+    SystemParam,
 )
 from app.models.inventory import (
     WarehouseInventory, StockTransaction,
@@ -47,6 +48,7 @@ __all__ = [
     "Customer", "Supplier", "Outsourcer",
     "Warehouse", "Currency", "ExchangeRate",
     "HsCode", "TradeTerm",
+    "SystemParam",
     "WarehouseInventory", "StockTransaction",
     "StockCheck", "StockCheckItem",
     "PurchaseOrder", "PurchaseOrderItem",

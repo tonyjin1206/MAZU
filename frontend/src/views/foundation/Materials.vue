@@ -92,13 +92,13 @@
           <el-input v-model="form.model" />
         </el-form-item>
         <el-form-item label="单位" prop="unit">
-          <el-input v-model="form.unit" />
+          <el-select v-model="form.unit" placeholder="请选择" filterable allow-create style="width: 100%">
+            <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.key" />
+          </el-select>
         </el-form-item>
         <el-form-item label="类别" prop="category">
-          <el-select v-model="form.category" placeholder="请选择">
-            <el-option label="原材料" value="原材料" />
-            <el-option label="辅料" value="辅料" />
-            <el-option label="包装材料" value="包装材料" />
+          <el-select v-model="form.category" placeholder="请选择" style="width: 100%">
+            <el-option v-for="o in categoryOptions" :key="o.key" :label="o.label" :value="o.key" />
           </el-select>
         </el-form-item>
         <el-form-item label="单价" prop="purchase_price">
@@ -118,6 +118,15 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+import request from '../../api/request'
+
+// 下拉选项（来自参数设置）
+const unitOptions = ref([])
+const categoryOptions = ref([])
+async function loadParamOptions() {
+  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
+  try { categoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_category' } }) || [] } catch { categoryOptions.value = [] }
+}
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_material_columns'
@@ -227,5 +236,5 @@ async function handleDelete(row) {
   }
 }
 
-onMounted(() => fetchData())
+onMounted(() => { fetchData(); loadParamOptions() })
 </script>

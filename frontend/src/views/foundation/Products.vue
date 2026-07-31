@@ -69,7 +69,9 @@
           <el-input v-model="form.spec" />
         </el-form-item>
         <el-form-item label="单位" prop="unit">
-          <el-input v-model="form.unit" />
+          <el-select v-model="form.unit" placeholder="请选择" filterable allow-create style="width: 100%">
+            <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.key" />
+          </el-select>
         </el-form-item>
         <el-form-item label="销售价" prop="sale_price">
           <el-input type="number" v-model="form.sale_price" :precision="2" :min="0" style="width: 100%" />
@@ -102,6 +104,13 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+import request from '../../api/request'
+
+// 单位选项（来自参数设置）
+const unitOptions = ref([])
+async function loadUnitOptions() {
+  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
+}
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_product_columns'
@@ -131,6 +140,7 @@ const form = reactive({ id: null, name_cn: '', name_en: '', spec: '', unit: '', 
 onMounted(() => {
   fetchData()
   loadHsCodes()
+  loadUnitOptions()
 })
 
 async function loadHsCodes() {

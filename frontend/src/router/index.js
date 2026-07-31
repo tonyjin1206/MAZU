@@ -17,6 +17,7 @@ const routes = [
       { path: 'foundation/suppliers', name: 'Suppliers', component: () => import('../views/foundation/Suppliers.vue') },
       { path: 'foundation/hs-codes', name: 'HsCodes', component: () => import('../views/foundation/HsCodes.vue') },
       { path: 'foundation/processes', name: 'Processes', component: () => import('../views/foundation/Processes.vue') },
+      { path: 'foundation/params', name: 'SystemParams', component: () => import('../views/foundation/SystemParams.vue') },
 
       // 采购管理
       { path: 'purchase/orders', name: 'PurchaseOrders', component: () => import('../views/purchase/PurchaseOrders.vue') },

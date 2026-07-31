@@ -24,9 +24,7 @@
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="searchForm.supplier_type" placeholder="类型" clearable style="width: 120px">
-            <el-option label="原材料" value="原材料" />
-            <el-option label="委外" value="委外" />
-            <el-option label="辅料" value="辅料" />
+            <el-option v-for="o in supplierTypeOptions" :key="o.key" :label="o.label" :value="o.key" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -138,9 +136,7 @@
         </el-form-item>
         <el-form-item label="类型" prop="supplier_type">
           <el-select v-model="form.supplier_type" style="width: 100%">
-            <el-option label="原材料" value="原材料" />
-            <el-option label="委外" value="委外" />
-            <el-option label="辅料" value="辅料" />
+            <el-option v-for="o in supplierTypeOptions" :key="o.key" :label="o.label" :value="o.key" />
           </el-select>
         </el-form-item>
         <el-form-item label="供货范围" prop="supply_range">
@@ -163,6 +159,13 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+import request from '../../api/request'
+
+// 供应商类型选项（来自参数设置）
+const supplierTypeOptions = ref([])
+async function loadSupplierTypes() {
+  try { supplierTypeOptions.value = await request.get('/foundation/params/options', { params: { group: 'supplier_type' } }) || [] } catch { supplierTypeOptions.value = [] }
+}
 
 const countryList = [
   '中国', '美国', '日本', '韩国', '德国', '英国', '法国', '意大利', '西班牙',
@@ -354,6 +357,7 @@ async function handleToggle(row) {
 
 onMounted(() => {
   fetchData()
+  loadSupplierTypes()
 })
 </script>
 

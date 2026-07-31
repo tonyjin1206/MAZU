@@ -66,10 +66,7 @@
         </el-form-item>
         <el-form-item label="单位" prop="unit">
           <el-select v-model="form.unit" placeholder="请选择" style="width: 100%">
-            <el-option label="台" value="台" /><el-option label="套" value="套" />
-            <el-option label="件" value="件" /><el-option label="个" value="个" />
-            <el-option label="千克" value="千克" /><el-option label="米" value="米" />
-            <el-option label="平方米" value="平方米" /><el-option label="立方米" value="立方米" />
+            <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.key" />
           </el-select>
         </el-form-item>
         <el-form-item label="退税率(%)" prop="refund_rate">
@@ -98,6 +95,13 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+import request from '../../api/request'
+
+// 单位选项（来自参数设置）
+const unitOptions = ref([])
+async function loadUnitOptions() {
+  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
+}
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_hscode_columns'
@@ -218,5 +222,5 @@ async function handleDelete(row) {
   }
 }
 
-onMounted(fetchData)
+onMounted(() => { fetchData(); loadUnitOptions() })
 </script>
