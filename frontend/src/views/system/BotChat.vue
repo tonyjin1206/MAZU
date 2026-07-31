@@ -13,7 +13,7 @@
     </div>
 
     <!-- 消息列表 -->
-    <div ref="msgContainer" style="flex: 1; overflow-y: auto; padding: 16px; background: #f5f7fa">
+    <div ref="msgContainer" style="flex: 1; overflow-y: auto; padding: 16px; background: #f5f7fa" @click="handleDocLinkClick">
       <div v-for="(msg, i) in messages" :key="i" style="margin-bottom: 12px; display: flex; flex-direction: column; align-items: flex-start">
         <!-- Bot 消息 -->
         <div v-if="msg.role === 'bot'" style="display: flex; gap: 8px; max-width: 80%">
@@ -62,102 +62,42 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
-import { systemConfigApi } from '../../api/foundation'
-import { chatApi } from '../../api/business'
+import { useBotChat } from '../../composables/useBotChat'
 
-import { marked } from 'marked'
+const RICH_WELCOME = `你好！我是 **Mazu Trade System** 的 AI 助手，我是 **Matsu**！😊
 
-// 配置 marked
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
+📋 **创建单据**
+  「采购PCB板100片15块」— 采购订单
+  「100个产品A卖给美国客户500块」— 销售订单
 
-const messages = ref([])
-const inputText = ref('')
-const loading = ref(false)
-const sessionId = ref(localStorage.getItem('bot_session_id') || '')
-const msgContainer = ref(null)
-const inputRef = ref(null)
+💰 **收款/付款**
+  「收美国客户5000块」— 创建收款单
+  「付给深圳华强3000」— 创建付款单
 
-// 加载历史消息
-const savedMessages = localStorage.getItem('bot_messages')
-if (savedMessages) {
-  try { messages.value = JSON.parse(savedMessages) } catch {}
-}
+📄 **发票录入**
+  「采购单PO-001发票12345金额5000」— 采购发票
+  「销售单SO-001发票67890金额8000」— 销售发票
 
-function saveState() {
-  localStorage.setItem('bot_session_id', sessionId.value)
-  localStorage.setItem('bot_messages', JSON.stringify(messages.value))
-}
+🔍 **查询档案**
+  「查一下客户深圳」— 查客户
+  「全部供应商」— 供应商清单
+  「应收账款清单」— 应收汇总
 
-function renderMarkdown(text) {
-  if (!text) return ''
-  try {
-    return marked.parse(text)
-  } catch {
-    return text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')
-  }
-}
+🏭 **生产**
+  「委外工序1给深圳华强加工100个」— 委外单
+  「生产单MO-001发料PCB板50片」— 发料
+  「生产单MO-001入库80个」— 完工入库
 
-function scrollToBottom() {
-  nextTick(() => {
-    if (msgContainer.value) {
-      msgContainer.value.scrollTop = msgContainer.value.scrollHeight
-    }
-  })
-}
+🛒 **审核**
+  「有什么待审核的单」— 待审核清单
+  「审核采购单PO-xxx」— 审核单据
 
-async function sendMessage() {
-  const text = inputText.value.trim()
-  if (!text || loading.value) return
+你想做什么？`
 
-  messages.value.push({ role: 'user', content: text })
-  inputText.value = ''
-  loading.value = true
-  scrollToBottom()
-
-  try {
-    const res = await chatApi.message({
-      message: text,
-      session_id: sessionId.value,
-    })
-
-    sessionId.value = res.session_id
-    messages.value.push({ role: 'bot', content: res.reply })
-    saveState()
-  } catch (e) {
-    messages.value.push({ role: 'bot', content: '❌ 请求失败，请重试' })
-  }
-
-  loading.value = false
-  scrollToBottom()
-  nextTick(() => inputRef.value?.focus())
-}
-
-async function resetChat() {
-  if (sessionId.value) {
-    try { await chatApi.reset() } catch {}
-  }
-  messages.value = [{
-    role: 'bot',
-    content: '你好！我是 **Mazu Trade System** 的 AI 助手，我是 **Matsu**！😊\n\n📋 **创建单据**\n  「采购PCB板100片15块」— 采购订单\n  「100个产品A卖给美国客户500块」— 销售订单\n\n💰 **收款/付款**\n  「收美国客户5000块」— 创建收款单\n  「付给深圳华强3000」— 创建付款单\n\n📄 **发票录入**\n  「采购单PO-001发票12345金额5000」— 采购发票\n  「销售单SO-001发票67890金额8000」— 销售发票\n\n🔍 **查询档案**\n  「查一下客户深圳」— 查客户\n  「全部供应商」— 供应商清单\n  「应收账款清单」— 应收汇总\n\n🏭 **生产**\n  「委外工序1给深圳华强加工100个」— 委外单\n  「生产单MO-001发料PCB板50片」— 发料\n  「生产单MO-001入库80个」— 完工入库\n\n你想做什么？',
-  }]
-  sessionId.value = ''
-  localStorage.removeItem('bot_session_id')
-  localStorage.removeItem('bot_messages')
-  scrollToBottom()
-}
-
-// 有历史记录就加载，没有就显示欢迎语
-if (!sessionId.value) {
-  resetChat()
-} else {
-  scrollToBottom()
-}
-nextTick(() => inputRef.value?.focus())
+const {
+  messages, inputText, loading, sessionId, msgContainer, inputRef,
+  renderMarkdown, handleDocLinkClick, scrollToBottom, sendMessage, resetChat,
+} = useBotChat({ welcome: RICH_WELCOME })
 </script>
 
 <style scoped>

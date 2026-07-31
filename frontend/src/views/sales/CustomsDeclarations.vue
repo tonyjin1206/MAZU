@@ -54,7 +54,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -116,7 +116,7 @@ const editMode = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const total = ref(0)
 
 // 搜索条件
@@ -196,7 +196,7 @@ async function fetchList() {
       params.date_to = searchForm.dateRange[1]
     }
     if (searchForm.status) params.status = searchForm.status
-    const res = await salesApi.customs.list({ params })
+    const res = await salesApi.customs.list(params)
     list.value = res.items || []
     total.value = res.total || 0
     // 更新列筛选

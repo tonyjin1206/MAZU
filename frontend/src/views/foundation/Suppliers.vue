@@ -48,7 +48,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
+      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增供应商' : '编辑供应商'" width="600px">
@@ -103,7 +103,7 @@ const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const dialogVisible = ref(false)
 const dialogMode = ref('create')
 const saving = ref(false)

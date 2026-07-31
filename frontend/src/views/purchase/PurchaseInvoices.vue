@@ -51,7 +51,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -119,7 +119,7 @@ const editMode = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const total = ref(0)
 // 搜索条件
 const searchForm = reactive({
@@ -201,7 +201,7 @@ async function fetchList() {
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
     if (searchForm.status) params.status = searchForm.status
-    const res = await purchaseApi.invoices.list({ params })
+    const res = await purchaseApi.invoices.list(params)
     list.value = res.items || res.list || []
     total.value = res.total || 0
     // 更新列筛选

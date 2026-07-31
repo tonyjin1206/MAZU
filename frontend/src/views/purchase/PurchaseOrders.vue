@@ -71,7 +71,7 @@
         v-model:current-page="queryParams.page"
         v-model:page-size="queryParams.page_size"
         :total="total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @change="fetchData"
         style="margin-top: 16px"
@@ -150,7 +150,7 @@ const router = useRouter()
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
-const queryParams = reactive({ page: 1, page_size: 100 })
+const queryParams = reactive({ page: 1, page_size: 20 })
 
 // 搜索条件
 const searchForm = reactive({

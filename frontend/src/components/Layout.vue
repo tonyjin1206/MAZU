@@ -21,8 +21,20 @@
           <span>工作台</span>
         </el-menu-item>
 
+        <!-- Agent设置（1级菜单） -->
+        <el-menu-item index="/system/bot" v-if="hasPerm('menu:system:bot')">
+          <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>
+          <span>Agent设置</span>
+        </el-menu-item>
+
+        <!-- 预警提醒设置（1级菜单） -->
+        <el-menu-item index="/system/reminders" v-if="hasPerm('menu:system:reminders')">
+          <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-bell"/></svg>
+          <span>预警提醒设置</span>
+        </el-menu-item>
+
         <!-- 系统管理 -->
-        <el-sub-menu index="system" v-if="hasPerm('menu:system:users') || hasPerm('menu:system:roles') || hasPerm('menu:system:wecom') || hasPerm('menu:system:bot') || hasPerm('menu:system:bot-chat') || hasPerm('menu:system:reminders')">
+        <el-sub-menu index="system" v-if="hasPerm('menu:system:users') || hasPerm('menu:system:roles') || hasPerm('menu:system:wecom')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-lock"/></svg>
             <span>系统管理</span>
@@ -30,12 +42,6 @@
           <el-menu-item index="/system/users" v-if="hasPerm('menu:system:users')">用户管理</el-menu-item>
           <el-menu-item index="/system/roles" v-if="hasPerm('menu:system:roles')">角色管理</el-menu-item>
           <el-menu-item index="/system/wecom" v-if="hasPerm('menu:system:wecom')">企业微信</el-menu-item>
-          <el-menu-item index="/system/bot" v-if="hasPerm('menu:system:bot')">AI 模型</el-menu-item>
-          <el-menu-item index="/system/bot-chat" v-if="hasPerm('menu:system:bot-chat')">
-            <svg width="16" height="16" style="margin-right:4px;vertical-align:middle"><use href="#icon-diagnose"/></svg>
-            <span>AI 助手</span>
-          </el-menu-item>
-          <el-menu-item index="/system/reminders" v-if="hasPerm('menu:system:reminders')">提醒管理</el-menu-item>
         </el-sub-menu>
 
         <!-- 1. 基础档案 -->
@@ -44,13 +50,13 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-layer-group"/></svg>
             <span>基础档案</span>
           </template>
-          <el-menu-item index="/foundation/customers" v-if="hasPerm('menu:customers')"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-user-group"/></svg>客户管理</el-menu-item>
-          <el-menu-item index="/foundation/suppliers" v-if="hasPerm('menu:suppliers')"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-account"/></svg>供应商管理</el-menu-item>
-          <el-menu-item index="/foundation/materials" v-if="hasPerm('menu:materials')"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-box"/></svg>原辅材料</el-menu-item>
-          <el-menu-item index="/foundation/products" v-if="hasPerm('menu:products')"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-applicationgroup"/></svg>产品档案</el-menu-item>
-          <el-menu-item index="/foundation/bom" v-if="hasPerm('menu:bom')"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-Directory-tree"/></svg>BOM管理</el-menu-item>
-          <el-menu-item index="/foundation/processes" v-if="hasPerm('menu:processes')"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-switch"/></svg>工序管理</el-menu-item>
-          <el-menu-item index="/foundation/hs-codes" v-if="hasPerm('menu:hs-codes')"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file-SQL"/></svg>HS编码/退税率</el-menu-item>
+          <el-menu-item index="/foundation/customers" v-if="hasPerm('menu:customers')">客户管理</el-menu-item>
+          <el-menu-item index="/foundation/suppliers" v-if="hasPerm('menu:suppliers')">供应商管理</el-menu-item>
+          <el-menu-item index="/foundation/materials" v-if="hasPerm('menu:materials')">原辅材料</el-menu-item>
+          <el-menu-item index="/foundation/products" v-if="hasPerm('menu:products')">产品档案</el-menu-item>
+          <el-menu-item index="/foundation/bom" v-if="hasPerm('menu:bom')">BOM管理</el-menu-item>
+          <el-menu-item index="/foundation/processes" v-if="hasPerm('menu:processes')">工序管理</el-menu-item>
+          <el-menu-item index="/foundation/hs-codes" v-if="hasPerm('menu:hs-codes')">HS编码/退税率</el-menu-item>
         </el-sub-menu>
 
         <!-- 2. 销售管理 -->
@@ -134,12 +140,16 @@
         <router-view />
       </el-main>
     </el-container>
+
+    <!-- 全局 AI 助手悬浮球 -->
+    <MatsuAssistant />
   </el-container>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import MatsuAssistant from './MatsuAssistant.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -186,9 +196,9 @@ const pageTitle = computed(() => {
     '/system/users': '用户管理',
     '/system/roles': '角色管理',
     '/system/wecom': '企业微信配置',
-    '/system/bot': 'AI 模型配置',
+    '/system/bot': 'Agent设置',
     '/system/bot-chat': 'AI 助手',
-    '/system/reminders': '提醒管理',
+    '/system/reminders': '预警提醒设置',
   }
   if (path.startsWith('/production/detail')) return '生产订单详情'
   return titles[path] || 'MTS'
@@ -221,7 +231,7 @@ function logout() {
   font-size: 12px;
 }
 :deep(.el-sub-menu .el-menu-item) {
-  padding-left: 44px !important;
+  padding-left: 48px !important;
 }
 .el-header {
   height: 44px !important;

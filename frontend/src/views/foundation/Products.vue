@@ -38,7 +38,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
+      <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="500px">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
@@ -92,7 +92,7 @@ import { foundationApi } from '../../api/foundation'
 
 const loading = ref(false)
 const tableData = ref([])
-const pagination = ref({ page: 1, pageSize: 100, total: 0 })
+const pagination = ref({ page: 1, pageSize: 20, total: 0 })
 const searchForm = reactive({ code: '', name_cn: '', spec: '' })
 
 // 列筛选

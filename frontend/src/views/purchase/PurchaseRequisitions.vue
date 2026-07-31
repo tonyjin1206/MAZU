@@ -24,7 +24,7 @@
     <el-card>
       <el-table :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
         <el-table-column prop="requisition_no" label="需求单号" width="160" sortable />
-        <el-table-column prop="created_at" label="创建日期" width="110" sortable />
+        <el-table-column prop="created_at" label="创建日期" width="160" sortable />
         <el-table-column prop="production_order_no" label="来源生产订单" width="160" />
         <el-table-column prop="product_code" label="产品编码" width="110" />
         <el-table-column prop="product_name" label="产品名称" min-width="140" />
@@ -45,7 +45,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
+      <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
     </el-card>
 
     <!-- 转采购订单对话框 -->
@@ -90,7 +90,7 @@ const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const searchForm = reactive({ keyword: '', status: '' })
 
 function statusType(status) {
@@ -109,7 +109,7 @@ async function fetchData() {
     const params = { page: page.value, page_size: pageSize.value }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
-    const res = await purchaseApi.requisitions.list({ params })
+    const res = await purchaseApi.requisitions.list(params)
     tableData.value = res.items || []
     total.value = res.total || 0
   } finally { loading.value = false }

@@ -78,7 +78,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
 
@@ -135,7 +135,7 @@
               </template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="itemQueryParams.page" v-model:page-size="itemQueryParams.page_size" :total="itemTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchOrderItems" style="margin-top: 12px" />
+          <el-pagination v-model:current-page="itemQueryParams.page" v-model:page-size="itemQueryParams.page_size" :total="itemTotal" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchOrderItems" @current-change="fetchOrderItems" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -335,7 +335,7 @@ const activeTab = ref('orders')
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
-const queryParams = reactive({ page: 1, page_size: 100 })
+const queryParams = reactive({ page: 1, page_size: 20 })
 
 const searchForm = reactive({
   keyword: '', dateRange: null, amountMin: '', amountMax: '',
@@ -375,7 +375,7 @@ function filterCustomer(val, row) { filterCustomerVal.value = val; return true }
 const itemLoading = ref(false)
 const orderItemList = ref([])
 const itemTotal = ref(0)
-const itemQueryParams = reactive({ page: 1, page_size: 100 })
+const itemQueryParams = reactive({ page: 1, page_size: 20 })
 const itemSearchForm = reactive({ keyword: '', production_status: '' })
 
 // 明细列筛选
@@ -420,7 +420,7 @@ async function fetchOrderItems() {
     const params = { page: itemQueryParams.page, page_size: itemQueryParams.page_size }
     if (itemSearchForm.keyword) params.keyword = itemSearchForm.keyword
     if (itemSearchForm.production_status) params.production_status = itemSearchForm.production_status
-    const res = await salesApi.orders.listItems({ params })
+    const res = await salesApi.orders.listItems(params)
     orderItemList.value = res.items || []
     itemTotal.value = res.total || 0
     // 更新列筛选
@@ -538,7 +538,7 @@ async function fetchData() {
     }
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
-    const res = await salesApi.orders.list({ params })
+    const res = await salesApi.orders.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     dateFilters.value = [...new Set(dataList.value.map(r => r.order_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))

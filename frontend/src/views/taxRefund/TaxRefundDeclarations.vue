@@ -51,7 +51,7 @@
       <el-pagination
         style="margin-top: 12px"
         v-model:current-page="page" v-model:page-size="pageSize"
-        :total="total" :page-sizes="[50, 100, 200]"
+        :total="total" :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList" @size-change="fetchList"
       />
@@ -182,7 +182,7 @@ const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const createDialog = ref(false)
 const editDialog = ref(false)
 const selectInvoiceDialog = ref(false)
@@ -218,7 +218,7 @@ async function fetchList() {
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
     if (searchForm.dateRange) { params.date_from = searchForm.dateRange[0]; params.date_to = searchForm.dateRange[1] }
-    const res = await taxRefundApi.declarations.list({ params })
+    const res = await taxRefundApi.declarations.list(params)
     list.value = res.items || []; total.value = res.total || 0
   } catch { ElMessage.error('加载失败') }
   finally { loading.value = false }

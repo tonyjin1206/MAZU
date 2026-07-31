@@ -198,9 +198,9 @@ PERMISSION_DEFS = [
     {"code": "menu:system:users", "name": "用户管理", "module": "系统管理", "description": ""},
     {"code": "menu:system:roles", "name": "角色管理", "module": "系统管理", "description": ""},
     {"code": "menu:system:wecom", "name": "企业微信配置", "module": "系统管理", "description": ""},
-    {"code": "menu:system:bot", "name": "AI 模型配置", "module": "系统管理", "description": ""},
+    {"code": "menu:system:bot", "name": "Agent设置", "module": "系统管理", "description": ""},
     {"code": "menu:system:bot-chat", "name": "AI 助手", "module": "系统管理", "description": ""},
-    {"code": "menu:system:reminders", "name": "提醒管理", "module": "系统管理", "description": ""},
+    {"code": "menu:system:reminders", "name": "预警提醒设置", "module": "系统管理", "description": ""},
     ]
 
 

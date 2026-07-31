@@ -41,7 +41,7 @@
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @current-change="fetchList"
         @size-change="fetchList"
@@ -111,7 +111,7 @@ const list = ref([])
 const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
-const pageSize = ref(100)
+const pageSize = ref(20)
 const detailVisible = ref(false)
 const detail = ref(null)
 const editVisible = ref(false)
@@ -149,7 +149,7 @@ async function fetchList() {
     const params = { page: page.value, page_size: pageSize.value }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.dateRange) { params.start_date = searchForm.dateRange[0]; params.end_date = searchForm.dateRange[1] }
-    const res = await purchaseApi.payments.list({ params })
+    const res = await purchaseApi.payments.list(params)
     list.value = res.items || []
     total.value = res.total || 0
     // 更新列筛选
