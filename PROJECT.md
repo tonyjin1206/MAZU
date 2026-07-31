@@ -247,13 +247,15 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/auth/login` | POST | 登录（返回 JWT token）|
 | `/auth/me` | GET | 当前用户信息 |
 | `/auth/me/permissions` | GET | 当前用户权限列表 |
-| `/auth/users` | GET/POST | 用户列表/创建 |
-| `/auth/users/{id}` | GET/PUT/DELETE | 详情/修改/删除 |
-| `/auth/roles` | GET/POST | 角色列表/创建 |
-| `/auth/roles/{id}` | GET/PUT/DELETE | 详情/修改/删除 |
-| `/auth/permissions` | GET | 权限定义列表 |
+| `/auth/users` | GET/POST | 用户列表/创建（**仅管理员**，v2.2.0 起 GET 也校验权限）|
+| `/auth/users/{id}` | GET/PUT/DELETE | 详情/修改/删除（**仅管理员**）|
+| `/auth/roles` | GET/POST | 角色列表/创建（**仅管理员**，v2.2.0 起 GET 也校验权限）|
+| `/auth/roles/{id}` | GET/PUT/DELETE | 详情/修改/删除（**仅管理员**）|
+| `/auth/permissions` | GET | 权限定义列表（**仅管理员**，v2.2.0 起校验权限）|
 
 权限模型: 基于角色的菜单级权限，角色按岗位配置（销售经理/采购经理/生产经理/财务经理/库管员），每个角色勾选可见菜单。
+
+> **v2.2.0 权限收紧**：用户/角色/权限的 4 个查询接口（GET /users、/users/{id}、/roles、/permissions）从"仅登录"收紧为"仅管理员"（`require_permission("menu:system:users")`）。各业务角色（销售/采购/生产/财务/库管员/只读）不含系统管理权限，访问返回 403；前端菜单本身也不对非管理员显示系统管理入口。
 
 ---
 
