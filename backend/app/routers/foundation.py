@@ -296,7 +296,7 @@ def _next_code(db, model, prefix: str, field="code"):
 @router.post("/customers", tags=["基础档案-客户"])
 def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
-    code = data.code or _next_code(db, Customer, "CU")
+    code = _next_code(db, Customer, "CU")  # 编码强制自动生成，不允许手动输入
     # 编码唯一性校验（避免唯一约束冲突 → 500）
     if db.query(Customer).filter(Customer.code == code).first():
         raise HTTPException(409, f"客户编码已存在: {code}")
@@ -426,7 +426,7 @@ def delete_supplier(item_id: int, db: Session = Depends(get_db),
 @router.post("/suppliers", tags=["基础档案-供应商"])
 def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
-    code = data.code or _next_code(db, Supplier, "SU")
+    code = _next_code(db, Supplier, "SU")  # 编码强制自动生成，不允许手动输入
     # 编码唯一性校验（避免唯一约束冲突 → 500）
     if db.query(Supplier).filter(Supplier.code == code).first():
         raise HTTPException(409, f"供应商编码已存在: {code}")

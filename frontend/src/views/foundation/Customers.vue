@@ -86,7 +86,7 @@
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="640px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="编码" prop="code">
-          <el-input v-model="form.code" placeholder="留空自动生成" />
+          <el-input v-model="form.code" disabled placeholder="自动生成（CU+6位流水号）" />
         </el-form-item>
         <el-form-item label="中文名" prop="name_cn">
           <el-input v-model="form.name_cn" />
@@ -201,12 +201,21 @@ function loadColumnOrder() {
 const columns = ref(loadColumnOrder())
 const columnVersion = ref(0)
 let sortableInstance = null
+let dragRetryTimer = null
 
 function initColumnDrag() {
+  clearTimeout(dragRetryTimer)
   const thead = document.querySelector('.el-table__header-wrapper thead tr')
-  if (!thead || sortableInstance) return
+  if (!thead) {
+    // 表格还没渲染好，稍后重试
+    dragRetryTimer = setTimeout(initColumnDrag, 300)
+    return
+  }
+  // 每次重建绑定：el-table 重渲染后旧绑定会失效
+  destroyColumnDrag()
   sortableInstance = Sortable.create(thead, {
     animation: 150,
+    handle: '.cell',
     filter: (el) => el.classList.contains('el-table-fixed-column--right'),
     onEnd: (evt) => {
       const { oldIndex, newIndex } = evt
@@ -218,11 +227,7 @@ function initColumnDrag() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(cols.map(c => c.prop)))
       // 强制重渲染表格列
       columnVersion.value++
-      nextTick(() => {
-        sortableInstance?.destroy()
-        sortableInstance = null
-        initColumnDrag()
-      })
+      nextTick(initColumnDrag)
     },
   })
 }
@@ -230,6 +235,7 @@ function initColumnDrag() {
 function destroyColumnDrag() {
   sortableInstance?.destroy()
   sortableInstance = null
+  clearTimeout(dragRetryTimer)
 }
 
 function rowClassName({ row }) {
@@ -263,7 +269,6 @@ const form = reactive({
 })
 
 const rules = {
-  code: [{ required: true, message: '请输入编码', trigger: 'blur' }],
   name_cn: [{ required: true, message: '请输入中文名', trigger: 'blur' }],
 }
 
