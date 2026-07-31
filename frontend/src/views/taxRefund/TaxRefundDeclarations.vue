@@ -26,16 +26,20 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column label="申报年月" width="90"><template #default="{ row }">{{ row.period }}</template></el-table-column>
-        <el-table-column label="批次" width="60" align="center"><template #default="{ row }">{{ row.batch || 1 }}</template></el-table-column>
-        <el-table-column prop="declaration_no" label="申报单号" width="180" />
-        <el-table-column prop="status" label="状态" width="90">
-          <template #default="{ row }"><el-tag :type="row.status === '已退税' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag></template>
+      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'status'" #default="{ row }">
+            <el-tag :type="row.status === '已退税' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+          </template>
+          <template v-else-if="col.prop === 'refundable_amount'" #default="{ row }">{{ $fm(row.refundable_amount) }}</template>
+          <template v-else-if="col.prop === 'actual_refund_amount'" #default="{ row }">{{ $fm(row.actual_refund_amount) }}</template>
         </el-table-column>
-        <el-table-column label="可退税额" width="110" align="right"><template #default="{ row }">{{ $fm(row.refundable_amount) }}</template></el-table-column>
-        <el-table-column label="实际退税" width="110" align="right"><template #default="{ row }">{{ $fm(row.actual_refund_amount) }}</template></el-table-column>
-        <el-table-column prop="created_at" label="创建时间" min-width="150" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === '待申报'" link type="success" @click="handleSubmitDecl(row)">申报</el-button>
@@ -174,9 +178,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '../../api/request'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_taxrefund_decl_columns'
+const defaultColumns = [
+  { prop: 'period', label: '申报年月', width: 90 },
+  { prop: 'batch', label: '批次', width: 60, align: 'center' },
+  { prop: 'declaration_no', label: '申报单号', width: 180 },
+  { prop: 'status', label: '状态', width: 90 },
+  { prop: 'refundable_amount', label: '可退税额', width: 110, align: 'right' },
+  { prop: 'actual_refund_amount', label: '实际退税', width: 110, align: 'right' },
+  { prop: 'created_at', label: '创建时间', minWidth: 150 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
@@ -221,7 +239,7 @@ async function fetchList() {
     const res = await request.get('/tax-refund/declarations', { params })
     list.value = res.items || []; total.value = res.total || 0
   } catch { ElMessage.error('加载失败') }
-  finally { loading.value = false }
+  finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 async function fetchInvoices() {

@@ -29,62 +29,42 @@
               <el-date-picker v-model="balanceQuery.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 280px" @change="onDateRangeChange" />
             </el-form-item>
           </el-form>
-          <el-table :data="balanceList" v-loading="balanceLoading" stripe border @row-click="viewTransactions" :show-summary="true" :summary-method="getBalanceSummary">
-            <el-table-column prop="warehouse" label="仓库" width="100" />
-            <el-table-column label="物料" min-width="45">
-              <template #default="{ row }">
+          <el-table class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border @row-click="viewTransactions" :show-summary="true" :summary-method="getBalanceSummary">
+            <el-table-column v-for="col in balanceColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'material_name'" #default="{ row }">
                 <span style="font-weight: 500; color: #409eff; cursor: pointer">{{ row.material_name || row.product_name }}</span>
                 <el-tag size="small" type="info" style="margin-left: 4px">{{ row.material_code || row.product_code }}</el-tag>
               </template>
-            </el-table-column>
-            <el-table-column label="规格" min-width="80">
-              <template #default="{ row }">{{ row.material_spec || row.product_spec || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="型号" min-width="80">
-              <template #default="{ row }">{{ row.material_model || row.product_model || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="类型" width="100" align="center">
-              <template #default="{ row }">
+              <template v-else-if="col.prop === 'material_spec'" #default="{ row }">{{ row.material_spec || row.product_spec || '-' }}</template>
+              <template v-else-if="col.prop === 'material_model'" #default="{ row }">{{ row.material_model || row.product_model || '-' }}</template>
+              <template v-else-if="col.prop === 'material_id'" #default="{ row }">
                 <el-tag :type="row.material_id ? 'warning' : 'primary'" size="small">{{ row.material_id ? '原料' : '成品' }}</el-tag>
               </template>
-            </el-table-column>
-            <el-table-column prop="batch_no" label="批次号" width="120" />
-            <!-- 无日期：当前快照 -->
-            <template v-if="!balancePeriod">
-              <el-table-column prop="quantity" label="数量" width="90" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-              <el-table-column prop="unit_cost" label="单价(¥)" width="90" align="right"><template #default="{ row }">{{ $fm(row.unit_cost) }}</template></el-table-column>
-              <el-table-column prop="total_cost" label="金额(¥)" width="110" align="right"><template #default="{ row }">{{ $fm(row.total_cost) }}</template></el-table-column>
-            </template>
-            <!-- 有日期：期间视图 -->
-            <template v-else>
-              <el-table-column prop="opening_qty" label="期初" width="80" align="right">
-                <template #default="{ row }">
-                  <span style="color: #909399">{{ $fq(row.opening_qty) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="period_in_qty" label="入库" width="80" align="right">
-                <template #default="{ row }">
-                  <span style="color: #67c23a">{{ $fq(row.period_in_qty) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="period_out_qty" label="出库" width="80" align="right">
-                <template #default="{ row }">
-                  <span style="color: #f56c6c">{{ $fq(row.period_out_qty) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="closing_qty" label="期末数量" width="90" align="right">
-                <template #default="{ row }">
-                  <span style="font-weight: bold">{{ $fq(row.closing_qty) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="closing_cost" label="期末金额" width="110" align="right">
-                <template #default="{ row }">
-                  <span style="color: #409eff; font-weight: bold">{{ $fm(row.closing_cost) }}</span>
-                </template>
-              </el-table-column>
-            </template>
-            <el-table-column label="来源" width="60">
-              <template #default="{ row }">
+              <template v-else-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
+              <template v-else-if="col.prop === 'unit_cost'" #default="{ row }">{{ $fm(row.unit_cost) }}</template>
+              <template v-else-if="col.prop === 'total_cost'" #default="{ row }">{{ $fm(row.total_cost) }}</template>
+              <template v-else-if="col.prop === 'opening_qty'" #default="{ row }">
+                <span style="color: #909399">{{ $fq(row.opening_qty) }}</span>
+              </template>
+              <template v-else-if="col.prop === 'period_in_qty'" #default="{ row }">
+                <span style="color: #67c23a">{{ $fq(row.period_in_qty) }}</span>
+              </template>
+              <template v-else-if="col.prop === 'period_out_qty'" #default="{ row }">
+                <span style="color: #f56c6c">{{ $fq(row.period_out_qty) }}</span>
+              </template>
+              <template v-else-if="col.prop === 'closing_qty'" #default="{ row }">
+                <span style="font-weight: bold">{{ $fq(row.closing_qty) }}</span>
+              </template>
+              <template v-else-if="col.prop === 'closing_cost'" #default="{ row }">
+                <span style="color: #409eff; font-weight: bold">{{ $fm(row.closing_cost) }}</span>
+              </template>
+              <template v-else-if="col.prop === 'source_type'" #default="{ row }">
                 <el-tag v-if="row.source_type === 'purchase'" type="success" size="small">采购</el-tag>
                 <el-tag v-else-if="row.source_type === 'production'" type="primary" size="small">生产</el-tag>
                 <el-tag v-else size="small">{{ row.source_type }}</el-tag>
@@ -127,30 +107,27 @@
               <el-input v-model="transQuery.keyword" placeholder="名称/编码" clearable style="width: 160px" @keyup.enter="fetchTransactions" />
             </el-form-item>
           </el-form>
-          <el-table :data="transactionList" v-loading="transLoading" stripe border :show-summary="true" :summary-method="getTransSummary">
-            <el-table-column label="日期" width="100">
-              <template #default="{ row }">{{ (row.trans_date || '').slice(0, 10) }}</template>
-            </el-table-column>
-            <el-table-column prop="trans_no" label="库存流水号" width="160" />
-            <el-table-column prop="trans_type" label="类型" width="100">
-              <template #default="{ row }">
+          <el-table class="drag-table-trans" :key="transColumnVersion" :data="transactionList" v-loading="transLoading" stripe border :show-summary="true" :summary-method="getTransSummary">
+            <el-table-column v-for="col in transColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'trans_date'" #default="{ row }">{{ (row.trans_date || '').slice(0, 10) }}</template>
+              <template v-else-if="col.prop === 'trans_type'" #default="{ row }">
                 <el-tag :type="row.trans_type === 'issue_cancel' || row.trans_type.includes('in') ? 'success' : 'danger'" size="small">
                   {{ transTypeLabel(row.trans_type) }}
                 </el-tag>
               </template>
-            </el-table-column>
-            <el-table-column label="物料" min-width="160">
-              <template #default="{ row }">
+              <template v-else-if="col.prop === 'material_name'" #default="{ row }">
                 <span style="font-weight: 500">{{ row.material_name || row.product_name }}</span>
               </template>
+              <template v-else-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
+              <template v-else-if="col.prop === 'unit_cost'" #default="{ row }">{{ $fm(row.unit_cost) }}</template>
+              <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
             </el-table-column>
-            <el-table-column prop="batch_no" label="批次号" width="140" />
-            <el-table-column prop="quantity" label="数量" width="100" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-            <el-table-column label="单价(¥)" width="100" align="right"><template #default="{ row }">{{ $fm(row.unit_cost) }}</template></el-table-column>
-            <el-table-column prop="total_amount" label="金额(¥)" width="120" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-            <el-table-column prop="warehouse" label="仓库" width="100" />
-            <el-table-column prop="source_doc_type" label="单据" width="100" />
-            <el-table-column prop="source_doc_no" label="单据号" width="140" />
           </el-table>
           <el-pagination v-model:current-page="transPage" v-model:page-size="transPageSize" :total="transTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchTransactions" @current-change="fetchTransactions" style="margin-top: 12px" />
         </el-card>
@@ -160,9 +137,49 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '@/api/request'
+
+// ===== 列配置（可拖拽排序）=====
+// 余额表：快照视图(snapshot)与期间视图(period)列互斥，由 balancePeriod 过滤显示
+const STORAGE_KEY = 'mazu_inventory_balance_columns'
+const defaultColumns = [
+  { prop: 'warehouse', label: '仓库', width: 100 },
+  { prop: 'material_name', label: '物料', minWidth: 45 },
+  { prop: 'material_spec', label: '规格', minWidth: 80 },
+  { prop: 'material_model', label: '型号', minWidth: 80 },
+  { prop: 'material_id', label: '类型', width: 100, align: 'center' },
+  { prop: 'batch_no', label: '批次号', width: 120 },
+  { prop: 'quantity', label: '数量', width: 90, align: 'right', group: 'snapshot' },
+  { prop: 'unit_cost', label: '单价(¥)', width: 90, align: 'right', group: 'snapshot' },
+  { prop: 'total_cost', label: '金额(¥)', width: 110, align: 'right', group: 'snapshot' },
+  { prop: 'opening_qty', label: '期初', width: 80, align: 'right', group: 'period' },
+  { prop: 'period_in_qty', label: '入库', width: 80, align: 'right', group: 'period' },
+  { prop: 'period_out_qty', label: '出库', width: 80, align: 'right', group: 'period' },
+  { prop: 'closing_qty', label: '期末数量', width: 90, align: 'right', group: 'period' },
+  { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', group: 'period' },
+  { prop: 'source_type', label: '来源', width: 60 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
+const balanceColumns = computed(() => columns.value.filter(c => balancePeriod.value ? c.group !== 'snapshot' : c.group !== 'period'))
+
+const TRANS_STORAGE_KEY = 'mazu_inventory_trans_columns'
+const defaultTransColumns = [
+  { prop: 'trans_date', label: '日期', width: 100 },
+  { prop: 'trans_no', label: '库存流水号', width: 160 },
+  { prop: 'trans_type', label: '类型', width: 100 },
+  { prop: 'material_name', label: '物料', minWidth: 160 },
+  { prop: 'batch_no', label: '批次号', width: 140 },
+  { prop: 'quantity', label: '数量', width: 100, align: 'right' },
+  { prop: 'unit_cost', label: '单价(¥)', width: 100, align: 'right' },
+  { prop: 'total_amount', label: '金额(¥)', width: 120, align: 'right' },
+  { prop: 'warehouse', label: '仓库', width: 100 },
+  { prop: 'source_doc_type', label: '单据', width: 100 },
+  { prop: 'source_doc_no', label: '单据号', width: 140 },
+]
+const { columns: transColumns, columnVersion: transColumnVersion, initColumnDrag: initTransColumnDrag } = useColumnDrag(defaultTransColumns, TRANS_STORAGE_KEY, '.drag-table-trans .el-table__header-wrapper thead tr')
 
 const activeTab = ref('balance')
 const warehouseList = ref([])
@@ -191,7 +208,7 @@ async function fetchBalance() {
     const res = await request.get('/inventory/balance', { params })
     balanceList.value = res.items || []
     balanceTotal.value = res.total || 0
-  } catch (e) { ElMessage.error('加载失败') } finally { balanceLoading.value = false }
+  } catch (e) { ElMessage.error('加载失败') } finally { balanceLoading.value = false; nextTick(initColumnDrag) }
 }
 
 function onDateRangeChange() {
@@ -259,7 +276,7 @@ async function fetchTransactions() {
     const res = await request.get('/inventory/transactions', { params })
     transactionList.value = res.items || []
     transTotal.value = res.total || 0
-  } catch (e) { ElMessage.error('加载失败') } finally { transLoading.value = false }
+  } catch (e) { ElMessage.error('加载失败') } finally { transLoading.value = false; nextTick(initTransColumnDrag) }
 }
 
 function resetTransactions() {
@@ -326,6 +343,7 @@ onMounted(() => {
     warehouseList.value = res.items || []
   }).catch(() => {})
   fetchBalance()
+  nextTick(initTransColumnDrag)
 })
 
 </script>
