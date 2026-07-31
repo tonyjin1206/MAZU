@@ -14,7 +14,7 @@ from app.models.inventory import WarehouseInventory, StockTransaction
 from app.models.purchase import AccountsPayable, PurchaseRequisition
 from app.utils.auth import get_current_user
 from app.utils.batch_no import generate_batch_no, generate_doc_no
-from sqlalchemy import func as sa_func
+from sqlalchemy import func as sa_func, or_
 
 
 def _recalc_material_cost(prod_id: int, db: Session):
@@ -32,7 +32,7 @@ def _recalc_material_cost(prod_id: int, db: Session):
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type == "outsource_out":
+        if t.trans_type in ("outsource_out", "material_issue_out"):
             total += abs(t.total_amount or 0)
         elif t.trans_type == "issue_cancel":
             total -= abs(t.total_amount or 0)
@@ -54,7 +54,7 @@ def _calc_material_issued_amount(prod_id: int, material_id: int, db: Session) ->
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type == "outsource_out":
+        if t.trans_type in ("outsource_out", "material_issue_out"):
             total += abs(t.total_amount or 0)
         elif t.trans_type == "issue_cancel":
             total -= abs(t.total_amount or 0)
@@ -158,6 +158,8 @@ def list_productions(
 @router.get("/inventory/batch", tags=["生产管理"])
 def query_batch_inventory(
     batch_no: str = Query("", description="批次号"),
+    keyword: str = Query("", description="物料/产品名称或编码"),
+    warehouse_id: int = Query(None, description="仓库ID"),
     product_id: int = Query(None),
     material_id: int = Query(None),
     db: Session = Depends(get_db),
@@ -167,14 +169,25 @@ def query_batch_inventory(
     query = db.query(WarehouseInventory)
     if batch_no:
         query = query.filter(WarehouseInventory.batch_no.like(f"%{batch_no}%"))
+    if warehouse_id:
+        query = query.filter(WarehouseInventory.warehouse_id == warehouse_id)
     if product_id:
         query = query.filter(WarehouseInventory.product_id == product_id)
     if material_id:
         query = query.filter(WarehouseInventory.material_id == material_id)
+    if keyword:
+        kw = f"%{keyword}%"
+        query = query.outerjoin(Material, WarehouseInventory.material_id == Material.id) \
+            .outerjoin(Product, WarehouseInventory.product_id == Product.id) \
+            .filter(or_(Material.code.like(kw), Material.name.like(kw),
+                        Product.code.like(kw), Product.name_cn.like(kw)))
+    query = query.filter(WarehouseInventory.quantity != 0)
     items = query.order_by(WarehouseInventory.id.desc()).limit(100).all()
     return {"items": [
         {"id": i.id, "warehouse": i.warehouse.name if i.warehouse else "",
          "batch_no": i.batch_no, "quantity": i.quantity,
+         "material_name": i.material.name if i.material else "",
+         "product_name": i.product.name_cn if i.product else "",
          "in_date": str(i.in_date), "source_type": i.source_type,
         } for i in items
     ]}
@@ -183,10 +196,17 @@ def query_batch_inventory(
 @router.get("/inventory/trace", tags=["生产管理"])
 def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """批次号全程追溯"""
+    batch = db.query(WarehouseInventory).filter(WarehouseInventory.batch_no == batch_no).first()
+    item_name = ""
+    if batch:
+        if batch.material:
+            item_name = batch.material.name
+        elif batch.product:
+            item_name = batch.product.name_cn
     transactions = db.query(StockTransaction).filter(
         StockTransaction.batch_no == batch_no
     ).order_by(StockTransaction.trans_date).all()
-    return {"batch_no": batch_no, "trace": [
+    return {"batch_no": batch_no, "item_name": item_name, "trace": [
         {"id": t.id, "type": t.trans_type, "quantity": t.quantity,
          "before": t.before_qty, "after": t.after_qty,
          "doc_type": t.source_doc_type, "doc_no": t.source_doc_no,
@@ -605,9 +625,9 @@ def issue_material_to_process(
     db.add(issue)
     db.flush()
 
-    # 库存流水
+    # 库存流水（自产工序=生产领料，委外工序=委外发料）
     trans = StockTransaction(
-        trans_type="outsource_out",
+        trans_type="outsource_out" if proc.outsourcer_id else "material_issue_out",
         warehouse_id=inventory.warehouse_id,
         material_id=material_id,
         batch_no=batch_no,
@@ -688,16 +708,16 @@ def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Dep
                 "trans_no": t.trans_no or "",
                 "batch_no": iss.batch_no,
                 "type": t.trans_type,
-                "type_label": "发料出库" if t.trans_type == "outsource_out" else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
-                "quantity": abs(t.quantity or 0) if t.trans_type == "outsource_out" else (-abs(t.quantity or 0)),
+                "type_label": "发料出库" if t.trans_type in ("outsource_out", "material_issue_out") else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
+                "quantity": abs(t.quantity or 0) if t.trans_type in ("outsource_out", "material_issue_out") else (-abs(t.quantity or 0)),
                 "amount": abs(t.total_amount or 0),
                 "operator": t.operator or "",
                 "date": str(t.trans_date)[:16] if t.trans_date else "",
             })
 
     # 汇总
-    out_qty = sum(it["quantity"] for it in items if it["type"] == "outsource_out")
-    out_amt = sum(it["amount"] for it in items if it["type"] == "outsource_out")
+    out_qty = sum(it["quantity"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
+    out_amt = sum(it["amount"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
     cancel_qty = sum(it["quantity"] for it in items if it["type"] == "issue_cancel")
     cancel_amt = sum(it["amount"] for it in items if it["type"] == "issue_cancel")
 
@@ -913,8 +933,17 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     if qty <= 0:
         raise HTTPException(400, "入库数量必须大于 0")
 
-    material_cost = float(data.get("material_cost", 0))
-    process_cost = float(data.get("process_cost", 0))
+    # 成本：显式传入(非空)则用传入值；否则按 剩余投入 × 本次占比 自动结转（可改）
+    remaining_qty = max(0, (prod.quantity or 0) - (prod.received_qty or 0))
+    ratio = min(1.0, qty / remaining_qty) if remaining_qty > 0 else 1.0
+    remaining_mat = max(0, (prod.total_material_cost or 0) - (prod.transferred_material_cost or 0))
+    remaining_proc = max(0, (prod.total_process_cost or 0) - (prod.transferred_process_cost or 0))
+    auto_mat = remaining_mat if qty >= remaining_qty else round(remaining_mat * ratio, 2)
+    auto_proc = remaining_proc if qty >= remaining_qty else round(remaining_proc * ratio, 2)
+    mc_raw = data.get("material_cost")
+    pc_raw = data.get("process_cost")
+    material_cost = auto_mat if mc_raw in (None, "") else float(mc_raw)
+    process_cost = auto_proc if pc_raw in (None, "") else float(pc_raw)
     if material_cost < 0 or process_cost < 0:
         raise HTTPException(400, "转出成本不能为负数")
 
@@ -1019,6 +1048,16 @@ def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db),
     material_cost = receipt.material_cost or 0
     process_cost = receipt.process_cost or 0
     batch_no = receipt.batch_no
+
+    # 校验：该批次除本次入库/冲销外，若有任何其他出入库（发货/退货/盘点等），
+    # 禁止物理取消 — 否则流水累计与台账对不上，应走销售退货/红冲通道
+    other_txn = db.query(StockTransaction).filter(
+        StockTransaction.batch_no == batch_no,
+        StockTransaction.product_id == receipt.product_id,
+        ~StockTransaction.trans_type.in_(["production_in", "receipt_cancel"]),
+    ).first()
+    if other_txn:
+        raise HTTPException(400, "该批次已发生其他出入库（发货/退货/盘点等），无法取消入库；如需退回请走销售退货")
 
     # 删除成品库存
     db.query(WarehouseInventory).filter(

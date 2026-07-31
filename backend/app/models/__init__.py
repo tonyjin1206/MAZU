@@ -11,6 +11,7 @@ from app.models.foundation import (
 )
 from app.models.inventory import (
     WarehouseInventory, StockTransaction,
+    Stocktake, StocktakeItem,
 )
 from app.models.purchase import (
     PurchaseOrder, PurchaseOrderItem,
@@ -35,7 +36,7 @@ from app.models.tax_refund import (
 )
 from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
-    ReminderConfig, ReminderLog,
+    ReminderConfig, ReminderLog, OperationLog,
 )
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "Warehouse", "Currency", "ExchangeRate",
     "HsCode", "TradeTerm",
     "WarehouseInventory", "StockTransaction",
+    "Stocktake", "StocktakeItem",
     "PurchaseOrder", "PurchaseOrderItem",
     "PurchaseReceipt", "PurchaseReceiptItem",
     "PurchaseInvoice", "PurchaseRequisition",
@@ -60,5 +62,5 @@ __all__ = [
     "TaxRefundInputInvoice", "TaxRefundDeclaration",
     "TaxRefundDetail", "TaxRefundProgress",
     "WecomConfig", "BotConfig", "BotConversation",
-    "ReminderConfig", "ReminderLog",
+    "ReminderConfig", "ReminderLog", "OperationLog",
 ]

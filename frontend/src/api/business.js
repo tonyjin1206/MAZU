@@ -20,6 +20,7 @@ export const purchaseApi = {
     get: (id) => request.get(`/purchase/receipts/${id}`),
     create: (data) => request.post('/purchase/receipts', data),
     delete: (id) => request.delete(`/purchase/receipts/${id}`),
+    red: (id, data) => request.post(`/purchase/receipts/${id}/red`, data),
   },
   invoices: {
     list: (params) => request.get('/purchase/invoices', { params }),
@@ -59,6 +60,7 @@ export const salesApi = {
   deliveries: {
     list: (params) => request.get('/sales/deliveries', { params }),
     create: (data) => request.post('/sales/deliveries', data),
+    return: (id, data) => request.post(`/sales/deliveries/${id}/return`, data),
   },
   customs: {
     list: (params) => request.get('/sales/customs', { params }),
@@ -178,6 +180,15 @@ export const inventoryApi = {
   balance: (params) => request.get('/inventory/balance', { params }),
   transactions: (params) => request.get('/inventory/transactions', { params }),
   availableBatches: (params) => request.get('/inventory/available-batches', { params }),
+  // 盘点
+  stocktakes: {
+    list: (params) => request.get('/inventory/stocktakes', { params }),
+    get: (id) => request.get(`/inventory/stocktakes/${id}`),
+    create: (data) => request.post('/inventory/stocktakes', data),
+    updateItem: (stocktakeId, itemId, data) => request.put(`/inventory/stocktakes/${stocktakeId}/items/${itemId}`, data),
+    submit: (id) => request.post(`/inventory/stocktakes/${id}/submit`),
+    remove: (id) => request.delete(`/inventory/stocktakes/${id}`),
+  },
 }
 
 // AI 对话
