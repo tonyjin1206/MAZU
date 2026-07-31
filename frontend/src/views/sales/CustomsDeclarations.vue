@@ -27,17 +27,16 @@
     </el-card>
 
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe>
-        <el-table-column prop="customs_no" label="报关单号" width="160" sortable />
-        <el-table-column prop="order_no" label="关联订单" width="140" sortable />
-        <el-table-column prop="customer_name" label="客户" min-width="130" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
-        <el-table-column prop="hs_code" label="HS编码" width="120" sortable />
-        <el-table-column label="报关金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.declare_amount) }}</template></el-table-column>
-        <el-table-column prop="currency_code" label="币种" width="90" sortable />
-        <el-table-column prop="customs_broker" label="报关行" min-width="120" sortable />
-        <el-table-column prop="declare_date" label="报关日期" width="100" sortable column-key="declare_date" :filters="dateFilters" :filter-method="filterDate" />
-        <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus">
-          <template #default="{ row }">
+      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe>
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'declare_amount'" #default="{ row }">{{ $fm(row.declare_amount) }}</template>
+          <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
@@ -104,9 +103,25 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '../../api/request'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_customs_declaration_columns'
+const defaultColumns = [
+  { prop: 'customs_no', label: '报关单号', width: 160, sortable: true },
+  { prop: 'order_no', label: '关联订单', width: 140, sortable: true },
+  { prop: 'customer_name', label: '客户', minWidth: 130, sortable: true },
+  { prop: 'hs_code', label: 'HS编码', width: 120, sortable: true },
+  { prop: 'declare_amount', label: '报关金额', width: 120, align: 'right', sortable: true },
+  { prop: 'currency_code', label: '币种', width: 90, sortable: true },
+  { prop: 'customs_broker', label: '报关行', minWidth: 120, sortable: true },
+  { prop: 'declare_date', label: '报关日期', width: 100, sortable: true },
+  { prop: 'status', label: '状态', width: 100, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
@@ -129,30 +144,10 @@ function resetSearch() {
   searchForm.keyword = ''
   searchForm.dateRange = null
   searchForm.status = ''
-  filterDateVal.value = ''; filterCustomerVal.value = ''; filterStatusVal.value = ''
   page.value = 1
   fetchList()
 }
 
-// 列筛选
-const dateFilters = ref([])
-const customerFilters = ref([])
-const statusFilters = ref([])
-const filterDateVal = ref('')
-const filterCustomerVal = ref('')
-const filterStatusVal = ref('')
-
-const filteredList = computed(() => {
-  let items = list.value
-  if (filterDateVal.value) items = items.filter(r => r.declare_date === filterDateVal.value)
-  if (filterCustomerVal.value) items = items.filter(r => r.customer_name === filterCustomerVal.value)
-  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
-  return items
-})
-
-function filterDate(val, row) { filterDateVal.value = val; return true }
-function filterCustomer(val, row) { filterCustomerVal.value = val; return true }
-function filterStatus(val, row) { filterStatusVal.value = val; return true }
 const orderList = ref([])
 const hsCodeList = ref([])
 const currencyList = ref([])
@@ -198,12 +193,8 @@ async function fetchList() {
     const res = await request.get('/sales/customs', { params })
     list.value = res.items || []
     total.value = res.total || 0
-    // 更新列筛选
-    dateFilters.value = [...new Set(list.value.map(r => r.declare_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    customerFilters.value = [...new Set(list.value.map(r => r.customer_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-    statusFilters.value = [...new Set(list.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch { ElMessage.error('加载失败') }
-  finally { loading.value = false }
+  finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 async function fetchOrders() {

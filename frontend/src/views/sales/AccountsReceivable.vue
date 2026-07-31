@@ -4,30 +4,38 @@
       <template #header></template>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="汇总" name="summary">
-          <el-table :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
-            <el-table-column prop="customer_name" label="客户" min-width="180">
-              <template #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.customer_name }}</span></template>
-            </el-table-column>
-            <el-table-column label="应收笔数" width="80" align="center"><template #default="{ row }">{{ row.count }}</template></el-table-column>
-            <el-table-column label="应收金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-            <el-table-column label="已收金额" width="130" align="right"><template #default="{ row }">{{ $fm(row.total_collected) }}</template></el-table-column>
-            <el-table-column label="余额" width="130" align="right">
-              <template #default="{ row }"><span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span></template>
+          <el-table class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
+            <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'customer_name'" #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.customer_name }}</span></template>
+              <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
+              <template v-else-if="col.prop === 'total_collected'" #default="{ row }">{{ $fm(row.total_collected) }}</template>
+              <template v-else-if="col.prop === 'balance'" #default="{ row }">
+                <span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span>
+              </template>
             </el-table-column>
           </el-table>
         </el-tab-pane>
 
         <el-tab-pane label="明细" name="detail">
-          <el-table :data="cdList" border stripe v-loading="cdLoading" style="width: 100%" :summary-method="cdTotal" show-summary>
-            <el-table-column prop="customer_name" label="客户" min-width="140" />
-            <el-table-column prop="ar_date" label="应收日期" width="110" />
-            <el-table-column prop="ar_no" label="应收单号" width="160" />
-            <el-table-column label="应收金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ar_amount) }}</template></el-table-column>
-            <el-table-column prop="cr_date" label="收款日期" width="110" />
-            <el-table-column prop="collection_no" label="收款单号" width="160" />
-            <el-table-column label="收款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
-            <el-table-column label="余额" width="110" align="right">
-              <template #default="{ row }"><span :style="{ color: (row.ar_amount - row.collected_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ar_amount - row.collected_amount) }}</span></template>
+          <el-table class="drag-table-detail" :key="cdColumnVersion" :data="cdList" border stripe v-loading="cdLoading" style="width: 100%" :summary-method="cdTotal" show-summary>
+            <el-table-column v-for="col in cdColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'ar_amount'" #default="{ row }">{{ $fm(row.ar_amount) }}</template>
+              <template v-else-if="col.prop === 'collected_amount'" #default="{ row }">{{ $fm(row.collected_amount) }}</template>
+              <template v-else-if="col.prop === 'balance'" #default="{ row }">
+                <span :style="{ color: (row.ar_amount - row.collected_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ar_amount - row.collected_amount) }}</span>
+              </template>
             </el-table-column>
             <el-table-column label="操作" width="120" align="center" fixed="right">
               <template #default="{ row }">
@@ -85,9 +93,34 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, watch } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '../../api/request'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_ar_summary_columns'
+const defaultColumns = [
+  { prop: 'customer_name', label: '客户', minWidth: 180 },
+  { prop: 'count', label: '应收笔数', width: 80, align: 'center' },
+  { prop: 'total_amount', label: '应收金额', width: 130, align: 'right' },
+  { prop: 'total_collected', label: '已收金额', width: 130, align: 'right' },
+  { prop: 'balance', label: '余额', width: 130, align: 'right' },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
+
+const CD_STORAGE_KEY = 'mazu_ar_detail_columns'
+const defaultCdColumns = [
+  { prop: 'customer_name', label: '客户', minWidth: 140 },
+  { prop: 'ar_date', label: '应收日期', width: 110 },
+  { prop: 'ar_no', label: '应收单号', width: 160 },
+  { prop: 'ar_amount', label: '应收金额', width: 120, align: 'right' },
+  { prop: 'cr_date', label: '收款日期', width: 110 },
+  { prop: 'collection_no', label: '收款单号', width: 160 },
+  { prop: 'collected_amount', label: '收款金额', width: 120, align: 'right' },
+  { prop: 'balance', label: '余额', width: 110, align: 'right' },
+]
+const { columns: cdColumns, columnVersion: cdColumnVersion, initColumnDrag: initCdColumnDrag } = useColumnDrag(defaultCdColumns, CD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
 
 const activeTab = ref('summary')
 const loading = ref(false)
@@ -117,7 +150,7 @@ async function fetchData() {
     const res = await request.get('/sales/ar', { params: { page: 1, page_size: 100 } })
     list.value = res.items || []
     total.value = res.total || 0
-  } catch {} finally { loading.value = false }
+  } catch {} finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 watch(activeTab, (tab) => { if (tab === 'detail') { if (!cdFilter.value) cdFilter.value = ' '; fetchCD() } })
@@ -130,7 +163,7 @@ async function fetchCD() {
     cdList.value = (res.items || []).filter(r =>
       (r.customer_name || '').toLowerCase().includes(cdFilter.value.toLowerCase())
     )
-  } finally { cdLoading.value = false }
+  } finally { cdLoading.value = false; nextTick(initCdColumnDrag) }
 }
 
 const summaryList = computed(() => {

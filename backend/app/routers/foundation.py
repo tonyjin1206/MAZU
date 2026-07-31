@@ -293,6 +293,13 @@ def _next_code(db, model, prefix: str, field="code"):
     return f"{prefix}{num:06d}"
 
 
+@router.get("/customers/next-code", tags=["基础档案-客户"])
+def preview_customer_code(db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
+    """预览下一个客户编码（仅预览，不消耗流水）"""
+    return {"code": _next_code(db, Customer, "CU")}
+
+
 @router.post("/customers", tags=["基础档案-客户"])
 def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
@@ -422,6 +429,13 @@ def delete_supplier(item_id: int, db: Session = Depends(get_db),
 
 
 # ==================== 供应商自定义创建（自动编码 SU+6位流水）====================
+
+@router.get("/suppliers/next-code", tags=["基础档案-供应商"])
+def preview_supplier_code(db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
+    """预览下一个供应商编码（仅预览，不消耗流水）"""
+    return {"code": _next_code(db, Supplier, "SU")}
+
 
 @router.post("/suppliers", tags=["基础档案-供应商"])
 def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),

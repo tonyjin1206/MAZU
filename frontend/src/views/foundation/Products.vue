@@ -21,13 +21,33 @@
       </el-form>
     </el-card>
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="140" sortable column-key="code" :filters="codeFilters" :filter-method="filterCode" />
-        <el-table-column prop="name_cn" label="中文名" min-width="160" sortable column-key="name_cn" :filters="nameFilters" :filter-method="filterName" />
-        <el-table-column prop="name_en" label="英文名" min-width="180" sortable />
-        <el-table-column prop="spec" label="规格" min-width="140" sortable column-key="spec" :filters="specFilters" :filter-method="filterSpec" />
-        <el-table-column prop="unit" label="单位" width="100" align="center" sortable column-key="unit" :filters="unitFilters" :filter-method="filterUnit" />
-        <el-table-column label="销售价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.sale_price) }}</template></el-table-column>
+      <el-table
+        :key="columnVersion"
+        :data="filteredList"
+        v-loading="loading"
+        stripe border size="small"
+        style="width: 100%"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :sortable="col.sortable"
+          :align="col.align"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'sale_price'" #default="{ row }">
+            {{ $fm(row.sale_price) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -78,37 +98,29 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_product_columns'
+const defaultColumns = [
+  { prop: 'code', label: '编码', width: 140, sortable: true },
+  { prop: 'name_cn', label: '中文名', minWidth: 160, sortable: true },
+  { prop: 'name_en', label: '英文名', minWidth: 180, sortable: true },
+  { prop: 'spec', label: '规格', minWidth: 140, sortable: true },
+  { prop: 'unit', label: '单位', width: 100, align: 'center', sortable: true },
+  { prop: 'sale_price', label: '销售价', width: 100, align: 'right', sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])
 const pagination = ref({ page: 1, pageSize: 100, total: 0 })
 const searchForm = reactive({ code: '', name_cn: '', spec: '' })
 
-// 列筛选
-const codeFilters = ref([])
-const nameFilters = ref([])
-const specFilters = ref([])
-const unitFilters = ref([])
-const filterCodeVal = ref('')
-const filterNameVal = ref('')
-const filterSpecVal = ref('')
-const filterUnitVal = ref('')
-
-const filteredList = computed(() => {
-  let items = tableData.value
-  if (filterCodeVal.value) items = items.filter(r => r.code === filterCodeVal.value)
-  if (filterNameVal.value) items = items.filter(r => r.name_cn === filterNameVal.value)
-  if (filterSpecVal.value) items = items.filter(r => r.spec === filterSpecVal.value)
-  if (filterUnitVal.value) items = items.filter(r => r.unit === filterUnitVal.value)
-  return items
-})
-function filterCode(val, row) { filterCodeVal.value = val; return true }
-function filterName(val, row) { filterNameVal.value = val; return true }
-function filterSpec(val, row) { filterSpecVal.value = val; return true }
-function filterUnit(val, row) { filterUnitVal.value = val; return true }
+const filteredList = computed(() => tableData.value)
 const dialogVisible = ref(false)
 const dialogLoading = ref(false)
 const dialogMode = ref('create')
@@ -157,11 +169,7 @@ async function fetchData() {
     })
     tableData.value = res.items || []
     pagination.value.total = res.total || 0
-    // 更新列筛选
-    codeFilters.value = [...new Set(tableData.value.map(r => r.code).filter(Boolean))].map(v => ({ text: v, value: v }))
-    nameFilters.value = [...new Set(tableData.value.map(r => r.name_cn).filter(Boolean))].map(v => ({ text: v, value: v }))
-    specFilters.value = [...new Set(tableData.value.map(r => r.spec).filter(Boolean))].map(v => ({ text: v, value: v }))
-    unitFilters.value = [...new Set(tableData.value.map(r => r.unit).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nextTick(initColumnDrag)
   } catch (e) {
     // handled by interceptor
   } finally {
@@ -173,7 +181,6 @@ function resetSearch() {
   searchForm.code = ''
   searchForm.name_cn = ''
   searchForm.spec = ''
-  filterCodeVal.value = ''; filterNameVal.value = ''; filterSpecVal.value = ''; filterUnitVal.value = ''
   pagination.value.page = 1
   fetchData()
 }

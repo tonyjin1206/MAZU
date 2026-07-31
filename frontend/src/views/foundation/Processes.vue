@@ -15,16 +15,35 @@
     </el-card>
 
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border>
-        <el-table-column prop="code" label="编码" width="120" sortable column-key="code" :filters="codeFilters" :filter-method="filterCode" />
-        <el-table-column prop="name" label="工序名称" min-width="160" sortable column-key="name" :filters="nameFilters" :filter-method="filterName" />
-        <el-table-column prop="standard_hours" label="标准工时(h)" width="110" align="right" sortable />
-        <el-table-column prop="is_outsource" label="类型" width="80" align="center" sortable>
-          <template #default="{ row }">
+      <el-table
+        :key="columnVersion"
+        :data="filteredList"
+        v-loading="loading"
+        stripe border
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :sortable="col.sortable"
+          :align="col.align"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'is_outsource'" #default="{ row }">
             <el-tag :type="row.is_outsource === 1 ? 'warning' : 'info'" size="small">{{ row.is_outsource === 1 ? '委外' : '自制' }}</el-tag>
           </template>
+          <template v-else-if="col.prop === 'unit_price'" #default="{ row }">
+            {{ $fm(row.unit_price) }}
+          </template>
         </el-table-column>
-        <el-table-column label="加工单价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -68,9 +87,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_process_columns'
+const defaultColumns = [
+  { prop: 'code', label: '编码', width: 120, sortable: true },
+  { prop: 'name', label: '工序名称', minWidth: 160, sortable: true },
+  { prop: 'standard_hours', label: '标准工时(h)', width: 110, align: 'right', sortable: true },
+  { prop: 'is_outsource', label: '类型', width: 80, align: 'center', sortable: true },
+  { prop: 'unit_price', label: '加工单价', width: 100, align: 'right', sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])
@@ -94,22 +125,9 @@ const rules = {
 
 const searchForm = reactive({ code: '', name: '' })
 
-// 列筛选
-const codeFilters = ref([])
-const nameFilters = ref([])
-const filterCodeVal = ref('')
-const filterNameVal = ref('')
+const filteredList = computed(() => tableData.value)
 
-const filteredList = computed(() => {
-  let items = tableData.value
-  if (filterCodeVal.value) items = items.filter(r => r.code === filterCodeVal.value)
-  if (filterNameVal.value) items = items.filter(r => r.name === filterNameVal.value)
-  return items
-})
-function filterCode(val, row) { filterCodeVal.value = val; return true }
-function filterName(val, row) { filterNameVal.value = val; return true }
-
-function resetSearch() { searchForm.code = ''; searchForm.name = ''; filterCodeVal.value = ''; filterNameVal.value = ''; page.value = 1; fetchData() }
+function resetSearch() { searchForm.code = ''; searchForm.name = ''; page.value = 1; fetchData() }
 
 async function fetchData() {
   loading.value = true
@@ -117,9 +135,7 @@ async function fetchData() {
     const res = await foundationApi.processes.list({ page: page.value, page_size: pageSize.value, code: searchForm.code || undefined, name: searchForm.name || undefined })
     tableData.value = res.items || []
     total.value = res.total || 0
-    // 更新列筛选
-    codeFilters.value = [...new Set(tableData.value.map(r => r.code).filter(Boolean))].map(v => ({ text: v, value: v }))
-    nameFilters.value = [...new Set(tableData.value.map(r => r.name).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nextTick(initColumnDrag)
   } finally {
     loading.value = false
   }

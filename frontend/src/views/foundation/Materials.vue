@@ -32,14 +32,33 @@
 
     <!-- 表格 -->
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" border stripe size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="140" sortable column-key="code" :filters="codeFilters" :filter-method="filterCode" />
-        <el-table-column prop="name" label="名称" min-width="160" sortable column-key="name" :filters="nameFilters" :filter-method="filterName" />
-        <el-table-column prop="spec" label="规格" min-width="140" sortable column-key="spec" :filters="specFilters" :filter-method="filterSpec" />
-        <el-table-column prop="model" label="型号" min-width="120" sortable />
-        <el-table-column prop="unit" label="单位" width="100" align="center" sortable column-key="unit" :filters="unitFilters" :filter-method="filterUnit" />
-        <el-table-column prop="category" label="类别" width="100" align="center" sortable column-key="category" :filters="categoryFilters" :filter-method="filterCategory" />
-        <el-table-column label="单价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.purchase_price) }}</template></el-table-column>
+      <el-table
+        :key="columnVersion"
+        :data="filteredList"
+        v-loading="loading"
+        stripe border size="small"
+        style="width: 100%"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :sortable="col.sortable"
+          :align="col.align"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'purchase_price'" #default="{ row }">
+            {{ $fm(row.purchase_price) }}
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -95,9 +114,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_material_columns'
+const defaultColumns = [
+  { prop: 'code', label: '编码', width: 140, sortable: true },
+  { prop: 'name', label: '名称', minWidth: 160, sortable: true },
+  { prop: 'spec', label: '规格', minWidth: 140, sortable: true },
+  { prop: 'model', label: '型号', minWidth: 120, sortable: true },
+  { prop: 'unit', label: '单位', width: 100, align: 'center', sortable: true },
+  { prop: 'category', label: '类别', width: 100, align: 'center', sortable: true },
+  { prop: 'purchase_price', label: '单价', width: 100, align: 'right', sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])
@@ -105,32 +138,7 @@ const pagination = ref({ page: 1, pageSize: 100, total: 0 })
 
 const searchForm = reactive({ code: '', name: '', spec: '', category: '' })
 
-// 列筛选
-const codeFilters = ref([])
-const nameFilters = ref([])
-const specFilters = ref([])
-const unitFilters = ref([])
-const categoryFilters = ref([])
-const filterCodeVal = ref('')
-const filterNameVal = ref('')
-const filterSpecVal = ref('')
-const filterUnitVal = ref('')
-const filterCategoryVal = ref('')
-
-const filteredList = computed(() => {
-  let items = tableData.value
-  if (filterCodeVal.value) items = items.filter(r => r.code === filterCodeVal.value)
-  if (filterNameVal.value) items = items.filter(r => r.name === filterNameVal.value)
-  if (filterSpecVal.value) items = items.filter(r => r.spec === filterSpecVal.value)
-  if (filterUnitVal.value) items = items.filter(r => r.unit === filterUnitVal.value)
-  if (filterCategoryVal.value) items = items.filter(r => r.category === filterCategoryVal.value)
-  return items
-})
-function filterCode(val, row) { filterCodeVal.value = val; return true }
-function filterName(val, row) { filterNameVal.value = val; return true }
-function filterSpec(val, row) { filterSpecVal.value = val; return true }
-function filterUnit(val, row) { filterUnitVal.value = val; return true }
-function filterCategory(val, row) { filterCategoryVal.value = val; return true }
+const filteredList = computed(() => tableData.value)
 
 const dialogVisible = ref(false)
 const dialogLoading = ref(false)
@@ -160,12 +168,7 @@ async function fetchData() {
     const res = await foundationApi.materials.list(params)
     tableData.value = res.items || res.data?.items || []
     pagination.value.total = res.total || res.data?.total || 0
-    // 更新列筛选
-    codeFilters.value = [...new Set(tableData.value.map(r => r.code).filter(Boolean))].map(v => ({ text: v, value: v }))
-    nameFilters.value = [...new Set(tableData.value.map(r => r.name).filter(Boolean))].map(v => ({ text: v, value: v }))
-    specFilters.value = [...new Set(tableData.value.map(r => r.spec).filter(Boolean))].map(v => ({ text: v, value: v }))
-    unitFilters.value = [...new Set(tableData.value.map(r => r.unit).filter(Boolean))].map(v => ({ text: v, value: v }))
-    categoryFilters.value = [...new Set(tableData.value.map(r => r.category).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nextTick(initColumnDrag)
   } catch (e) {
     ElMessage.error('加载失败')
   } finally {
@@ -178,7 +181,6 @@ function resetSearch() {
   searchForm.name = ''
   searchForm.spec = ''
   searchForm.category = ''
-  filterCodeVal.value = ''; filterNameVal.value = ''; filterSpecVal.value = ''; filterUnitVal.value = ''; filterCategoryVal.value = ''
   pagination.value.page = 1
   fetchData()
 }

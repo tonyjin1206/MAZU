@@ -27,48 +27,42 @@
         </el-card>
 
         <el-card>
-          <el-table :data="filteredList" v-loading="loading" stripe border size="small">
-            <el-table-column prop="order_date" label="订单日期" width="100" sortable column-key="order_date" :filters="dateFilters" :filter-method="filterDate" />
-            <el-table-column prop="order_no" label="订单号" min-width="140" sortable />
-            <el-table-column prop="customer_name" label="客户" width="170" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
-            <el-table-column prop="item_count" label="明细" width="70" align="center" sortable />
-              <el-table-column label="含税金额" align="right" width="100" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-              <el-table-column label="已开票" align="right" width="100" sortable><template #default="{ row }">{{ $fm(row.invoiced_amount) }}</template></el-table-column>
-              <el-table-column label="未开票" align="right" width="100" sortable>
-                <template #default="{ row }">
-                  <span :style="{ color: (row.total_amount - row.invoiced_amount) > 0 ? '#e6a23c' : '#909399' }">
-                    {{ $fm((row.total_amount || 0) - (row.invoiced_amount || 0)) }}
-                  </span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="currency_code" label="币种" width="80" sortable />
-              <el-table-column prop="trade_term" label="贸易术语" width="100" sortable />
-              <el-table-column label="状态" align="center" width="90" sortable>
-                <template #default="{ row }">
-                  <el-tag v-if="row.status === '已发货'" type="success" size="small">已发货</el-tag>
-                  <el-tag v-else-if="row.status === '部分发货'" type="warning" size="small">部分发货</el-tag>
-                  <el-tag v-else-if="row.status === '生产中'" type="primary" size="small">生产中</el-tag>
-                  <el-tag v-else-if="row.status === '已审'" type="info" size="small">已审</el-tag>
-                  <el-tag v-else-if="row.status === '待审核'" type="info" size="small">待审核</el-tag>
-                  <el-tag v-else size="small">{{ row.status }}</el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column label="已发货" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.delivered_amount) }}</template></el-table-column>
-              <el-table-column label="未发货" align="right" width="90" sortable>
-                <template #default="{ row }">
-                  <span :style="{ color: (row.undelivered_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
-                    {{ $fm(row.undelivered_amount) }}
-                  </span>
-                </template>
-              </el-table-column>
-              <el-table-column label="已收款" align="right" width="90" sortable><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
-              <el-table-column label="未收款" align="right" width="90" sortable>
-                <template #default="{ row }">
-                  <span :style="{ color: (row.uncollected_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
-                    {{ $fm(row.uncollected_amount) }}
-                  </span>
-                </template>
-              </el-table-column>
+          <el-table class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small">
+            <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
+              <template v-else-if="col.prop === 'invoiced_amount'" #default="{ row }">{{ $fm(row.invoiced_amount) }}</template>
+              <template v-else-if="col.prop === 'uninvoiced_amount'" #default="{ row }">
+                <span :style="{ color: (row.total_amount - row.invoiced_amount) > 0 ? '#e6a23c' : '#909399' }">
+                  {{ $fm((row.total_amount || 0) - (row.invoiced_amount || 0)) }}
+                </span>
+              </template>
+              <template v-else-if="col.prop === 'status'" #default="{ row }">
+                <el-tag v-if="row.status === '已发货'" type="success" size="small">已发货</el-tag>
+                <el-tag v-else-if="row.status === '部分发货'" type="warning" size="small">部分发货</el-tag>
+                <el-tag v-else-if="row.status === '生产中'" type="primary" size="small">生产中</el-tag>
+                <el-tag v-else-if="row.status === '已审'" type="info" size="small">已审</el-tag>
+                <el-tag v-else-if="row.status === '待审核'" type="info" size="small">待审核</el-tag>
+                <el-tag v-else size="small">{{ row.status }}</el-tag>
+              </template>
+              <template v-else-if="col.prop === 'delivered_amount'" #default="{ row }">{{ $fm(row.delivered_amount) }}</template>
+              <template v-else-if="col.prop === 'undelivered_amount'" #default="{ row }">
+                <span :style="{ color: (row.undelivered_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
+                  {{ $fm(row.undelivered_amount) }}
+                </span>
+              </template>
+              <template v-else-if="col.prop === 'collected_amount'" #default="{ row }">{{ $fm(row.collected_amount) }}</template>
+              <template v-else-if="col.prop === 'uncollected_amount'" #default="{ row }">
+                <span :style="{ color: (row.uncollected_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
+                  {{ $fm(row.uncollected_amount) }}
+                </span>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="220" fixed="right">
               <template #default="{ row }">
                 <el-button v-if="row.status === '待审核'" link type="primary" @click="handleApprove(row)">审核</el-button>
@@ -106,21 +100,17 @@
         </el-card>
 
         <el-card>
-          <el-table :data="filteredItemList" v-loading="itemLoading" stripe border size="small">
-            <el-table-column prop="order_no" label="订单号" min-width="140" sortable />
-            <el-table-column prop="order_date" label="订单日期" width="110" sortable column-key="order_date_i" :filters="itemDateFilters" :filter-method="filterItemDate" />
-            <el-table-column prop="customer_name" label="客户" width="160" sortable column-key="customer_name_i" :filters="itemCustomerFilters" :filter-method="filterItemCustomer" />
-            <el-table-column prop="product_code" label="产品编码" width="100" sortable column-key="product_code" :filters="prodCodeFilters" :filter-method="filterProdCode" />
-            <el-table-column prop="product_name" label="产品名称" min-width="140" sortable column-key="product_name" :filters="prodNameFilters" :filter-method="filterProdName" />
-            <el-table-column prop="quantity" label="数量" width="80" align="right" sortable />
-            <el-table-column prop="unit_price" label="单价" width="100" align="right" sortable>
-              <template #default="{ row }">{{ $fm(row.unit_price) }}</template>
-            </el-table-column>
-            <el-table-column prop="total_amount" label="金额" width="100" align="right" sortable>
-              <template #default="{ row }">{{ $fm(row.total_amount) }}</template>
-            </el-table-column>
-            <el-table-column label="生产状态" width="100" align="center" sortable column-key="prod_status" :filters="prodStatusFilters" :filter-method="filterProdStatus">
-              <template #default="{ row }">
+          <el-table class="drag-table-items" :key="itemColumnVersion" :data="orderItemList" v-loading="itemLoading" stripe border size="small">
+            <el-table-column v-for="col in itemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'unit_price'" #default="{ row }">{{ $fm(row.unit_price) }}</template>
+              <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
+              <template v-else-if="col.prop === 'production_status'" #default="{ row }">
                 <el-tag v-if="row.production_status === '未生产'" type="info" size="small">未生产</el-tag>
                 <el-tag v-else-if="row.production_status === '生产中'" type="warning" size="small">生产中</el-tag>
                 <el-tag v-else-if="row.production_status === '已生产'" type="success" size="small">已生产</el-tag>
@@ -294,9 +284,44 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch, computed } from 'vue'
+import { ref, reactive, onMounted, watch, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '../../api/request'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_sales_order_columns'
+const defaultColumns = [
+  { prop: 'order_date', label: '订单日期', width: 100, sortable: true },
+  { prop: 'order_no', label: '订单号', minWidth: 140, sortable: true },
+  { prop: 'customer_name', label: '客户', width: 170, sortable: true },
+  { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true },
+  { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true },
+  { prop: 'invoiced_amount', label: '已开票', width: 100, align: 'right', sortable: true },
+  { prop: 'uninvoiced_amount', label: '未开票', width: 100, align: 'right', sortable: true },
+  { prop: 'currency_code', label: '币种', width: 80, sortable: true },
+  { prop: 'trade_term', label: '贸易术语', width: 100, sortable: true },
+  { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true },
+  { prop: 'delivered_amount', label: '已发货', width: 90, align: 'right', sortable: true },
+  { prop: 'undelivered_amount', label: '未发货', width: 90, align: 'right', sortable: true },
+  { prop: 'collected_amount', label: '已收款', width: 90, align: 'right', sortable: true },
+  { prop: 'uncollected_amount', label: '未收款', width: 90, align: 'right', sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
+
+const ITEM_STORAGE_KEY = 'mazu_sales_order_item_columns'
+const defaultItemColumns = [
+  { prop: 'order_no', label: '订单号', minWidth: 140, sortable: true },
+  { prop: 'order_date', label: '订单日期', width: 110, sortable: true },
+  { prop: 'customer_name', label: '客户', width: 160, sortable: true },
+  { prop: 'product_code', label: '产品编码', width: 100, sortable: true },
+  { prop: 'product_name', label: '产品名称', minWidth: 140, sortable: true },
+  { prop: 'quantity', label: '数量', width: 80, align: 'right', sortable: true },
+  { prop: 'unit_price', label: '单价', width: 100, align: 'right', sortable: true },
+  { prop: 'total_amount', label: '金额', width: 100, align: 'right', sortable: true },
+  { prop: 'production_status', label: '生产状态', width: 100, align: 'center', sortable: true },
+]
+const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
 
 // ========== 页签 ==========
 const activeTab = ref('orders')
@@ -311,35 +336,14 @@ const searchForm = reactive({
   keyword: '', dateRange: null, amountMin: '', amountMax: '',
 })
 
-const customerFilters = ref([])
-const dateFilters = ref([])
-const filterCustomerVal = ref('')
-const filterDateVal = ref('')
-
-const filteredList = computed(() => {
-  let items = dataList.value
-  if (filterDateVal.value) {
-    items = items.filter(r => r.order_date === filterDateVal.value)
-  }
-  if (filterCustomerVal.value) {
-    items = items.filter(r => r.customer_name === filterCustomerVal.value)
-  }
-  return items
-})
-
 function resetSearch() {
   searchForm.keyword = ''
   searchForm.dateRange = null
   searchForm.amountMin = ''
   searchForm.amountMax = ''
-  filterCustomerVal.value = ''
-  filterDateVal.value = ''
   queryParams.page = 1
   fetchData()
 }
-
-function filterDate(val, row) { filterDateVal.value = val; return true }
-function filterCustomer(val, row) { filterCustomerVal.value = val; return true }
 
 // ========== 页签2：明细行查询 ==========
 const itemLoading = ref(false)
@@ -348,38 +352,9 @@ const itemTotal = ref(0)
 const itemQueryParams = reactive({ page: 1, page_size: 100 })
 const itemSearchForm = reactive({ keyword: '', production_status: '' })
 
-// 明细列筛选
-const itemDateFilters = ref([])
-const itemCustomerFilters = ref([])
-const prodCodeFilters = ref([])
-const prodNameFilters = ref([])
-const prodStatusFilters = ref([])
-const filterItemDateVal = ref('')
-const filterItemCustomerVal = ref('')
-const filterProdCodeVal = ref('')
-const filterProdNameVal = ref('')
-const filterProdStatusVal = ref('')
-
-const filteredItemList = computed(() => {
-  let items = orderItemList.value
-  if (filterItemDateVal.value) items = items.filter(r => r.order_date === filterItemDateVal.value)
-  if (filterItemCustomerVal.value) items = items.filter(r => r.customer_name === filterItemCustomerVal.value)
-  if (filterProdCodeVal.value) items = items.filter(r => r.product_code === filterProdCodeVal.value)
-  if (filterProdNameVal.value) items = items.filter(r => r.product_name === filterProdNameVal.value)
-  if (filterProdStatusVal.value) items = items.filter(r => r.production_status === filterProdStatusVal.value)
-  return items
-})
-function filterItemDate(val, row) { filterItemDateVal.value = val; return true }
-function filterItemCustomer(val, row) { filterItemCustomerVal.value = val; return true }
-function filterProdCode(val, row) { filterProdCodeVal.value = val; return true }
-function filterProdName(val, row) { filterProdNameVal.value = val; return true }
-function filterProdStatus(val, row) { filterProdStatusVal.value = val; return true }
-
 function resetItemSearch() {
   itemSearchForm.keyword = ''
   itemSearchForm.production_status = ''
-  filterItemDateVal.value = ''; filterItemCustomerVal.value = ''
-  filterProdCodeVal.value = ''; filterProdNameVal.value = ''; filterProdStatusVal.value = ''
   itemQueryParams.page = 1
   fetchOrderItems()
 }
@@ -393,13 +368,10 @@ async function fetchOrderItems() {
     const res = await request.get('/sales/order-items', { params })
     orderItemList.value = res.items || []
     itemTotal.value = res.total || 0
-    // 更新列筛选
-    itemDateFilters.value = [...new Set(orderItemList.value.map(r => r.order_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    itemCustomerFilters.value = [...new Set(orderItemList.value.map(r => r.customer_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-    prodCodeFilters.value = [...new Set(orderItemList.value.map(r => r.product_code).filter(Boolean))].map(v => ({ text: v, value: v }))
-    prodNameFilters.value = [...new Set(orderItemList.value.map(r => r.product_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-    prodStatusFilters.value = [...new Set(orderItemList.value.map(r => r.production_status).filter(Boolean))].map(v => ({ text: v, value: v }))
-  } catch {} finally { itemLoading.value = false }
+  } catch {} finally {
+    itemLoading.value = false
+    nextTick(initItemColumnDrag)
+  }
 }
 
 function onTabChange(tab) {
@@ -493,9 +465,10 @@ async function fetchData() {
     const res = await request.get('/sales/orders', { params })
     dataList.value = res.items || []
     total.value = res.total || 0
-    dateFilters.value = [...new Set(dataList.value.map(r => r.order_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    customerFilters.value = [...new Set(dataList.value.map(r => r.customer_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-  } catch {} finally { loading.value = false }
+  } catch {} finally {
+    loading.value = false
+    nextTick(initColumnDrag)
+  }
 }
 
 async function loadCustomers() {

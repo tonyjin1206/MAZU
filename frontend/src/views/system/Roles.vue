@@ -10,25 +10,40 @@
     </el-card>
 
     <el-card>
-      <el-table :data="roleList" v-loading="loading" stripe border size="small" row-key="id">
-        <el-table-column prop="name" label="角色名称" width="120" />
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column label="权限" min-width="300">
-          <template #default="{ row }">
+      <el-table
+        :key="columnVersion"
+        :data="roleList"
+        v-loading="loading"
+        stripe border size="small"
+        row-key="id"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :align="col.align"
+          :show-overflow-tooltip="col.prop === 'description'"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'permissions'" #default="{ row }">
             <el-tag v-for="pc in row.permission_codes" :key="pc" size="small" style="margin: 2px 4px 2px 0">
               {{ getPermName(pc) }}
             </el-tag>
             <span v-if="!row.permission_codes?.length" style="color: #909399">无权限</span>
           </template>
-        </el-table-column>
-        <el-table-column prop="user_count" label="用户数" width="70" align="center" />
-        <el-table-column label="内置" width="70" align="center">
-          <template #default="{ row }">
+          <template v-else-if="col.prop === 'is_system'" #default="{ row }">
             <el-tag v-if="row.is_system" type="info" size="small">是</el-tag>
             <span v-else style="color: #909399">否</span>
           </template>
         </el-table-column>
-        <el-table-column prop="description" label="描述" min-width="180" show-overflow-tooltip />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -86,9 +101,22 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { authApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_role_columns'
+const defaultColumns = [
+  { prop: 'name', label: '角色名称', width: 120 },
+  { prop: 'code', label: '编码', width: 120 },
+  { prop: 'permissions', label: '权限', minWidth: 300 },
+  { prop: 'user_count', label: '用户数', width: 70, align: 'center' },
+  { prop: 'is_system', label: '内置', width: 70, align: 'center' },
+  { prop: 'description', label: '描述', minWidth: 180 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -122,6 +150,7 @@ async function fetchData() {
     roleList.value = []
   }
   loading.value = false
+  nextTick(initColumnDrag)
 }
 
 async function fetchPermissions() {

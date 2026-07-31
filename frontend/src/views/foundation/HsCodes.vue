@@ -16,17 +16,36 @@
           <el-input v-model="searchForm.name" placeholder="商品名称" clearable style="width: 180px" @keyup.enter="fetchData" />
         </el-form-item>
       </el-form>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="hs_code" label="HS编码" width="130" sortable column-key="hs_code" :filters="hsCodeFilters" :filter-method="filterHsCode" />
-        <el-table-column prop="name" label="商品名称" min-width="200" sortable column-key="name" :filters="nameFilters" :filter-method="filterName" />
-        <el-table-column prop="unit" label="单位" width="100" sortable column-key="unit" :filters="unitFilters" :filter-method="filterUnit" />
-        <el-table-column prop="refund_rate" label="退税率%" width="100" sortable>
-          <template #default="{ row }">{{ row.refund_rate }}%</template>
+      <el-table
+        :key="columnVersion"
+        :data="filteredList"
+        v-loading="loading"
+        stripe border size="small"
+        style="width: 100%"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :sortable="col.sortable"
+          :align="col.align"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'refund_rate'" #default="{ row }">
+            {{ row.refund_rate }}%
+          </template>
+          <template v-else-if="col.prop === 'tax_rate'" #default="{ row }">
+            {{ row.tax_rate }}%
+          </template>
         </el-table-column>
-        <el-table-column prop="tax_rate" label="增值税率%" width="100" sortable>
-          <template #default="{ row }">{{ row.tax_rate }}%</template>
-        </el-table-column>
-        <el-table-column prop="effective_date" label="生效日期" width="120" sortable />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
@@ -75,9 +94,22 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_hscode_columns'
+const defaultColumns = [
+  { prop: 'hs_code', label: 'HS编码', width: 130, sortable: true },
+  { prop: 'name', label: '商品名称', minWidth: 200, sortable: true },
+  { prop: 'unit', label: '单位', width: 100, sortable: true },
+  { prop: 'refund_rate', label: '退税率%', width: 100, sortable: true },
+  { prop: 'tax_rate', label: '增值税率%', width: 100, sortable: true },
+  { prop: 'effective_date', label: '生效日期', width: 120, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])
@@ -90,24 +122,7 @@ const saving = ref(false)
 const formRef = ref(null)
 const searchForm = reactive({ hs_code: '', name: '' })
 
-// 列筛选
-const hsCodeFilters = ref([])
-const nameFilters = ref([])
-const unitFilters = ref([])
-const filterHsCodeVal = ref('')
-const filterNameVal = ref('')
-const filterUnitVal = ref('')
-
-const filteredList = computed(() => {
-  let items = tableData.value
-  if (filterHsCodeVal.value) items = items.filter(r => r.hs_code === filterHsCodeVal.value)
-  if (filterNameVal.value) items = items.filter(r => r.name === filterNameVal.value)
-  if (filterUnitVal.value) items = items.filter(r => r.unit === filterUnitVal.value)
-  return items
-})
-function filterHsCode(val, row) { filterHsCodeVal.value = val; return true }
-function filterName(val, row) { filterNameVal.value = val; return true }
-function filterUnit(val, row) { filterUnitVal.value = val; return true }
+const filteredList = computed(() => tableData.value)
 
 const form = reactive({
   id: null, hs_code: '', name: '', unit: '个',
@@ -132,10 +147,7 @@ async function fetchData() {
     })
     tableData.value = res.items || []
     total.value = res.total || 0
-    // 更新列筛选
-    hsCodeFilters.value = [...new Set(tableData.value.map(r => r.hs_code).filter(Boolean))].map(v => ({ text: v, value: v }))
-    nameFilters.value = [...new Set(tableData.value.map(r => r.name).filter(Boolean))].map(v => ({ text: v, value: v }))
-    unitFilters.value = [...new Set(tableData.value.map(r => r.unit).filter(Boolean))].map(v => ({ text: v, value: v }))
+    nextTick(initColumnDrag)
   } finally {
     loading.value = false
   }

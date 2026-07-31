@@ -26,20 +26,21 @@
 
     <!-- 列表 -->
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small">
-        <el-table-column prop="invoice_no" label="发票号" width="160" sortable />
-        <el-table-column prop="customer_name" label="客户" min-width="150" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
-        <el-table-column prop="order_no" label="订单号" width="140" sortable />
-        <el-table-column label="不含税金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column label="税额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.tax_amount) }}</template></el-table-column>
-        <el-table-column label="价税合计" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-        <el-table-column prop="invoice_date" label="发票日期" width="120" sortable column-key="invoice_date" :filters="dateFilters" :filter-method="filterDate" />
-        <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus">
-          <template #default="{ row }">
+      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'remark'">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'amount'" #default="{ row }">{{ $fm(row.amount) }}</template>
+          <template v-else-if="col.prop === 'tax_amount'" #default="{ row }">{{ $fm(row.tax_amount) }}</template>
+          <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
+          <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip sortable />
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -109,10 +110,26 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import request from '../../api/request'
 import { salesApi } from '../../api/business'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_sales_invoice_columns'
+const defaultColumns = [
+  { prop: 'invoice_no', label: '发票号', width: 160, sortable: true },
+  { prop: 'customer_name', label: '客户', minWidth: 150, sortable: true },
+  { prop: 'order_no', label: '订单号', width: 140, sortable: true },
+  { prop: 'amount', label: '不含税金额', width: 120, align: 'right', sortable: true },
+  { prop: 'tax_amount', label: '税额', width: 100, align: 'right', sortable: true },
+  { prop: 'total_amount', label: '价税合计', width: 120, align: 'right', sortable: true },
+  { prop: 'invoice_date', label: '发票日期', width: 120, sortable: true },
+  { prop: 'status', label: '状态', width: 100, sortable: true },
+  { prop: 'remark', label: '备注', minWidth: 150, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
@@ -129,31 +146,10 @@ const searchForm = reactive({
   keyword: '', dateRange: null, amountMin: '', amountMax: '', status: '',
 })
 
-// 列筛选
-const dateFilters = ref([])
-const customerFilters = ref([])
-const statusFilters = ref([])
-const filterDateVal = ref('')
-const filterCustomerVal = ref('')
-const filterStatusVal = ref('')
-
-const filteredList = computed(() => {
-  let items = list.value
-  if (filterDateVal.value) items = items.filter(r => r.invoice_date === filterDateVal.value)
-  if (filterCustomerVal.value) items = items.filter(r => r.customer_name === filterCustomerVal.value)
-  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
-  return items
-})
-
-function filterDate(val, row) { filterDateVal.value = val; return true }
-function filterCustomer(val, row) { filterCustomerVal.value = val; return true }
-function filterStatus(val, row) { filterStatusVal.value = val; return true }
-
 function resetSearch() {
   searchForm.keyword = ''
   searchForm.dateRange = null
   searchForm.amountMin = ''; searchForm.amountMax = ''; searchForm.status = ''
-  filterDateVal.value = ''; filterCustomerVal.value = ''; filterStatusVal.value = ''
   page.value = 1
   fetchList()
 }
@@ -203,14 +199,11 @@ async function fetchList() {
     const res = await request.get('/sales/invoices', { params })
     list.value = res.items || res.list || []
     total.value = res.total || 0
-    // 更新列筛选
-    dateFilters.value = [...new Set(list.value.map(r => r.invoice_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    customerFilters.value = [...new Set(list.value.map(r => r.customer_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-    statusFilters.value = [...new Set(list.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
   } catch {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
+    nextTick(initColumnDrag)
   }
 }
 

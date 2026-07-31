@@ -23,13 +23,33 @@
     </el-card>
 
     <el-card>
-      <el-table :data="batchList" border stripe v-loading="loading" size="small" style="width: 100%">
-        <el-table-column prop="batch_no" label="批次号" width="160" />
-        <el-table-column prop="warehouse" label="仓库" width="120" />
-        <el-table-column label="库存数量" width="100" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-        <el-table-column prop="in_date" label="入库日期" width="110" />
-        <el-table-column prop="source_type" label="来源" width="120">
-          <template #default="{ row }">{{ { purchase: '采购入库', production: '完工入库', transfer: '调拨' }[row.source_type] || row.source_type }}</template>
+      <el-table
+        :key="columnVersion"
+        :data="batchList"
+        border stripe v-loading="loading"
+        size="small"
+        style="width: 100%"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :align="col.align"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'quantity'" #default="{ row }">
+            {{ $fq(row.quantity) }}
+          </template>
+          <template v-else-if="col.prop === 'source_type'" #default="{ row }">
+            {{ { purchase: '采购入库', production: '完工入库', transfer: '调拨' }[row.source_type] || row.source_type }}
+          </template>
         </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="{ row }"><el-button type="primary" link @click="trace(row.batch_no)">追溯</el-button></template>
@@ -52,9 +72,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { productionApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_batchinv_columns'
+const defaultColumns = [
+  { prop: 'batch_no', label: '批次号', width: 160 },
+  { prop: 'warehouse', label: '仓库', width: 120 },
+  { prop: 'quantity', label: '库存数量', width: 100, align: 'right' },
+  { prop: 'in_date', label: '入库日期', width: 110 },
+  { prop: 'source_type', label: '来源', width: 120 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const warehouseList = ref([])
 const batchList = ref([])
@@ -76,7 +108,8 @@ async function search() {
     if (query.warehouse_id) params.warehouse_id = query.warehouse_id
     const res = await productionApi.batch.query(params)
     batchList.value = res.items || []
-  } finally { loading.value = false }
+  } finally { loading.value = false
+  nextTick(initColumnDrag) }
 }
 
 async function trace(batchNo) {

@@ -7,16 +7,32 @@
           <el-button type="primary" @click="openCreate">新建配置</el-button>
         </div>
       </template>
-      <el-table :data="list" v-loading="loading" stripe border size="small">
-        <el-table-column prop="provider" label="提供商" width="100" />
-        <el-table-column prop="model" label="模型" width="160" />
-        <el-table-column label="状态" width="70" align="center">
-          <template #default="{ row }">
+      <el-table
+        :key="columnVersion"
+        :data="list"
+        v-loading="loading"
+        stripe border size="small"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :align="col.align"
+          :show-overflow-tooltip="col.prop === 'base_url'"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'is_active'" #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="temperature" label="温度" width="60" />
-        <el-table-column prop="base_url" label="API地址" min-width="200" show-overflow-tooltip />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -71,9 +87,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { systemConfigApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_bot_columns'
+const defaultColumns = [
+  { prop: 'provider', label: '提供商', width: 100 },
+  { prop: 'model', label: '模型', width: 160 },
+  { prop: 'is_active', label: '状态', width: 70, align: 'center' },
+  { prop: 'temperature', label: '温度', width: 60 },
+  { prop: 'base_url', label: 'API地址', minWidth: 200 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -100,6 +128,7 @@ async function fetchData() {
   loading.value = true
   try { list.value = await systemConfigApi.bot.list() || [] } catch { list.value = [] }
   loading.value = false
+  nextTick(initColumnDrag)
 }
 
 async function fetchDefaultPrompt() {

@@ -157,9 +157,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, nextTick, onBeforeUnmount } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import Sortable from 'sortablejs'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
 
 const countryList = [
@@ -191,63 +191,7 @@ const defaultColumns = [
   { prop: 'is_active', label: '状态', width: 80, align: 'center' },
 ]
 
-function loadColumnOrder() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]')
-    if (saved.length) {
-      const savedSet = new Set(saved)
-      const others = defaultColumns.filter(c => !savedSet.has(c.prop))
-      // 按保存的顺序返回，缺失的列补在后面
-      return [...saved.map(prop => defaultColumns.find(c => c.prop === prop)).filter(Boolean), ...others]
-    }
-  } catch (e) { /* 忽略损坏的存储 */ }
-  return [...defaultColumns]
-}
-
-const columns = ref(loadColumnOrder())
-const columnVersion = ref(0)
-let sortableInstance = null
-let dragRetryTimer = null
-
-function initColumnDrag() {
-  clearTimeout(dragRetryTimer)
-  const thead = document.querySelector('.el-table__header-wrapper thead tr')
-  if (!thead) {
-    // 表格还没渲染好，稍后重试
-    dragRetryTimer = setTimeout(initColumnDrag, 300)
-    return
-  }
-  // 每次重建绑定：el-table 重渲染后旧绑定会失效
-  destroyColumnDrag()
-  sortableInstance = Sortable.create(thead, {
-    animation: 150,
-    draggable: 'th',
-    handle: '.col-drag-handle',
-    // 注意：filter 回调参数是 (evt, target, sortable)，target 才是被拖的列 th
-    filter: (evt, target) => {
-      const cls = target ? target.classList : null
-      return cls && (cls.contains('el-table-fixed-column--right') || cls.contains('gutter'))
-    },
-    onEnd: (evt) => {
-      const { oldIndex, newIndex } = evt
-      if (oldIndex === newIndex) return
-      const cols = [...columns.value]
-      const [moved] = cols.splice(oldIndex, 1)
-      cols.splice(newIndex, 0, moved)
-      columns.value = cols
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(cols.map(c => c.prop)))
-      // 强制重渲染表格列
-      columnVersion.value++
-      nextTick(initColumnDrag)
-    },
-  })
-}
-
-function destroyColumnDrag() {
-  sortableInstance?.destroy()
-  sortableInstance = null
-  clearTimeout(dragRetryTimer)
-}
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 function rowClassName({ row }) {
   return row.is_active === 0 ? 'mazu-disabled-row' : ''
@@ -320,7 +264,7 @@ function resetForm() {
   })
 }
 
-function openDialog(mode, row) {
+async function openDialog(mode, row) {
   dialogMode.value = mode
   if (mode === 'edit' && row) {
     Object.assign(form, {
@@ -335,6 +279,11 @@ function openDialog(mode, row) {
     })
   } else {
     resetForm()
+    // 预取下一个编码号，显示在编码框中让用户预览
+    try {
+      const res = await foundationApi.customers.nextCode()
+      form.code = res.code
+    } catch (e) { /* 获取失败不阻塞用户操作 */ }
   }
   dialogVisible.value = true
 }
@@ -394,7 +343,6 @@ async function handleToggle(row) {
 onMounted(() => {
   fetchData()
 })
-onBeforeUnmount(destroyColumnDrag)
 </script>
 
 <style scoped>

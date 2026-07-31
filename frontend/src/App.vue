@@ -48,4 +48,33 @@ body {
 .el-sub-menu__title { height: 36px; line-height: 36px; font-size: 12px; }
 .el-pagination { font-size: 12px; }
 .el-tag { font-size: 11px; }
+
+/* === 列拖拽通用样式 === */
+.col-header-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.col-drag-handle {
+  cursor: grab;
+  color: #909399;
+  font-size: 13px;
+  user-select: none;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+.col-drag-handle:hover {
+  color: #409eff;
+  background: #ecf5ff;
+}
+.col-drag-handle:active {
+  cursor: grabbing;
+}
+.sortable-ghost {
+  opacity: 0.4;
+  background: #ecf5ff;
+}
+.sortable-drag {
+  opacity: 0.8;
+}
 </style>

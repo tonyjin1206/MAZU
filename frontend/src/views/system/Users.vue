@@ -16,28 +16,42 @@
     </el-card>
 
     <el-card>
-      <el-table :data="userList" v-loading="loading" stripe border size="small">
-        <el-table-column prop="username" label="用户名" width="140" />
-        <el-table-column prop="display_name" label="显示名" width="140" />
-        <el-table-column prop="email" label="邮箱" min-width="180" />
-        <el-table-column prop="role_name" label="角色" width="120">
-          <template #default="{ row }">
+      <el-table
+        :key="columnVersion"
+        :data="userList"
+        v-loading="loading"
+        stripe border size="small"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :align="col.align"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'role_name'" #default="{ row }">
             <el-tag v-if="row.role_code === 'admin'" type="danger" size="small">管理员</el-tag>
             <el-tag v-else-if="row.role_code === 'manager'" type="warning" size="small">经理</el-tag>
             <el-tag v-else-if="row.role_code === 'operator'" type="primary" size="small">操作员</el-tag>
             <el-tag v-else-if="row.role_code === 'readonly'" type="info" size="small">只读</el-tag>
             <el-tag v-else size="small">{{ row.role_name || '未分配' }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="is_active" label="状态" width="80" align="center">
-          <template #default="{ row }">
+          <template v-else-if="col.prop === 'is_active'" #default="{ row }">
             <el-tag :type="row.is_active ? 'success' : 'danger'" size="small">
               {{ row.is_active ? '启用' : '停用' }}
             </el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160">
-          <template #default="{ row }">{{ row.created_at ? String(row.created_at).slice(0, 19) : '' }}</template>
+          <template v-else-if="col.prop === 'created_at'" #default="{ row }">
+            {{ row.created_at ? String(row.created_at).slice(0, 19) : '' }}
+          </template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
@@ -83,9 +97,22 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { authApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_user_columns'
+const defaultColumns = [
+  { prop: 'username', label: '用户名', width: 140 },
+  { prop: 'display_name', label: '显示名', width: 140 },
+  { prop: 'email', label: '邮箱', minWidth: 180 },
+  { prop: 'role_name', label: '角色', width: 120 },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center' },
+  { prop: 'created_at', label: '创建时间', width: 160 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -115,6 +142,7 @@ async function fetchData() {
     userList.value = []
   }
   loading.value = false
+  nextTick(initColumnDrag)
 }
 
 async function fetchRoles() {

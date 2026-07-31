@@ -10,10 +10,28 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe border size="small">
-        <el-table-column prop="user_name" label="用户" width="120" />
-        <el-table-column label="提醒类型" width="120">
-          <template #default="{ row }">
+      <el-table
+        :key="columnVersion"
+        :data="list"
+        v-loading="loading"
+        stripe border size="small"
+      >
+        <el-table-column
+          v-for="col in columns"
+          :key="col.prop"
+          :prop="col.prop"
+          :label="col.label"
+          :width="col.width"
+          :min-width="col.minWidth"
+          :align="col.align"
+        >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'type'" #default="{ row }">
             <el-tag v-if="row.type==='daily_todo'" size="small">日待办</el-tag>
             <el-tag v-else-if="row.type==='expiry'" type="warning" size="small">到期提醒</el-tag>
             <el-tag v-else-if="row.type==='overdue'" type="danger" size="small">逾期告警</el-tag>
@@ -21,14 +39,10 @@
             <el-tag v-else-if="row.type==='boss_report'" type="primary" size="small">老板日报</el-tag>
             <span v-else>{{ row.type }}</span>
           </template>
-        </el-table-column>
-        <el-table-column label="启用" width="70" align="center">
-          <template #default="{ row }">
+          <template v-else-if="col.prop === 'enabled'" #default="{ row }">
             <el-switch :model-value="row.enabled" @change="(v) => toggleEnable(row, v)" />
           </template>
         </el-table-column>
-        <el-table-column prop="push_time" label="推送时间" width="100" />
-        <el-table-column prop="push_days" label="推送日" width="100" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
@@ -62,9 +76,21 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { systemConfigApi, authApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_reminder_columns'
+const defaultColumns = [
+  { prop: 'user_name', label: '用户', width: 120 },
+  { prop: 'type', label: '提醒类型', width: 120 },
+  { prop: 'enabled', label: '启用', width: 70, align: 'center' },
+  { prop: 'push_time', label: '推送时间', width: 100 },
+  { prop: 'push_days', label: '推送日', width: 100 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -84,6 +110,7 @@ async function fetchData() {
   loading.value = true
   try { list.value = await systemConfigApi.reminders.list() || [] } catch { list.value = [] }
   loading.value = false
+  nextTick(initColumnDrag)
 }
 
 async function fetchMeta() {
