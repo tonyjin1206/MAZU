@@ -5,21 +5,21 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe>
-        <el-table-column prop="receipt_no" label="入库单号" width="150" />
-        <el-table-column prop="outsourcing_no" label="委外工单" width="150" />
-        <el-table-column prop="product_name" label="产品" min-width="150" />
-        <el-table-column prop="batch_no" label="成品批次号" width="150" />
-        <el-table-column prop="warehouse_name" label="仓库" width="100" />
-        <el-table-column label="入库数量" width="100" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-        <el-table-column label="单价" width="100" align="right"><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
-        <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column prop="status" label="状态" width="90">
-          <template #default="{ row }">
+      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe>
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
+          <template v-else-if="col.prop === 'unit_price'" #default="{ row }">{{ $fm(row.unit_price) }}</template>
+          <template v-else-if="col.prop === 'amount'" #default="{ row }">{{ $fm(row.amount) }}</template>
+          <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" label="创建时间" width="160" />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button type="info" size="small" @click="viewDetail(row)">详情</el-button>
@@ -97,9 +97,26 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { productionApi } from '@/api/business'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_production_receipt_columns'
+const defaultColumns = [
+  { prop: 'receipt_no', label: '入库单号', width: 150 },
+  { prop: 'outsourcing_no', label: '委外工单', width: 150 },
+  { prop: 'product_name', label: '产品', minWidth: 150 },
+  { prop: 'batch_no', label: '成品批次号', width: 150 },
+  { prop: 'warehouse_name', label: '仓库', width: 100 },
+  { prop: 'quantity', label: '入库数量', width: 100, align: 'right' },
+  { prop: 'unit_price', label: '单价', width: 100, align: 'right' },
+  { prop: 'amount', label: '金额', width: 120, align: 'right' },
+  { prop: 'status', label: '状态', width: 90 },
+  { prop: 'created_at', label: '创建时间', width: 160 },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
@@ -146,6 +163,7 @@ async function fetchList() {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
+    nextTick(initColumnDrag)
   }
 }
 

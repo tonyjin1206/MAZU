@@ -19,14 +19,18 @@
     </el-card>
 
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="invoice_no" label="发票号" width="160" sortable />
-        <el-table-column prop="order_no" label="生产订单号" width="160" sortable />
-        <el-table-column prop="supplier_name" label="销售方" min-width="140" sortable column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" />
-        <el-table-column label="含税金额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column label="税率" width="90" align="right" prop="tax_rate" sortable><template #default="{ row }">{{ row.tax_rate }}%</template></el-table-column>
-        <el-table-column label="不含税金额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.amount_excl_tax) }}</template></el-table-column>
-        <el-table-column prop="invoice_date" label="开票日期" width="110" sortable column-key="invoice_date" :filters="dateFilters" :filter-method="filterDate" />
+      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'amount'" #default="{ row }">{{ $fm(row.amount) }}</template>
+          <template v-else-if="col.prop === 'tax_rate'" #default="{ row }">{{ row.tax_rate }}%</template>
+          <template v-else-if="col.prop === 'amount_excl_tax'" #default="{ row }">{{ $fm(row.amount_excl_tax) }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="80">
           <template #default="{ row }"><el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button></template>
         </el-table-column>
@@ -68,9 +72,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { productionApi } from '../../api/business'
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_processing_invoice_columns'
+const defaultColumns = [
+  { prop: 'invoice_no', label: '发票号', width: 160, sortable: true },
+  { prop: 'order_no', label: '生产订单号', width: 160, sortable: true },
+  { prop: 'supplier_name', label: '销售方', minWidth: 140, sortable: true },
+  { prop: 'amount', label: '含税金额', width: 100, align: 'right', sortable: true },
+  { prop: 'tax_rate', label: '税率', width: 90, align: 'right', sortable: true },
+  { prop: 'amount_excl_tax', label: '不含税金额', width: 100, align: 'right', sortable: true },
+  { prop: 'invoice_date', label: '开票日期', width: 110, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const list = ref([])
@@ -80,25 +98,8 @@ const pageSize = ref(100)
 
 const searchForm = reactive({ keyword: '', dateRange: null })
 
-// 列筛选
-const dateFilters = ref([])
-const supplierFilters = ref([])
-const filterDateVal = ref('')
-const filterSupplierVal = ref('')
-
-const filteredList = computed(() => {
-  let items = list.value
-  if (filterDateVal.value) items = items.filter(r => r.invoice_date === filterDateVal.value)
-  if (filterSupplierVal.value) items = items.filter(r => r.supplier_name === filterSupplierVal.value)
-  return items
-})
-
-function filterDate(val, row) { filterDateVal.value = val; return true }
-function filterSupplier(val, row) { filterSupplierVal.value = val; return true }
-
 function resetSearch() {
   searchForm.keyword = ''; searchForm.dateRange = null
-  filterDateVal.value = ''; filterSupplierVal.value = ''
   page.value = 1; fetchData()
 }
 
@@ -120,10 +121,7 @@ async function fetchData() {
     const res = await productionApi.productions.processingInvoices.list(params)
     list.value = res.items || []
     total.value = res.total || 0
-    // 更新列筛选
-    dateFilters.value = [...new Set(list.value.map(r => r.invoice_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    supplierFilters.value = [...new Set(list.value.map(r => r.supplier_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-  } finally { loading.value = false }
+  } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 async function openCreate() {

@@ -4,19 +4,21 @@
       <el-button type="primary" @click="openCreate">新建委外工单</el-button>
     </el-card>
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe>
-        <el-table-column prop="outsource_no" label="委外工单号" width="160" sortable />
-        <el-table-column prop="outsourcer_name" label="委外商" min-width="150" sortable />
-        <el-table-column prop="product_name" label="产品" min-width="150" sortable />
-        <el-table-column label="数量" width="80" align="right" sortable><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-        <el-table-column label="单价" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
-        <el-table-column label="金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-        <el-table-column prop="status" label="状态" width="115" column-key="status" :filters="statusFilters" :filter-method="filterStatus">
-          <template #default="{ row }">
+      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe>
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
+          <template v-else-if="col.prop === 'unit_price'" #default="{ row }">{{ $fm(row.unit_price) }}</template>
+          <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
+          <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="due_date" label="交期" width="110" sortable column-key="due_date" :filters="dateFilters" :filter-method="filterDate" />
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
             <div style="display: flex; gap: 4px; white-space: nowrap">
@@ -70,14 +72,29 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { productionApi } from '@/api/business'
 import { foundationApi } from '@/api/foundation'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
 const router = useRouter()
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_outsourcing_columns'
+const defaultColumns = [
+  { prop: 'outsource_no', label: '委外工单号', width: 160, sortable: true },
+  { prop: 'outsourcer_name', label: '委外商', minWidth: 150, sortable: true },
+  { prop: 'product_name', label: '产品', minWidth: 150, sortable: true },
+  { prop: 'quantity', label: '数量', width: 80, align: 'right', sortable: true },
+  { prop: 'unit_price', label: '单价', width: 100, align: 'right', sortable: true },
+  { prop: 'total_amount', label: '金额', width: 120, align: 'right', sortable: true },
+  { prop: 'status', label: '状态', width: 115, sortable: true },
+  { prop: 'due_date', label: '交期', width: 110, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
@@ -91,22 +108,6 @@ const total = ref(0)
 const outsourcerList = ref([])
 const productList = ref([])
 const processList = ref([])
-
-// 列筛选
-const statusFilters = ref([])
-const dateFilters = ref([])
-const filterStatusVal = ref('')
-const filterDateVal = ref('')
-
-const filteredList = computed(() => {
-  let items = list.value
-  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
-  if (filterDateVal.value) items = items.filter(r => r.due_date === filterDateVal.value)
-  return items
-})
-
-function filterStatus(val, row) { filterStatusVal.value = val; return true }
-function filterDate(val, row) { filterDateVal.value = val; return true }
 
 const form = reactive({
   supplier_id: null, product_id: route.query.product_id ? parseInt(route.query.product_id) : null,
@@ -133,11 +134,9 @@ async function fetchList() {
     const res = await productionApi.outsourcings.list(params)
     list.value = res.items || []
     total.value = res.total || 0
-    // 更新列筛选
-    statusFilters.value = [...new Set(list.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
-    dateFilters.value = [...new Set(list.value.map(r => r.due_date).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
   } finally {
     loading.value = false
+    nextTick(initColumnDrag)
   }
 }
 

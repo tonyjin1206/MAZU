@@ -28,15 +28,19 @@
     </el-card>
 
     <el-card>
-      <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="order_no" label="生产订单号" width="160" sortable />
-        <el-table-column prop="created_at" label="保存日期" width="100" sortable column-key="created_at" :filters="dateFilters" :filter-method="filterDate" />
-        <el-table-column prop="product_name" label="产品" min-width="150" sortable column-key="product_name" :filters="productFilters" :filter-method="filterProduct" />
-        <el-table-column label="数量" width="80" align="right" sortable><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-        <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus">
-          <template #default="{ row }"><el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag></template>
+      <el-table :key="columnVersion" :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
+          <template v-else-if="col.prop === 'status'" #default="{ row }">
+            <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
+          </template>
         </el-table-column>
-        <el-table-column prop="due_date" label="交期" width="110" sortable />
         <el-table-column label="操作" width="140" fixed="right">
           <template #default="{ row }">
             <div style="display: flex; gap: 4px; white-space: nowrap">
@@ -62,12 +66,26 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
 import { productionApi } from '../../api/business'
 
 const router = useRouter()
+
+// ===== 列配置（可拖拽排序）=====
+const STORAGE_KEY = 'mazu_production_order_columns'
+const defaultColumns = [
+  { prop: 'order_no', label: '生产订单号', width: 160, sortable: true },
+  { prop: 'created_at', label: '保存日期', width: 100, sortable: true },
+  { prop: 'product_name', label: '产品', minWidth: 150, sortable: true },
+  { prop: 'quantity', label: '数量', width: 80, align: 'right', sortable: true },
+  { prop: 'status', label: '状态', width: 100, sortable: true },
+  { prop: 'due_date', label: '交期', width: 110, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
@@ -76,29 +94,8 @@ const pageSize = ref(100)
 
 const searchForm = reactive({ keyword: '', status: '', dateRange: null })
 
-// 列筛选
-const dateFilters = ref([])
-const productFilters = ref([])
-const statusFilters = ref([])
-const filterDateVal = ref('')
-const filterProductVal = ref('')
-const filterStatusVal = ref('')
-
-const filteredList = computed(() => {
-  let items = tableData.value
-  if (filterDateVal.value) items = items.filter(r => r.created_at === filterDateVal.value)
-  if (filterProductVal.value) items = items.filter(r => r.product_name === filterProductVal.value)
-  if (filterStatusVal.value) items = items.filter(r => r.status === filterStatusVal.value)
-  return items
-})
-
-function filterDate(val, row) { filterDateVal.value = val; return true }
-function filterProduct(val, row) { filterProductVal.value = val; return true }
-function filterStatus(val, row) { filterStatusVal.value = val; return true }
-
 function resetSearch() {
   searchForm.keyword = ''; searchForm.status = ''; searchForm.dateRange = null
-  filterDateVal.value = ''; filterProductVal.value = ''; filterStatusVal.value = ''
   page.value = 1; fetchData()
 }
 
@@ -120,11 +117,7 @@ async function fetchData() {
     const res = await productionApi.productions.list(params)
     tableData.value = res.items || []
     total.value = res.total || 0
-    // 更新列筛选
-    dateFilters.value = [...new Set(tableData.value.map(r => r.created_at).filter(Boolean))].sort().reverse().map(v => ({ text: v, value: v }))
-    productFilters.value = [...new Set(tableData.value.map(r => r.product_name).filter(Boolean))].map(v => ({ text: v, value: v }))
-    statusFilters.value = [...new Set(tableData.value.map(r => r.status).filter(Boolean))].map(v => ({ text: v, value: v }))
-  } finally { loading.value = false }
+  } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 function openDetail(row, tab) {
