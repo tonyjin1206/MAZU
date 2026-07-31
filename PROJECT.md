@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.1.0** | A Lightweight Trade Management Platform
+> **v2.2.0** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
@@ -130,8 +130,6 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/productions/{id}` | GET/PUT/DELETE | 生产订单详情/修改/删除 |
 | `/productions/{id}/processes` | GET/POST | 工序列表/派产 |
 | `/productions/{id}/materials` | GET | BOM展开物料需求 |
-| `/outsourcing` | GET/POST | 委外工单列表/创建 |
-| `/outsourcing/{id}` | GET/PUT/DELETE | 详情/修改/删除 |
 | `/material-issues` | GET/POST | 发料记录列表/创建 |
 | `/material-issues/{id}` | DELETE | 取消发料 |
 | `/receipts` | GET/POST | 完工入库列表/创建（成品入库）|
@@ -221,12 +219,11 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | create_payment | `_execute_create_payment` | supplier_name, amount, payment_date, payment_method | 付款单 + 自动核销应付 |
 | create_purchase_invoice | `_execute_create_purchase_invoice` | order_no, invoice_no, amount, invoice_date | 录入采购发票（关联采购单）|
 | create_sales_invoice | `_execute_create_sales_invoice` | order_no, invoice_no, amount, invoice_date | 录入销售发票（关联销售单）|
-| create_outsourcing | `_execute_create_outsourcing` | production_order_no, process_name, supplier_name, material_name, material_qty, outsource_qty, unit_price, due_date | 委外加工单 + 同步发料 |
 | issue_materials | `_execute_issue_materials` | production_order_no, material_name, quantity, warehouse_name | 生产领料/发料 |
 | production_receipt | `_execute_production_receipt` | production_order_no, quantity, warehouse_name, receipt_date | 生产完工入库 |
 
 ### 工作流程（三步确认）
-1. **确认意图** — AI 问清用户要做什么（下单/收款/付款/发票/委外/发料/入库）
+1. **确认意图** — AI 问清用户要做什么（下单/收款/付款/发票/发料/入库）
 2. **收集字段** — 一次只问一个，用户回答了再问下一个
 3. **核对执行** — 列出全部字段让用户确认，用户说「对/是/确认」再执行
 
@@ -336,6 +333,18 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 ---
 
 ## 十三、版本变更记录
+
+### v2.2.0 (2026-07-31)
+- **新功能**: 自动化测试体系（阶段 0-5）— 契约测试 / 状态机测试 / 边界数据测试 / 架构检查 / E2E（Playwright 真实浏览器）
+- **新功能**: CI 持续集成（.github/workflows/ci.yml 三 job：后端 187 测试 + 前端构建 + E2E 34 测试）
+- **修复**: BUG#1 采购入库 500（po_receipt_item 支持成品：加 product_id 列、material_id 可空、删除回滚双路径）
+- **修复**: GET /auth/users 等 4 个接口加权限校验（仅管理员可访问用户/角色/权限）
+- **清理**: 委外残留（Outsourcings/ProductionReceipts 页面、mo_outsourcing 表、AI 工具 create_outsourcing 9→8）
+- **清理**: 12 个"定义了但后端没有"的 API（crudApi 方法子集对齐）
+- **规范**: 17 页面 109 处散写 request 全部迁移到 api/*.js 封装（97 处迁移 + 散写清零）
+- **规范**: Pydantic class Config → model_config = ConfigDict（44 处）
+- **规范**: 删除库存盘点 2 个未开发表（inv_stock_check 等）
+- **测试**: 测试报告 docs/test-report-1.md（最终版）+ docs/test-plan.md
 
 ### v2.1.0 (2026-07-30)
 - **新功能**: AI 采购/销售订单支持多明细行一次创建 — `create_order` 工具参数从单行字段升级为 `items` 数组，AI 可一句指令创建含多种物料的采购单或含多种产品的销售单

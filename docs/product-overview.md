@@ -858,7 +858,7 @@ npm run dev
 
 ### 15.1 功能概述
 
-AI 助手通过自然语言对话完成 ERP 操作，无需手动操作菜单。支持 9 个工具：
+AI 助手通过自然语言对话完成 ERP 操作，无需手动操作菜单。支持 8 个工具：
 
 | 工具 | 功能 |
 |------|------|
@@ -868,7 +868,6 @@ AI 助手通过自然语言对话完成 ERP 操作，无需手动操作菜单。
 | create_payment | 创建付款单 + 自动核销应付账款 |
 | create_purchase_invoice | 录入采购发票（关联采购单）|
 | create_sales_invoice | 录入销售发票（关联销售单）|
-| create_outsourcing | 创建委外加工单 + 同步发料 |
 | issue_materials | 生产领料/发料 |
 | production_receipt | 生产完工入库 |
 

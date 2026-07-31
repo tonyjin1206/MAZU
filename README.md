@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS)
 
-> **v2.1.0** — Mazu Trade System — A Lightweight Trade Management Platform  
+> **v2.2.0** — Mazu Trade System — A Lightweight Trade Management Platform  
 > 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化  
 > **支持 AI 智能助手对话式操作**
 
@@ -81,7 +81,7 @@ python launcher.py --help
 生产管理 → 生产订单 → 派产 → 发料 → 完工 → 成品入库 / 委外 / 加工费发票
 库存管理 → 库存余额 / 库存流水 / 批次追溯
 退税申报 → 申报期管理 / 发票关联 / 状态跟踪
-AI 助手 → 自然语言对话式操作 / 客户/供应商/物料/产品查询 / 创建单据 / 收款/付款 / 发票录入 / 委外/发料/入库
+AI 助手 → 自然语言对话式操作 / 客户/供应商/物料/产品查询 / 创建单据 / 收款/付款 / 发票录入 / 发料/入库
 管理驾驶舱 → 现金收支 / 应收应付账龄 / 销售毛利分析（支持穿透查询）
 ```
 
@@ -105,3 +105,21 @@ AI 助手 → 自然语言对话式操作 / 客户/供应商/物料/产品查询
 | `docs/product-overview.md` | 产品功能概述 |
 | `docs/operations-manual.md` | 用户操作手册（含场景举例） |
 | `docs/one-pager.html` | 赛博朋克风格产品宣传页 |
+| `docs/test-report-1.md` | 自动化测试报告（阶段 0-5 最终版） |
+
+---
+
+## 自动化测试
+
+```bash
+# 后端全套（契约/状态机/边界/全流程，187 个用例）
+cd backend && ERP_DEV=1 python -m pytest tests/ -q
+
+# 架构检查（废弃表/散写 request/弃用 API）
+python scripts/check_architecture.py
+
+# E2E（32 页面冒烟 + 核心业务流程，自动起独立服务）
+cd e2e && ERP_DEV=1 python -m pytest -q
+
+# CI：.github/workflows/ci.yml 三 job（后端 + 前端构建 + E2E）
+```
