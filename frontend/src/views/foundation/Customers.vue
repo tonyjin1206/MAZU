@@ -46,6 +46,12 @@
           :sortable="col.sortable"
           :align="col.align"
         >
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
           <template v-if="col.prop === 'is_active'" #default="{ row }">
             <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">
               {{ row.is_active === 1 ? '启用' : '停用' }}
@@ -86,7 +92,7 @@
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="640px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="编码" prop="code">
-          <el-input v-model="form.code" disabled placeholder="自动生成（CU+6位流水号）" />
+          <el-input v-model="form.code" disabled />
         </el-form-item>
         <el-form-item label="中文名" prop="name_cn">
           <el-input v-model="form.name_cn" />
@@ -215,8 +221,13 @@ function initColumnDrag() {
   destroyColumnDrag()
   sortableInstance = Sortable.create(thead, {
     animation: 150,
-    handle: '.cell',
-    filter: (el) => el.classList.contains('el-table-fixed-column--right'),
+    draggable: 'th',
+    handle: '.col-drag-handle',
+    // 注意：filter 回调参数是 (evt, target, sortable)，target 才是被拖的列 th
+    filter: (evt, target) => {
+      const cls = target ? target.classList : null
+      return cls && (cls.contains('el-table-fixed-column--right') || cls.contains('gutter'))
+    },
     onEnd: (evt) => {
       const { oldIndex, newIndex } = evt
       if (oldIndex === newIndex) return
@@ -390,5 +401,29 @@ onBeforeUnmount(destroyColumnDrag)
 :deep(.mazu-disabled-row) {
   opacity: 0.55;
   background-color: #fafafa;
+}
+
+:deep(.col-header-wrap) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+:deep(.col-drag-handle) {
+  cursor: grab;
+  color: #909399;
+  font-size: 13px;
+  user-select: none;
+  padding: 0 2px;
+  border-radius: 3px;
+}
+
+:deep(.col-drag-handle:hover) {
+  color: #409eff;
+  background: #ecf5ff;
+}
+
+:deep(.col-drag-handle:active) {
+  cursor: grabbing;
 }
 </style>
