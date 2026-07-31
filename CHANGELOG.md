@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### UI
+- 登录页背景：深蓝渐变 → 集装箱船实景图（`frontend/public/login-bg.jpg`，纯图无遮罩）
+
 ## v2.5.0 (2026-07-31)
 
 ### 备货方式确认 + 外购直采（生产订单 `production_type`）
