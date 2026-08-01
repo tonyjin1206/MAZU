@@ -55,3 +55,6 @@ tmp/
 
 # === 文档草稿 ===
 AI_HANDOVER.md
+
+# 数据库备份
+backend/data/*.bak*
