@@ -352,10 +352,9 @@ def to_stock_in(order_id: int, item_id: int, data: dict,
         sin.source_type = "purchase"
         item.receive_type = "成品库"
         db.commit()
-        return {"message": f"已关联待入库单 {sin.stock_in_no}"}
+        return {"message": "已关联待入库单，可在成品入库模块收货"}
     # 新建备货待入库单
     sin = StockInOrder(
-        stock_in_no=generate_doc_no(db, "IN", StockInOrder, "stock_in_no"),
         source_type="purchase",
         purchase_order_id=order_id,
         purchase_item_id=item_id,
@@ -367,7 +366,7 @@ def to_stock_in(order_id: int, item_id: int, data: dict,
     db.add(sin)
     item.receive_type = "成品库"
     db.commit()
-    return {"message": f"已生成待入库单 {sin.stock_in_no}", "stock_in_no": sin.stock_in_no}
+    return {"message": "已生成待入库单，可在成品入库模块收货"}
 
 
 @router.post("/orders/{order_id}/items/{item_id}/to-material", tags=["采购管理"])

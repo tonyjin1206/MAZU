@@ -377,7 +377,7 @@ def _execute_create_collection(args: dict, db: Session) -> str:
     try:
         cust = db.query(Customer).filter(Customer.name_cn.like(f"%{args['customer_name']}%")).first()
         if not cust: return f"未找到客户「{args['customer_name']}」"
-        amt = float(args["amount"]); cno = generate_doc_no(db, "RC")
+        amt = float(args["amount"]); cno = generate_doc_no(db, "CR")
         c = Collection(collection_no=cno, customer_id=cust.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
                        collection_date=_parse_date(args.get("collection_date","")), operator="AI")
         db.add(c); db.flush()
@@ -402,7 +402,7 @@ def _execute_create_payment(args: dict, db: Session) -> str:
     try:
         sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
         if not sup: return f"未找到供应商「{args['supplier_name']}」"
-        amt = float(args["amount"]); pno = generate_doc_no(db, "PAY")
+        amt = float(args["amount"]); pno = generate_doc_no(db, "PM")
         p = Payment(payment_no=pno, supplier_id=sup.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
                     payment_date=_parse_date(args.get("payment_date","")), operator="AI")
         db.add(p); db.flush()
@@ -454,7 +454,7 @@ def _execute_create_outsourcing(args: dict, db: Session) -> str:
         if not mo: return f"未找到生产订单「{args['production_order_no']}」"
         sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
         if not sup: return f"未找到供应商「{args['supplier_name']}」"
-        os_no = generate_doc_no(db, "OS")
+        os_no = generate_doc_no(db, "WO")
         oo = OutsourcingOrder(outsource_no=os_no, production_id=mo.id, outsourcer_id=sup.id, product_id=mo.product_id,
                               quantity=float(args["outsource_qty"]), unit_price=float(args.get("unit_price",0)),
                               total_amount=float(args.get("unit_price",0))*float(args["outsource_qty"]),

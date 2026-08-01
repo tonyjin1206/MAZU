@@ -99,7 +99,7 @@ class StockInOrder(Base):
     __tablename__ = "inv_stock_in"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    stock_in_no = Column(String(64), unique=True, nullable=False, comment="入库单号: IN-YYYYMMDD-NNN")
+    stock_in_no = Column(String(64), comment="旧待入库单号(已废弃，不再生成)")
     source_type = Column(String(16), nullable=False, comment="来源: sales/purchase/outsource")
     sales_order_id = Column(Integer, ForeignKey("so_order.id"), comment="关联销售订单")
     sales_item_id = Column(Integer, ForeignKey("so_order_item.id"), comment="关联销售明细行")

@@ -53,18 +53,34 @@ def list_stock_in(
         query = query.filter(StockInOrder.source_type == source_type)
     if keyword:
         query = query.join(Product).filter(
-            StockInOrder.stock_in_no.like(f"%{keyword}%")
-            | Product.code.like(f"%{keyword}%")
+            Product.code.like(f"%{keyword}%")
             | Product.name_cn.like(f"%{keyword}%")
         )
+        # 支持按批次号搜索（销售/委外来源的待入库单）
+        batch_hits = db.query(StockInOrder.id).join(
+            SalesOrderItem, SalesOrderItem.id == StockInOrder.sales_item_id
+        ).filter(SalesOrderItem.batch_no.like(f"%{keyword}%")).all()
+        if batch_hits:
+            query = query.filter(
+                StockInOrder.id.in_([r[0] for r in batch_hits])
+                | Product.code.like(f"%{keyword}%")
+                | Product.name_cn.like(f"%{keyword}%")
+            )
     total = query.count()
     items = query.order_by(StockInOrder.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
     result = []
     for sin in items:
         prod = db.query(Product).filter(Product.id == sin.product_id).first()
+        # 批次号：销售/委外来源取销售明细批次号（唯一标识）
+        batch_label = ""
+        if sin.sales_item_id:
+            so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == sin.sales_item_id).first()
+            if so_item:
+                batch_label = so_item.batch_no or ""
         result.append({
             "id": sin.id,
-            "stock_in_no": sin.stock_in_no,
+            "stock_in_no": sin.stock_in_no or "",
+            "batch_no": batch_label,
             "source_type": sin.source_type,
             "source_label": _source_label(db, sin),
             "sales_order_id": sin.sales_order_id,
@@ -124,21 +140,25 @@ def receive_stock_in(
         raise HTTPException(400, "请选择入库仓库")
 
     operator = current_user.display_name or current_user.username
-    batch_no = generate_batch_no(db, "FG")
 
-    # 生成入库单号（每次收货唯一）
+    # 生成入库单号（每次收货唯一，短格式 RE-260801-01）
     from app.models.inventory import WarehouseInventory as _WI
     _today_receipt = (
         db.query(func.max(_WI.receipt_no))
-        .filter(_WI.receipt_no.like(f"RE-{date.today().strftime('%Y%m%d')}-%"))
+        .filter(_WI.receipt_no.like(f"RE-{date.today().strftime('%y%m%d')}%"))
         .scalar()
     )
     _seq = 1
     if _today_receipt:
         _seq = int(_today_receipt.rsplit("-", 1)[1]) + 1
-    receipt_no = f"RE-{date.today().strftime('%Y%m%d')}-{_seq:03d}"
+    receipt_no = f"RE-{date.today().strftime('%y%m%d')}{_seq:02d}"
 
-    # 成本：优先取关联采购明细单价
+    # 库存批次号：优先用销售明细批次号（唯一贯穿全程）；无销售关联（采购备货）才生成 FG 批次
+    batch_no = generate_batch_no(db, "FG")
+    if sin.sales_item_id:
+        so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == sin.sales_item_id).first()
+        if so_item and so_item.batch_no:
+            batch_no = so_item.batch_no
     unit_cost = 0.0
     if sin.purchase_item_id:
         poi = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == sin.purchase_item_id).first()
@@ -172,7 +192,7 @@ def receive_stock_in(
         before_cost=0,
         after_cost=round(qty * unit_cost, 2),
         source_doc_type="成品入库",
-        source_doc_no=sin.stock_in_no,
+        source_doc_no=receipt_no,
         trans_no=generate_doc_no(db, "ST"),
         operator=operator,
     )
@@ -300,7 +320,7 @@ def return_stock_in(
             before_cost=before_cost,
             after_cost=inv.total_cost,
             source_doc_type="成品入库退回",
-            source_doc_no=sin.stock_in_no,
+            source_doc_no=inv.receipt_no or "",
             trans_no=generate_doc_no(db, "ST"),
             operator=current_user.display_name or current_user.username,
         )

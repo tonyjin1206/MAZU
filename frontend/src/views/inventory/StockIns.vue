@@ -9,7 +9,7 @@
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
         <el-form-item label="关键字">
-          <el-input v-model="searchForm.keyword" placeholder="入库单号/产品" clearable style="width: 170px" @keyup.enter="fetchData" />
+          <el-input v-model="searchForm.keyword" placeholder="批次号/产品" clearable style="width: 170px" @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 120px">
@@ -73,7 +73,6 @@
         <el-table-column prop="in_date" label="入库日期" width="120" />
         <el-table-column prop="warehouse" label="仓库" width="110" />
         <el-table-column prop="receipt_no" label="入库单号" minWidth="160" />
-        <el-table-column prop="batch_no" label="批次号" width="160" />
         <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" />
       </el-table>
       </el-card>
@@ -81,7 +80,7 @@
       <!-- 入库弹窗 -->
       <el-dialog v-model="receiveVisible" title="入库收货" width="440px" destroy-on-close>
       <el-form label-width="90px">
-        <el-form-item label="入库单号"><el-input :model-value="receiveForm.stock_in_no" readonly /></el-form-item>
+        <el-form-item label="批次号"><el-input :model-value="receiveForm.batch_no" readonly /></el-form-item>
         <el-form-item label="产品"><el-input :model-value="`${receiveForm.product_code || ''} ${receiveForm.product_name || ''}`" readonly /></el-form-item>
         <el-form-item label="应入数量"><span>{{ receiveForm.quantity }}</span> <span style="margin-left: 20px; color: #909399">已入：{{ receiveForm.received_qty }}</span></el-form-item>
         <el-form-item label="本次入库" required>
@@ -103,7 +102,7 @@
     <!-- 退回已入库数量弹窗 -->
     <el-dialog v-model="returnVisible" title="退回" width="380px" destroy-on-close>
       <el-form label-width="100px">
-        <el-form-item label="入库单号"><el-input :model-value="returnForm.stock_in_no" readonly /></el-form-item>
+        <el-form-item label="批次号"><el-input :model-value="returnForm.batch_no" readonly /></el-form-item>
         <el-form-item label="已入数量"><span>{{ returnForm.received_qty }}</span></el-form-item>
         <el-form-item label="退回数量" required>
           <el-input-number v-model="returnForm.return_qty" :min="0" :max="returnForm.received_qty" style="width: 100%" />
@@ -133,6 +132,7 @@ import request from '../../api/request'
 const STORAGE_KEY = 'mazu_stock_in_columns'
 const defaultColumns = [
   { prop: 'source_label', label: '销售订单号', minWidth: 130, sortable: true },
+  { prop: 'batch_no', label: '批次号', minWidth: 140, sortable: true },
   { prop: 'product_code', label: '产品编码', minWidth: 110, sortable: true },
   { prop: 'product_name', label: '产品名称', minWidth: 140, sortable: true },
   { prop: 'quantity', label: '应入', width: 80, align: 'right', sortable: true, fmt: 'qty' },
@@ -187,11 +187,11 @@ async function loadWarehouses() {
 // ========== 入库 ==========
 const receiveVisible = ref(false)
 const submitting = ref(false)
-const receiveForm = reactive({ id: null, stock_in_no: '', product_code: '', product_name: '', quantity: 0, received_qty: 0, quantity_now: 0, warehouse_id: null })
+const receiveForm = reactive({ id: null, batch_no: '', product_code: '', product_name: '', quantity: 0, received_qty: 0, quantity_now: 0, warehouse_id: null })
 
 function openReceive(row) {
   Object.assign(receiveForm, {
-    id: row.id, stock_in_no: row.stock_in_no,
+    id: row.id, batch_no: row.batch_no || '',
     product_code: row.product_code, product_name: row.product_name,
     quantity: row.quantity, received_qty: row.received_qty || 0,
     quantity_now: (row.quantity || 0) - (row.received_qty || 0), warehouse_id: row.warehouse_id || null,
@@ -217,7 +217,7 @@ async function handleReceive() {
 
 // ========== 确认完成 / 退回 ==========
 async function handleComplete(row) {
-  await ElMessageBox.confirm(`确认「${row.stock_in_no}」已全部入库完成？（已入 ${row.received_qty || 0} / 应入 ${row.quantity}，若数量不一致请确认后继续）`, '提示', { type: 'info' })
+  await ElMessageBox.confirm(`确认「${row.batch_no || row.stock_in_no}」已全部入库完成？（已入 ${row.received_qty || 0} / 应入 ${row.quantity}，若数量不一致请确认后继续）`, '提示', { type: 'info' })
   try {
     const res = await request.post(`/stock-in/${row.id}/complete`)
     ElMessage.success(res.message || '已确认完成')
@@ -226,7 +226,7 @@ async function handleComplete(row) {
 }
 
 async function handleCancel(row) {
-  await ElMessageBox.confirm(`确定退回「${row.stock_in_no}」？退回后销售明细行回到「未生产」状态（仅未收货的待入库单可退回）。`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确定退回「${row.batch_no || row.stock_in_no}」？退回后销售明细行回到「未生产」状态（仅未收货的待入库单可退回）。`, '提示', { type: 'warning' })
   try {
     const res = await request.post(`/stock-in/${row.id}/cancel`)
     ElMessage.success(res.message || '已退回')
@@ -259,9 +259,9 @@ function getSummary({ columns, data }) {
 
 // ========== 退回已入库数量 ==========
 const returnVisible = ref(false)
-const returnForm = reactive({ id: null, stock_in_no: '', received_qty: 0, return_qty: 0 })
+const returnForm = reactive({ id: null, batch_no: '', received_qty: 0, return_qty: 0 })
 async function openReturn(row) {
-  Object.assign(returnForm, { id: row.id, stock_in_no: row.stock_in_no, received_qty: row.received_qty || 0, return_qty: 0 })
+  Object.assign(returnForm, { id: row.id, batch_no: row.batch_no || '', received_qty: row.received_qty || 0, return_qty: 0 })
   returnVisible.value = true
 }
 async function handleReturn() {

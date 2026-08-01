@@ -40,7 +40,8 @@ def generate_batch_no(db: Session, prefix: str = "") -> str:
 def generate_doc_no(db: Session, prefix: str, model: Type[Any] = None,
                     field_name: str = None) -> str:
     """
-    生成单据编号：前缀 + YYYYMMDD + NNN
+    生成单据编号：前缀 + YYMMDD + NN（短格式，峰子 2026-08-01 拍板）
+    如：SO-26080101（6位日期+2位序号），避免长编码
 
     使用 MAX+1 而非 COUNT+1，避免：
     - 并发请求同时查询到相同 count 导致编号冲突
@@ -53,7 +54,7 @@ def generate_doc_no(db: Session, prefix: str, model: Type[Any] = None,
         field_name: 要查询的字段名。若不传，基于 prefix 自动识别
     """
     today = date.today()
-    date_str = today.strftime("%Y%m%d")
+    date_str = today.strftime("%y%m%d")
 
     if model is None:
         from app.models.inventory import StockTransaction
@@ -79,7 +80,7 @@ def generate_doc_no(db: Session, prefix: str, model: Type[Any] = None,
     else:
         seq = 1
 
-    return f"{prefix}-{date_str}-{seq:03d}"
+    return f"{prefix}-{date_str}{seq:02d}"
 
 
 def _infer_field_name(prefix: str, model: Type[Any]) -> str:

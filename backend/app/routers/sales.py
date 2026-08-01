@@ -187,7 +187,7 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
             tax_rate=item.get("tax_rate", 13),
             tax_amount=item_tax,
             hs_code_id=item.get("hs_code_id"),
-            batch_no=f"{order_no[3:]}-{idx:02d}",
+            batch_no=f"{order_no}-{idx:02d}",
             remark=item.get("remark", ""),
         )
         db.add(so_item)
@@ -471,9 +471,8 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
         StockInOrder.status.in_(["待入库", "部分入库"]),
     ).first()
     if existing:
-        raise HTTPException(400, f"该明细行已有待入库单（{existing.stock_in_no}），无需重复转入库")
+        raise HTTPException(400, "该明细行已有待入库单，无需重复转入库")
     sin = StockInOrder(
-        stock_in_no=generate_doc_no(db, "IN", StockInOrder, "stock_in_no"),
         source_type="sales",
         sales_order_id=order_id,
         sales_item_id=item_id,
@@ -485,7 +484,7 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
     db.add(sin)
     item.production_status = "已通知入库"
     db.commit()
-    return {"message": f"已生成待入库单 {sin.stock_in_no}", "stock_in_no": sin.stock_in_no}
+    return {"message": "已转入库，收货请到「库存管理 → 成品入库」办理"}
 
 
 @router.post("/orders/{order_id}/items/{item_id}/outsource", tags=["销售管理"])
@@ -1233,7 +1232,7 @@ def update_order_item(
         if (item.delivered_qty or 0) > 0:
             raise HTTPException(400, "该明细行已发货，不能停售")
         if active_stock_ins:
-            raise HTTPException(400, f"请先退回待入库单（{active_stock_ins[0].stock_in_no}），再停售")
+            raise HTTPException(400, "请先退回待入库单，再停售")
         if active_outsources:
             raise HTTPException(400, f"请先删除委外订单（{active_outsources[0].outsource_no}），再停售")
         item.production_status = "已停售"
@@ -1252,7 +1251,7 @@ def update_order_item(
         raise HTTPException(400, "该明细行已完成入库，不能变更数量（客户要改请新建订单）")
     # 已通知但下游单据未处理 → 先退下游
     if item.production_status == "已通知入库" and active_stock_ins:
-        raise HTTPException(400, f"请先退回待入库单（{active_stock_ins[0].stock_in_no}），再变更数量")
+        raise HTTPException(400, "请先退回待入库单，再变更数量")
     if item.production_status == "已通知外发" and active_outsources:
         raise HTTPException(400, f"请先删除委外订单（{active_outsources[0].outsource_no}），再变更数量")
     # 新数量不能小于已入库数

@@ -210,7 +210,7 @@ def get_inventory_balance(
         if inv.source_doc_id:
             stock_in = db.query(StockInOrder).filter(StockInOrder.id == inv.source_doc_id).first()
             if stock_in:
-                source_label = "成品入库 " + (stock_in.stock_in_no or "")
+                source_label = "成品入库 " + (inv.receipt_no or "")
                 if stock_in.sales_item_id:
                     so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == stock_in.sales_item_id).first()
                     if so_item:

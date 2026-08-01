@@ -270,7 +270,9 @@
         <el-radio value="new">备货新建一张</el-radio>
       </el-radio-group>
       <el-table v-if="toStockInForm.linkType === 'link'" :data="candidateStockIns" height="240" border size="small" highlight-current-row @row-click="pickCandidate">
-        <el-table-column prop="stock_in_no" label="入库单号" width="140" />
+        <el-table-column label="批次号" width="160">
+          <template #default="{ row }">{{ row.batch_no || row.source_label }}</template>
+        </el-table-column>
         <el-table-column prop="source_label" label="来源" min-width="120" show-overflow-tooltip />
         <el-table-column prop="quantity" label="应入" width="70" align="right" />
         <el-table-column prop="received_qty" label="已入" width="70" align="right" />

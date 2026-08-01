@@ -178,9 +178,8 @@ def finish_order(
         StockInOrder.status.in_(["待入库", "部分入库"]),
     ).first()
     if existing:
-        raise HTTPException(400, f"已有待入库单（{existing.stock_in_no}），请先在成品入库模块收货")
+        raise HTTPException(400, "已有待入库单，请先在成品入库模块收货")
     sin = StockInOrder(
-        stock_in_no=generate_doc_no(db, "IN", StockInOrder, "stock_in_no"),
         source_type="outsource",
         sales_order_id=os.sales_order_id,
         sales_item_id=os.sales_item_id,
@@ -193,7 +192,7 @@ def finish_order(
     db.add(sin)
     os.status = "已完工"
     db.commit()
-    return {"message": f"已确认完工，生成待入库单 {sin.stock_in_no}", "stock_in_no": sin.stock_in_no}
+    return {"message": "已确认完工，收货请到「库存管理 → 成品入库」办理"}
 
 
 @router.delete("/orders/{order_id}", tags=["委外管理"])
