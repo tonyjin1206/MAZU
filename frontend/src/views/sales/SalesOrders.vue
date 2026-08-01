@@ -630,6 +630,8 @@ async function searchProducts() {
   try {
     const params = { page: productPage.value, page_size: productPageSize.value }
     if (productSearch.value) params.keyword = productSearch.value
+    // 按订单客户过滤：只显示关联了该客户的产品（未关联客户的产品不会出现在销售单里）
+    if (selectedOrder.value?.customer_id) params.customer_id = selectedOrder.value.customer_id
     const res = await request.get('/foundation/products', { params })
     pickerProductList.value = res.items || []
     productTotal.value = res.total || 0

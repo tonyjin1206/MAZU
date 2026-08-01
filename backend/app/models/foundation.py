@@ -53,6 +53,17 @@ class Product(Base):
     hs_code = relationship("HsCode", backref="products")
 
 
+class ProductCustomer(Base):
+    """产品-客户关联（一个产品可挂多家客户，销售下单时按客户过滤产品）"""
+    __tablename__ = "fd_product_customer"
+    __table_args__ = (UniqueConstraint("product_id", "customer_id", name="uq_product_customer"),)
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("fd_customer.id"), nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now())
+
+
 class BomItem(Base):
     """BOM（物料清单）"""
     __tablename__ = "fd_bom_item"

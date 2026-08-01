@@ -14,6 +14,7 @@ from app.models.foundation import (
     Company, CompanyContact,
     ProductProcess,
     SystemParam,
+    ProductCustomer,
 )
 from app.models.sales import (
     SalesQuote, SalesOrder, SalesOrderItem, SalesDelivery, CustomsDeclaration,
@@ -33,7 +34,7 @@ from app.models.inventory import (
 from app.models.tax_refund import TaxRefundInputInvoice
 from app.schemas.foundation import (
     MaterialCreate, MaterialUpdate, MaterialOut,
-    ProductCreate, ProductUpdate, ProductOut,
+    ProductCreate, ProductUpdate, ProductOut, ProductCustomersUpdate,
     BomItemCreate, BomItemUpdate, BomItemOut,
     ProcessCreate, ProcessUpdate, ProcessOut,
     DepartmentCreate, DepartmentOut,
@@ -137,12 +138,27 @@ def hard_delete_param(item_id: int, db: Session = Depends(get_db), current_user:
     return {"message": "已删除"}
 
 
+def _ensure_unique_name(db, model, name_field, name_value, exclude_id=None, label="名称"):
+    """名称唯一性校验：新增/编辑时重复禁止保存（含停用档案，防历史数据混淆）"""
+    name_value = (name_value or "").strip()
+    if not name_value:
+        return
+    q = db.query(model).filter(getattr(model, name_field) == name_value)
+    if exclude_id:
+        q = q.filter(model.id != exclude_id)
+    dup = q.first()
+    if dup:
+        dup_code = getattr(dup, "code", "") or ""
+        raise HTTPException(400, f"该{label}已存在：「{getattr(dup, name_field)}」（编码{dup_code}），请勿重复")
+
+
 # ==================== 材料自定义创建（自动编码 RM+6位流水）====================
 
 @router.post("/materials", tags=["基础档案-材料"])
 def create_material(data: MaterialCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     code = data.code or _next_code(db, Material, "RM")
+    _ensure_unique_name(db, Material, "name", data.name, label="材料名称")
     m = Material(code=code, name=data.name, spec=data.spec, model=data.model or "",
                  unit=data.unit, category=data.category or "原材料",
                  purchase_price=data.purchase_price or 0,
@@ -187,6 +203,8 @@ def update_material(item_id: int, data: MaterialUpdate, db: Session = Depends(ge
     if not item:
         raise HTTPException(404, "材料不存在")
     update_data = data.model_dump(exclude_unset=True)
+    if "name" in update_data:
+        _ensure_unique_name(db, Material, "name", update_data["name"], exclude_id=item_id, label="材料名称")
     for k, v in update_data.items():
         setattr(item, k, v)
     db.commit()
@@ -218,6 +236,7 @@ def create_product_with_hs(
 ):
     """创建产品，自动创建/关联 HS 编码，自动编码 FG+6位流水"""
     code = data.code or _next_code(db, Product, "FG")
+    _ensure_unique_name(db, Product, "name_cn", data.name_cn, label="产品名称")
     hs_code_id = data.hs_code_id
     if data.hs_code and not hs_code_id:
         existing = db.query(HsCode).filter(HsCode.hs_code == data.hs_code).first()
@@ -251,10 +270,13 @@ def list_products(
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
     keyword: str = Query(""), code: str = Query(""),
     name_cn: str = Query(""), spec: str = Query(""),
+    customer_id: int | None = Query(None, description="只返回关联了该客户的产品（销售下单用）"),
     is_active: int | None = None,
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
     query = db.query(Product)
+    if customer_id:
+        query = query.join(ProductCustomer, ProductCustomer.product_id == Product.id).filter(ProductCustomer.customer_id == customer_id)
     if keyword:
         from sqlalchemy import or_
         query = query.filter(or_(Product.code.like(f"%{keyword}%"),
@@ -274,6 +296,7 @@ def list_products(
     result = []
     for item in items:
         obj = ProductOut.model_validate(item).model_dump()
+        obj["customer_count"] = db.query(ProductCustomer.id).filter(ProductCustomer.product_id == item.id).count()
         if item.hs_code:
             obj["hs_code"] = item.hs_code.hs_code
             obj["refund_rate"] = item.hs_code.refund_rate
@@ -287,7 +310,33 @@ def get_product(item_id: int, db: Session = Depends(get_db), current_user: User 
     item = db.query(Product).filter(Product.id == item_id).first()
     if not item:
         raise HTTPException(404, "产品不存在")
-    return ProductOut.model_validate(item)
+    obj = ProductOut.model_validate(item).model_dump()
+    obj["customer_count"] = db.query(ProductCustomer.id).filter(ProductCustomer.product_id == item.id).count()
+    links = (db.query(ProductCustomer, Customer)
+             .join(Customer, Customer.id == ProductCustomer.customer_id)
+             .filter(ProductCustomer.product_id == item.id).all())
+    obj["customers"] = [{"id": c.id, "name": c.name_cn, "code": c.code} for _, c in links]
+    return obj
+
+
+@router.put("/products/{item_id}/customers", tags=["基础档案-产品"])
+def update_product_customers(item_id: int, data: ProductCustomersUpdate,
+                             db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """设置产品关联客户（全量替换）"""
+    product = db.query(Product).filter(Product.id == item_id).first()
+    if not product:
+        raise HTTPException(404, "产品不存在")
+    # 校验客户存在
+    ids = list(dict.fromkeys(data.customer_ids))
+    if ids:
+        exist = db.query(Customer.id).filter(Customer.id.in_(ids)).count()
+        if exist != len(ids):
+            raise HTTPException(400, "存在无效的客户")
+    db.query(ProductCustomer).filter(ProductCustomer.product_id == item_id).delete()
+    for cid in ids:
+        db.add(ProductCustomer(product_id=item_id, customer_id=cid))
+    db.commit()
+    return {"message": "关联客户已更新"}
 
 
 @router.put("/products/{item_id}", response_model=ProductOut, tags=["基础档案-产品"])
@@ -299,6 +348,8 @@ def update_product(
     if not item:
         raise HTTPException(404, "产品不存在")
     update_data = data.model_dump(exclude_unset=True)
+    if "name_cn" in update_data:
+        _ensure_unique_name(db, Product, "name_cn", update_data["name_cn"], exclude_id=item_id, label="产品名称")
     for key, value in update_data.items():
         setattr(item, key, value)
     db.commit()
@@ -389,6 +440,7 @@ def preview_customer_code(db: Session = Depends(get_db),
 def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     code = _next_code(db, Customer, "CU")  # 编码强制自动生成，不允许手动输入
+    _ensure_unique_name(db, Customer, "name_cn", data.name_cn, label="客户名称")
     # 编码唯一性校验（避免唯一约束冲突 → 500）
     if db.query(Customer).filter(Customer.code == code).first():
         raise HTTPException(409, f"客户编码已存在: {code}")
@@ -442,6 +494,8 @@ def update_customer(item_id: int, data: CustomerUpdate, db: Session = Depends(ge
     if not item:
         raise HTTPException(404, "客户不存在")
     update_data = data.model_dump(exclude_unset=True)
+    if "name_cn" in update_data:
+        _ensure_unique_name(db, Customer, "name_cn", update_data["name_cn"], exclude_id=item_id, label="客户名称")
     for k, v in update_data.items():
         setattr(item, k, v)
     db.commit()
@@ -556,6 +610,7 @@ def preview_supplier_code(db: Session = Depends(get_db),
 def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
                     current_user: User = Depends(get_current_user)):
     code = _next_code(db, Supplier, "SU")  # 编码强制自动生成，不允许手动输入
+    _ensure_unique_name(db, Supplier, "name", data.name, label="供应商名称")
     # 编码唯一性校验（避免唯一约束冲突 → 500）
     if db.query(Supplier).filter(Supplier.code == code).first():
         raise HTTPException(409, f"供应商编码已存在: {code}")
@@ -609,6 +664,8 @@ def update_supplier(item_id: int, data: SupplierUpdate, db: Session = Depends(ge
     if not item:
         raise HTTPException(404, "供应商不存在")
     update_data = data.model_dump(exclude_unset=True)
+    if "name" in update_data:
+        _ensure_unique_name(db, Supplier, "name", update_data["name"], exclude_id=item_id, label="供应商名称")
     for k, v in update_data.items():
         setattr(item, k, v)
     db.commit()

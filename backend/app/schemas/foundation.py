@@ -94,9 +94,16 @@ class ProductOut(BaseModel):
     hs_code_id: int | None
     is_active: int
     created_at: datetime
+    customer_count: int = 0
+    customers: list = []
 
     class Config:
         from_attributes = True
+
+
+class ProductCustomersUpdate(BaseModel):
+    """产品关联客户（全量替换）"""
+    customer_ids: list[int] = []
 
 
 # ==================== BOM ====================

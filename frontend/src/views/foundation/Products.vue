@@ -48,6 +48,10 @@
           <template v-if="col.prop === 'sale_price'" #default="{ row }">
             {{ $fm(row.sale_price) }}
           </template>
+          <template v-else-if="col.prop === 'customer_count'" #default="{ row }">
+            <span v-if="row.customer_count">{{ row.customer_count }}家</span>
+            <span v-else style="color: #c0c4cc">未关联</span>
+          </template>
           <template v-else-if="col.prop === 'is_active'" #default="{ row }">
             <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">
               {{ row.is_active === 1 ? '启用' : '停用' }}
@@ -99,6 +103,20 @@
             <el-option v-for="h in hsCodeOptions" :key="h.id" :label="`${h.hs_code} - ${h.name}`" :value="h.id" />
           </el-select>
         </el-form-item>
+        <el-form-item label="关联客户">
+          <div style="width: 100%">
+            <div v-for="(c, i) in form.customers" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px">
+              <el-select v-model="c.customer_id" filterable placeholder="选择客户" style="flex: 1">
+                <el-option v-for="cu in customerOptions" :key="cu.id" :label="`${cu.code} ${cu.name_cn}`" :value="cu.id" />
+              </el-select>
+              <el-button type="danger" link @click="form.customers.splice(i, 1)">删除</el-button>
+            </div>
+            <el-button type="primary" plain size="small" @click="form.customers.push({ customer_id: null })">+ 添加客户</el-button>
+            <div style="color: #909399; font-size: 12px; margin-top: 6px; line-height: 1.5">
+              添加这个产品的销售客户（一个产品可挂多家客户）。填销售订单时选了客户，产品列表只出现关联了该客户的产品。
+            </div>
+          </div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
@@ -130,6 +148,7 @@ const defaultColumns = [
   { prop: 'spec', label: '规格', minWidth: 140, sortable: true },
   { prop: 'unit', label: '单位', width: 100, align: 'center', sortable: true },
   { prop: 'sale_price', label: '销售价', width: 100, align: 'right', sortable: true },
+  { prop: 'customer_count', label: '关联客户', width: 100, align: 'center' },
   { prop: 'is_active', label: '状态', width: 80, align: 'center' },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
@@ -145,13 +164,22 @@ const dialogLoading = ref(false)
 const dialogMode = ref('create')
 const formRef = ref(null)
 const hsCodeOptions = ref([])
-const form = reactive({ id: null, name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code: '', refund_rate: 13, tax_rate: 13, hs_code_id: null })
+const customerOptions = ref([])
+const form = reactive({ id: null, name_cn: '', name_en: '', spec: '', unit: '', sale_price: 0, hs_code: '', refund_rate: 13, tax_rate: 13, hs_code_id: null, customers: [] })
 
 onMounted(() => {
   fetchData()
   loadHsCodes()
   loadUnitOptions()
+  loadCustomers()
 })
+
+async function loadCustomers() {
+  try {
+    const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 200 } })
+    customerOptions.value = res.items || []
+  } catch { customerOptions.value = [] }
+}
 
 async function loadHsCodes() {
   try {
@@ -203,7 +231,7 @@ function resetSearch() {
   fetchData()
 }
 
-function openDialog(mode, row = {}) {
+async function openDialog(mode, row = {}) {
   dialogMode.value = mode
   if (mode === 'edit') {
     form.id = row.id
@@ -216,6 +244,12 @@ function openDialog(mode, row = {}) {
     form.refund_rate = row.refund_rate || (row.hs_code_obj && row.hs_code_obj.refund_rate) || 13
     form.tax_rate = row.tax_rate || (row.hs_code_obj && row.hs_code_obj.tax_rate) || 13
     form.hs_code_id = row.hs_code_id || null
+    // 回显关联客户
+    form.customers = []
+    try {
+      const detail = await request.get(`/foundation/products/${row.id}`)
+      form.customers = (detail.customers || []).map(c => ({ customer_id: c.id }))
+    } catch { /* ignore */ }
   } else {
     form.id = null
     form.name_cn = ''
@@ -227,6 +261,7 @@ function openDialog(mode, row = {}) {
     form.refund_rate = 13
     form.tax_rate = 13
     form.hs_code_id = null
+    form.customers = []
   }
   dialogVisible.value = true
 }
@@ -237,13 +272,21 @@ async function handleSave() {
   dialogLoading.value = true
   try {
     const payload = { ...form }
+    const customerIds = (form.customers || []).map(c => c.customer_id).filter(Boolean)
     delete payload.id
+    delete payload.customers
+    let productId = form.id
     if (dialogMode.value === 'create') {
-      await foundationApi.products.create(payload)
+      const created = await foundationApi.products.create(payload)
+      productId = created.id
       ElMessage.success('新增成功')
     } else {
       await foundationApi.products.update(form.id, payload)
       ElMessage.success('更新成功')
+    }
+    // 保存关联客户（全量替换）
+    if (productId) {
+      await request.put(`/foundation/products/${productId}/customers`, { customer_ids: customerIds })
     }
     dialogVisible.value = false
     fetchData()
