@@ -1,8 +1,5 @@
 <template>
   <div>
-    <el-tabs v-model="activeTab" @tab-change="onTabChange">
-      <!-- ===== Tab 1: 库存余额 ===== -->
-      <el-tab-pane label="库存余额" name="balance">
         <el-card>
           <template #header>
             <div style="display: flex; justify-content: flex-end; gap: 8px">
@@ -88,78 +85,6 @@
           </el-table>
           <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
         </el-card>
-      </el-tab-pane>
-
-      <!-- ===== Tab 2: 收发存 =====（点击后自动设置本月日期范围，共用余额表格的期间视图） -->
-      <el-tab-pane label="收发存" name="period" />
-
-      <!-- ===== Tab 3: 库存流水 ===== -->
-      <el-tab-pane label="库存流水" name="transactions">
-        <el-card>
-          <template #header>
-            <div style="display: flex; justify-content: flex-end; gap: 8px">
-              <el-button type="primary" @click="fetchTransactions">查询</el-button>
-              <el-button @click="resetTransactions">重置</el-button>
-              <el-button v-if="transQuery.keyword || transQuery.material_id || transQuery.product_id" @click="clearTransLink">✕ 清除联查筛选</el-button>
-            </div>
-          </template>
-          <el-form :inline="true" label-width="70px" style="margin-bottom: 12px">
-            <el-form-item label="仓库">
-              <el-select v-model="transQuery.warehouse_id" clearable placeholder="全部" style="width: 140px" @change="fetchTransactions">
-                <el-option v-for="w in warehouseList" :key="w.id" :label="w.name" :value="w.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="物料类型">
-              <el-select v-model="transQuery.type" clearable placeholder="全部" style="width: 120px" @change="fetchTransactions">
-                <el-option label="原材料" value="material" />
-                <el-option label="成品" value="product" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="出入库">
-              <el-select v-model="transQuery.direction" clearable placeholder="全部" style="width: 100px" @change="fetchTransactions">
-                <el-option label="入库" value="in" />
-                <el-option label="出库" value="out" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="物料名称">
-              <el-input v-model="transQuery.keyword" placeholder="名称/编码" clearable style="width: 160px" @keyup.enter="fetchTransactions" />
-            </el-form-item>
-          </el-form>
-          <el-table ref="transTableRef" class="drag-table-trans" :key="transColumnVersion" :data="transactionList" v-loading="transLoading" stripe border :show-summary="true" :summary-method="getTransSummary">
-            <el-table-column v-for="col in visibleTransColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
-              <template #header>
-                <el-dropdown trigger="contextmenu" :hide-on-click="false">
-                  <span class="col-header-wrap">
-                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-                    {{ col.label }}
-                  </span>
-                  <template #dropdown>
-                    <el-dropdown-menu>
-                      <el-dropdown-item v-for="c in allTransColumns" :key="c.prop">
-                        <el-checkbox :model-value="c.visible !== false" @change="toggleTransColumn(c)">{{ c.label }}</el-checkbox>
-                      </el-dropdown-item>
-                    </el-dropdown-menu>
-                  </template>
-                </el-dropdown>
-              </template>
-              <template v-if="col.prop === 'trans_date'" #default="{ row }">{{ (row.trans_date || '').slice(0, 10) }}</template>
-              <template v-else-if="col.prop === 'trans_type'" #default="{ row }">
-                <el-tag :type="row.trans_type === 'issue_cancel' || row.trans_type.includes('in') ? 'success' : 'danger'" size="small">
-                  {{ transTypeLabel(row.trans_type) }}
-                </el-tag>
-              </template>
-              <template v-else-if="col.prop === 'material_name'" #default="{ row }">
-                <span style="font-weight: 500">{{ row.material_name || row.product_name }}</span>
-              </template>
-              <template v-else-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
-              <template v-else-if="col.prop === 'unit_cost'" #default="{ row }">{{ $fm(row.unit_cost) }}</template>
-              <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
-            </el-table-column>
-          </el-table>
-          <el-pagination v-model:current-page="transPage" v-model:page-size="transPageSize" :total="transTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchTransactions" @current-change="fetchTransactions" style="margin-top: 12px" />
-        </el-card>
-      </el-tab-pane>
-    </el-tabs>
   </div>
 </template>
 
@@ -192,7 +117,7 @@ const defaultColumns = [
   { prop: 'so_order_no', label: '销售订单号', width: 150 },
   { prop: 'so_order_qty', label: '订单数', width: 70, align: 'right' },
   { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right' },
-  { prop: 'source_type', label: '来源', width: 180 },
+  { prop: 'source_type', label: '入库单号', width: 180 },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
 const { fitTable } = useColumnAutoFit()
