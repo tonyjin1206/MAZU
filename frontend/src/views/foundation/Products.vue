@@ -68,10 +68,10 @@
     </el-card>
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="500px">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
-        <el-form-item label="中文名" prop="name_cn">
+        <el-form-item label="品名（公司）" prop="name_cn">
           <el-input v-model="form.name_cn" />
         </el-form-item>
-        <el-form-item label="英文名" prop="name_en">
+        <el-form-item label="品名（客户）" prop="name_en">
           <el-input v-model="form.name_en" />
         </el-form-item>
         <el-form-item label="规格" prop="spec">
@@ -125,8 +125,8 @@ async function loadUnitOptions() {
 const STORAGE_KEY = 'mazu_product_columns'
 const defaultColumns = [
   { prop: 'code', label: '编码', width: 140, sortable: true },
-  { prop: 'name_cn', label: '中文名', minWidth: 160, sortable: true },
-  { prop: 'name_en', label: '英文名', minWidth: 180, sortable: true },
+  { prop: 'name_cn', label: '品名（公司）', minWidth: 160, sortable: true },
+  { prop: 'name_en', label: '品名（客户）', minWidth: 180, sortable: true },
   { prop: 'spec', label: '规格', minWidth: 140, sortable: true },
   { prop: 'unit', label: '单位', width: 100, align: 'center', sortable: true },
   { prop: 'sale_price', label: '销售价', width: 100, align: 'right', sortable: true },
@@ -171,7 +171,7 @@ function onHsCodeSelect(id) {
 }
 
 const formRules = {
-  name_cn: [{ required: true, message: '请输入中文名', trigger: 'blur' }],
+  name_cn: [{ required: true, message: '请输入品名（公司）', trigger: 'blur' }],
   spec: [{ required: true, message: '请输入规格', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
   sale_price: [{ required: true, message: '请输入销售价', trigger: 'blur' }],

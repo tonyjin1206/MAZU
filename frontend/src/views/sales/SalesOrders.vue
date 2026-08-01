@@ -105,16 +105,15 @@
           </template>
           <template v-if="col.prop === 'unit_price' || col.prop === 'total_amount' || col.prop === 'tax_amount' || col.prop === 'total_amount_excl_tax'" #default="{ row }">{{ $fm(row[col.prop]) }}</template>
           <template v-else-if="col.prop === 'production_status'" #default="{ row }">
-            <el-tag v-if="row.production_status === '未生产' || !row.production_status" type="info" size="small">未生产</el-tag>
-            <el-tag v-else-if="row.production_status === '生产中'" type="warning" size="small">生产中</el-tag>
-            <el-tag v-else-if="row.production_status === '已生产'" type="success" size="small">✓已生产</el-tag>
-            <el-tag v-else size="small">{{ row.production_status }}</el-tag>
+            <el-tag :type="productionStatusType(row.production_status)" size="small">{{ productionStatusLabel(row.production_status) }}</el-tag>
           </template>
+          <template v-else-if="col.prop === 'received_qty'" #default="{ row }">{{ row.received_qty || 0 }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.production_status === '未生产' || !row.production_status" link type="primary" size="small" @click="editOrderItem(row)">修改</el-button>
-            <el-button v-if="row.production_status === '未生产' || !row.production_status" link type="primary" size="small" @click="reProduceItem(row)">重发生产</el-button>
+            <el-button v-if="row.production_status === '未生产' || !row.production_status" link type="primary" size="small" @click="handleStockIn(row)">转入库</el-button>
+            <el-button v-if="row.production_status === '未生产' || !row.production_status" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
+            <el-button v-if="row.production_status !== '已停售'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -244,40 +243,25 @@
       </template>
     </el-dialog>
 
-    <!-- 修改明细行弹窗 -->
-    <el-dialog v-model="itemEditVisible" title="修改明细行" width="500px" destroy-on-close>
-      <el-form :model="itemEditForm" label-width="80px">
+    <!-- 变更明细行弹窗（改数量 / 停售） -->
+    <el-dialog v-model="changeVisible" title="变更明细行" width="460px" destroy-on-close>
+      <el-form label-width="80px">
         <el-form-item label="产品">
-          <el-input :model-value="itemEditProductName" placeholder="点击选择产品" readonly @click="openProductPicker(null)">
-            <template #append>
-              <el-button @click="openProductPicker(null)">选择</el-button>
-            </template>
-          </el-input>
+          <el-input :model-value="changeForm.product_name" readonly />
         </el-form-item>
-        <el-row :gutter="12">
-          <el-col :span="8">
-            <el-form-item label="数量">
-              <el-input type="number" v-model="itemEditForm.quantity" :min="0" controls-position="right" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="单价">
-              <el-input type="number" v-model="itemEditForm.unit_price" :min="0" :precision="2" controls-position="right" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="税率%">
-              <el-input type="number" v-model="itemEditForm.tax_rate" :min="0" :max="17" controls-position="right" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="含税金额">
-          <span style="color: #409eff; font-weight: bold">{{ $fm(itemEditForm.total_amount) }}</span>
+        <el-form-item label="新数量">
+          <el-input-number v-model="changeForm.quantity" :min="0" style="width: 100%" :disabled="changeForm.stop_sale" />
         </el-form-item>
+        <el-form-item label="停售">
+          <el-switch v-model="changeForm.stop_sale" active-text="停售此产品（整行作废）" />
+        </el-form-item>
+        <div v-if="changeForm.stop_sale" style="color: #e6a23c; font-size: 12px; padding-left: 80px">
+          停售后该行金额将从订单中剔除，不能再恢复。若已有待入库单/委外订单，需先退回/删除才能停售。
+        </div>
       </el-form>
       <template #footer>
-        <el-button @click="itemEditVisible = false">取消</el-button>
-        <el-button type="primary" :loading="itemSubmitting" @click="handleItemUpdate">保存</el-button>
+        <el-button @click="changeVisible = false">取消</el-button>
+        <el-button type="primary" @click="handleChange">确定</el-button>
       </template>
     </el-dialog>
 
@@ -358,7 +342,8 @@ const defaultItemColumns = [
   { prop: 'total_amount', label: '金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'tax_amount', label: '税额', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'total_amount_excl_tax', label: '不含税', width: 100, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'production_status', label: '生产状态', width: 100, align: 'center', sortable: true, fmt: 'tag' },
+  { prop: 'received_qty', label: '已入库', width: 80, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'production_status', label: '状态', width: 100, align: 'center', sortable: true, fmt: 'tag' },
 ]
 const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
 
@@ -463,37 +448,67 @@ async function loadOrderDetail(orderId) {
   }
 }
 
-function editOrderItem(row) {
-  if (row.production_status && row.production_status !== '未生产') {
-    ElMessage.warning(`该明细行当前生产状态为「${row.production_status}」，不允许修改`)
-    return
+function productionStatusType(status) {
+  const map = {
+    '未生产': 'info', '已通知入库': 'primary', '已通知外发': 'warning',
+    '部分入库': 'warning', '已入库': 'success', '已停售': 'danger',
   }
-  if (!selectedOrder.value) return
-  // 填充到编辑表单
-  itemEditForm.order_id = selectedOrder.value.id
-  itemEditForm.id = row.id
-  itemEditForm.product_id = row.product_id
-  itemEditForm.product_code = row.product_code || ''
-  itemEditForm.product_name = row.product_name || ''
-  itemEditForm.quantity = row.quantity
-  itemEditForm.unit_price = row.unit_price
-  itemEditForm.tax_rate = row.tax_rate
-  itemEditForm.total_amount = row.total_amount
-  itemEditVisible.value = true
+  return map[status] || 'info'
 }
 
-async function reProduceItem(row) {
-  if (row.production_status && row.production_status !== '未生产') {
-    ElMessage.warning(`该明细行当前生产状态为「${row.production_status}」，不允许重发生产`)
-    return
+function productionStatusLabel(status) {
+  const map = {
+    '未生产': '未生产', '已通知入库': '已通知入库', '已通知外发': '已通知外发',
+    '部分入库': '部分入库', '已入库': '已入库', '已停售': '已停售',
   }
-  if (!selectedOrder.value) return
-  await ElMessageBox.confirm(`确定对明细行「${row.product_name}」重发生产？`, '提示', { type: 'info' })
+  return map[status] || status || '未生产'
+}
+
+// ========== 明细行：转入库 / 转外发 ==========
+async function handleStockIn(row) {
+  await ElMessageBox.confirm(`将「${row.product_name}」转入库？将生成待入库单，收货在「库存管理 → 成品入库」进行。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/re-produce`)
-    ElMessage.success(res.message || '重发生产成功')
+    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/stock-in`)
+    ElMessage.success(res.message || '已转入库')
     loadOrderDetail(selectedOrder.value.id)
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '重发生产失败') }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
+}
+
+async function handleOutsource(row) {
+  await ElMessageBox.confirm(`将「${row.product_name}」转外发？将生成委外订单（草稿），请在「委外管理 → 委外订单」维护委外商和加工单价。`, '提示', { type: 'info' })
+  try {
+    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/outsource`)
+    ElMessage.success(res.message || '已转外发')
+    loadOrderDetail(selectedOrder.value.id)
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
+}
+
+// ========== 明细行：变更（改数量 / 停售） ==========
+const changeVisible = ref(false)
+const changeForm = reactive({ id: null, product_name: '', quantity: 1, stop_sale: false })
+
+function openChangeDialog(row) {
+  changeForm.id = row.id
+  changeForm.product_name = `${row.product_code || ''} ${row.product_name || ''}`
+  changeForm.quantity = row.quantity
+  changeForm.stop_sale = false
+  changeVisible.value = true
+}
+
+async function handleChange() {
+  const payload = {}
+  if (changeForm.stop_sale) {
+    payload.stop_sale = true
+  } else {
+    payload.quantity = parseFloat(changeForm.quantity) || 0
+  }
+  try {
+    const res = await request.put(`/sales/orders/${selectedOrder.value.id}/items/${changeForm.id}`, payload)
+    ElMessage.success(res.message || '变更成功')
+    changeVisible.value = false
+    loadOrderDetail(selectedOrder.value.id)
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '变更失败') }
 }
 
 // ========== 弹窗 ==========

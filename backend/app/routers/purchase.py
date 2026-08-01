@@ -169,9 +169,13 @@ def get_order(order_id: int, db: Session = Depends(get_db), current_user: User =
         "items": [
             {
                 "id": item.id, "material_id": item.material_id,
-                "material_code": item.material.code if item.material else "",
-                "material_name": item.material.name if item.material else "",
-                "unit": item.material.unit if item.material else "",
+                "material_code": item.material.code if item.material else (item.product.code if item.product else ""),
+                "material_name": item.material.name if item.material else (item.product.name_cn if item.product else ""),
+                "product_id": item.product_id,
+                "product_code": item.product.code if item.product else "",
+                "product_name": item.product.name_cn if item.product else "",
+                "unit": item.material.unit if item.material else (item.product.unit if item.product else ""),
+                "receive_type": item.receive_type or "",
                 "quantity": item.quantity, "unit_price": item.unit_price,
                 "total_amount": item.total_amount, "received_qty": item.received_qty or 0,
                 "tax_rate": item.tax_rate or 0, "total_amount_excl_tax": item.total_amount_excl_tax or 0,
@@ -225,8 +229,12 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
             unit_price_fc = float(item_data.get("unit_price", 0) or 0)
             qty = float(item_data.get("quantity", 1) or 1)
             line_total = qty * unit_price_fc
+            mid = item_data.get("material_id")
+            pid = item_data.get("product_id")
+            if not mid and not pid:
+                raise HTTPException(400, "采购明细必须选择材料或产品")
             new_item = PurchaseOrderItem(
-                order_id=order.id, material_id=item_data["material_id"],
+                order_id=order.id, material_id=mid or None, product_id=pid or None,
                 quantity=qty, unit_price=unit_price_fc,
                 total_amount=line_total,
                 tax_rate=order.tax_rate or 13,
@@ -272,11 +280,14 @@ def create_order(
 
     total_fc = 0
     for item_data in data.items:
+        if not item_data.material_id and not item_data.product_id:
+            raise HTTPException(400, "采购明细必须选择材料或产品")
         unit_price_fc = item_data.unit_price
         line_total_fc = item_data.quantity * unit_price_fc
         item = PurchaseOrderItem(
             order_id=order.id,
             material_id=item_data.material_id,
+            product_id=item_data.product_id,
             quantity=item_data.quantity,
             unit_price=unit_price_fc,
             unit_price_local=unit_price_fc * (data.exchange_rate or 1),
@@ -296,6 +307,90 @@ def create_order(
     db.commit()
     db.refresh(order)
     return {"id": order.id, "order_no": order.order_no, "message": "采购订单创建成功"}
+
+
+# ==================== 采购明细去向：转成品库入库 / 转原料库入库 ====================
+
+@router.post("/orders/{order_id}/items/{item_id}/to-stock-in", tags=["采购管理"])
+def to_stock_in(order_id: int, item_id: int, data: dict,
+                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """采购明细「转成品库入库」— 生成/关联待入库单（成品入库模块收货）
+
+    data: { stock_in_order_id: int | 0 }
+      stock_in_order_id > 0: 关联到指定待入库单（人工选择）
+      stock_in_order_id = 0: 新建备货待入库单
+    """
+    from app.models.inventory import StockInOrder
+    from app.utils.batch_no import generate_doc_no
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "采购订单不存在")
+    if order.status != "已审核":
+        raise HTTPException(400, "仅已审核的采购订单可转成品库入库")
+    item = db.query(PurchaseOrderItem).filter(
+        PurchaseOrderItem.id == item_id, PurchaseOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "采购明细不存在")
+    if not item.product_id:
+        raise HTTPException(400, "该明细为材料采购，请使用「转原料库入库」")
+    if item.receive_type:
+        raise HTTPException(400, f"该明细已转「{item.receive_type}」，不能重复操作")
+    target_id = int(data.get("stock_in_order_id") or 0)
+    if target_id > 0:
+        sin = db.query(StockInOrder).filter(StockInOrder.id == target_id).first()
+        if not sin:
+            raise HTTPException(404, "待入库单不存在")
+        if sin.product_id != item.product_id:
+            raise HTTPException(400, "待入库单产品与采购明细不一致")
+        if sin.status not in ("待入库", "部分入库"):
+            raise HTTPException(400, f"该待入库单状态「{sin.status}」，不能关联")
+        if sin.purchase_item_id:
+            raise HTTPException(400, "该待入库单已关联其他采购明细")
+        sin.purchase_order_id = order_id
+        sin.purchase_item_id = item_id
+        sin.source_type = "purchase"
+        item.receive_type = "成品库"
+        db.commit()
+        return {"message": f"已关联待入库单 {sin.stock_in_no}"}
+    # 新建备货待入库单
+    sin = StockInOrder(
+        stock_in_no=generate_doc_no(db, "IN", StockInOrder, "stock_in_no"),
+        source_type="purchase",
+        purchase_order_id=order_id,
+        purchase_item_id=item_id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        status="待入库",
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(sin)
+    item.receive_type = "成品库"
+    db.commit()
+    return {"message": f"已生成待入库单 {sin.stock_in_no}", "stock_in_no": sin.stock_in_no}
+
+
+@router.post("/orders/{order_id}/items/{item_id}/to-material", tags=["采购管理"])
+def to_material(order_id: int, item_id: int,
+                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """采购明细「转原料库入库」— 走现有采购入库流程收货"""
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "采购订单不存在")
+    if order.status != "已审核":
+        raise HTTPException(400, "仅已审核的采购订单可转原料库入库")
+    item = db.query(PurchaseOrderItem).filter(
+        PurchaseOrderItem.id == item_id, PurchaseOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "采购明细不存在")
+    if not item.material_id:
+        raise HTTPException(400, "该明细为产品采购，请使用「转成品库入库」")
+    if item.receive_type:
+        raise HTTPException(400, f"该明细已转「{item.receive_type}」，不能重复操作")
+    item.receive_type = "原料库"
+    db.commit()
+    return {"message": "已转原料库入库，请到「采购入库」模块收货"}
 
 
 @router.post("/orders/{order_id}/approve", tags=["采购管理"])
@@ -369,6 +464,9 @@ def create_receipt(
         order_items_map[oi.material_id] = oi
 
     for item_data in data.items:
+        # 产品类明细（转成品库入库）不能走采购入库
+        if not item_data.material_id:
+            raise HTTPException(400, "产品类采购明细请使用「转成品库入库」收货")
         # 查找订单明细：优先按 order_item_id，其次按 material_id
         if item_data.order_item_id:
             order_item = db.query(PurchaseOrderItem).filter(

@@ -34,17 +34,14 @@ const routes = [
       { path: 'sales/ar', name: 'AccountsReceivable', component: () => import('../views/sales/AccountsReceivable.vue') },
       { path: 'sales/collections', name: 'Collections', component: () => import('../views/sales/Collections.vue') },
 
-      // 生产管理
-      { path: 'production/outsourcings', name: 'Outsourcings', component: () => import('../views/production/Outsourcings.vue') },
-      { path: 'production/orders', name: 'ProductionOrders', component: () => import('../views/production/ProductionOrders.vue') },
-      { path: 'production/detail/:id', name: 'ProductionDetail', component: () => import('../views/production/ProductionDetail.vue') },
-      { path: 'production/workspace', name: 'ProductionWorkspace', component: () => import('../views/production/ProductionWorkspace.vue') },
+      // 委外管理
+      { path: 'outsource/orders', name: 'OutsourceOrders', component: () => import('../views/outsource/OutsourceOrders.vue') },
       { path: 'production/invoices', name: 'ProcessingInvoices', component: () => import('../views/production/ProcessingInvoices.vue') },
-      { path: 'production/receipts', name: 'ProductionReceipts', component: () => import('../views/production/ProductionReceipts.vue') },
-      { path: 'production/inventory', name: 'BatchInventory', component: () => import('../views/production/BatchInventory.vue') },
 
       // 库存管理
       { path: 'inventory/management', name: 'InventoryManagement', component: () => import('../views/inventory/InventoryManagement.vue') },
+      { path: 'inventory/stock-ins', name: 'StockIns', component: () => import('../views/inventory/StockIns.vue') },
+      { path: 'production/inventory', name: 'BatchInventory', component: () => import('../views/production/BatchInventory.vue') },
 
       // 退税管理
       { path: 'tax-refund/declarations', name: 'TaxRefund', component: () => import('../views/taxRefund/TaxRefundDeclarations.vue') },

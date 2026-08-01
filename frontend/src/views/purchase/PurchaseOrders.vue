@@ -158,6 +158,22 @@
                   <el-button link type="danger" size="small" @click="removeItem($index)">删</el-button>
                 </template>
               </el-table-column>
+              <el-table-column v-if="viewMode" label="去向" width="100" align="center">
+                <template #default="{ row }">
+                  <el-tag v-if="row.receive_type === '成品库'" type="success" size="small">成品库</el-tag>
+                  <el-tag v-else-if="row.receive_type === '原料库'" type="primary" size="small">原料库</el-tag>
+                  <el-tag v-else type="info" size="small">未转</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column v-if="viewMode && orderForm.status === '已审核'" label="操作" width="190" fixed="right">
+                <template #default="{ row }">
+                  <template v-if="!row.receive_type">
+                    <el-button v-if="row.product_id" :disabled="false" link type="primary" size="small" @click="openToStockIn(row)">转成品库</el-button>
+                    <el-button v-else :disabled="false" link type="primary" size="small" @click="handleToMaterial(row)">转原料库</el-button>
+                  </template>
+                  <span v-else style="color: #909399; font-size: 12px">{{ row.receive_type === '成品库' ? '待收货' : '待入库' }}</span>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
         </el-form-item>
@@ -195,22 +211,56 @@
       </div>
     </el-dialog>
 
-    <!-- 物料选择弹窗 -->
-    <el-dialog v-model="materialPickerVisible" title="选择物料" width="780px" destroy-on-close>
+    <!-- 材料/产品选择弹窗 -->
+    <el-dialog v-model="materialPickerVisible" :title="pickerTab === 'material' ? '选择材料' : '选择产品'" width="780px" destroy-on-close>
+      <el-tabs v-model="pickerTab" style="margin-bottom: 4px">
+        <el-tab-pane label="原辅材料" name="material" />
+        <el-tab-pane label="产品" name="product" />
+      </el-tabs>
       <div style="display: flex; gap: 8px; margin-bottom: 10px">
-        <el-input v-model="materialSearch" placeholder="输入编码/名称搜索，回车查询" clearable @keyup.enter="searchMaterials" @clear="searchMaterials" />
-        <el-button type="primary" @click="searchMaterials">搜索</el-button>
+        <el-input v-model="materialSearch" placeholder="输入编码/名称搜索，回车查询" clearable @keyup.enter="searchPicker" @clear="searchPicker" />
+        <el-button type="primary" @click="searchPicker">搜索</el-button>
       </div>
-      <el-table :data="pickerMaterialList" height="420" border size="small" highlight-current-row @row-click="pickMaterial">
+      <el-table v-if="pickerTab === 'material'" :data="pickerMaterialList" height="380" border size="small" highlight-current-row @row-click="pickMaterial">
         <el-table-column prop="code" label="编码" width="120" />
         <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
         <el-table-column prop="spec" label="规格" min-width="130" show-overflow-tooltip />
         <el-table-column prop="unit" label="单位" width="70" />
         <el-table-column prop="purchase_price" label="采购价" width="100" align="right" />
       </el-table>
+      <el-table v-else :data="pickerProductList" height="380" border size="small" highlight-current-row @row-click="pickProduct">
+        <el-table-column prop="code" label="编码" width="120" />
+        <el-table-column prop="name_cn" label="品名（公司）" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="name_en" label="品名（客户）" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="unit" label="单位" width="70" />
+        <el-table-column prop="estimated_cost" label="参考成本" width="100" align="right" />
+      </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
-        <el-pagination v-model:current-page="materialPage" v-model:page-size="materialPageSize" :total="materialTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchMaterials" />
+        <el-pagination v-model:current-page="materialPage" v-model:page-size="materialPageSize" :total="materialTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchPicker" />
       </div>
+    </el-dialog>
+    <!-- 转成品库入库弹窗（选择关联待入库单 / 备货新建） -->
+    <el-dialog v-model="toStockInVisible" title="转成品库入库" width="600px" destroy-on-close>
+      <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
+        这批货进哪个待入库单？选择已有的（同一产品、未完成），或作为备货新建一张：
+      </div>
+      <el-radio-group v-model="toStockInForm.linkType" style="margin-bottom: 10px">
+        <el-radio value="link">关联已有待入库单</el-radio>
+        <el-radio value="new">备货新建一张</el-radio>
+      </el-radio-group>
+      <el-table v-if="toStockInForm.linkType === 'link'" :data="candidateStockIns" height="240" border size="small" highlight-current-row @row-click="pickCandidate">
+        <el-table-column prop="stock_in_no" label="入库单号" width="140" />
+        <el-table-column prop="source_label" label="来源" min-width="120" show-overflow-tooltip />
+        <el-table-column prop="quantity" label="应入" width="70" align="right" />
+        <el-table-column prop="received_qty" label="已入" width="70" align="right" />
+        <el-table-column prop="status" label="状态" width="80" align="center" />
+      </el-table>
+      <el-empty v-if="toStockInForm.linkType === 'link' && !candidateStockIns.length" description="没有可关联的待入库单（该产品没有未完成、未关联采购的单据）" :image-size="60" />
+      <template #footer>
+        <el-button @click="toStockInVisible = false">取消</el-button>
+        <el-button type="primary" :loading="submitting" @click="handleToStockIn">确定</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -381,7 +431,7 @@ const orderForm = reactive({
 })
 
 function newItem() {
-  return { material_id: null, material_code: '', material_name: '', unit: '', quantity: 1, unit_price: 0, tax_rate: 13, total_amount: 0, tax_amount: 0, total_amount_excl_tax: 0 }
+  return { material_id: null, product_id: null, material_code: '', material_name: '', unit: '', quantity: 1, unit_price: 0, tax_rate: 13, total_amount: 0, tax_amount: 0, total_amount_excl_tax: 0 }
 }
 
 function addItem() { orderForm.items.push(newItem()) }
@@ -462,28 +512,41 @@ const supplierDisplayName = computed(() => {
   return orderForm.supplier_name || ''
 })
 
-// ========== 物料选择弹窗 ==========
+// ========== 材料/产品选择弹窗 ==========
 const materialPickerVisible = ref(false)
 const materialSearch = ref('')
+const pickerTab = ref('material')
 const pickerMaterialList = ref([])
+const pickerProductList = ref([])
 const materialTotal = ref(0)
 const materialPage = ref(1)
 const materialPageSize = ref(100)
+const materialPickerTarget = ref(null)
 
-async function searchMaterials() {
-  try {
-    const params = { page: materialPage.value, page_size: materialPageSize.value }
-    if (materialSearch.value) params.keyword = materialSearch.value
-    const res = await request.get('/foundation/materials', { params })
-    pickerMaterialList.value = res.items || []
-    materialTotal.value = res.total || 0
-  } catch {}
+async function searchPicker() {
+  if (pickerTab.value === 'material') {
+    try {
+      const params = { page: materialPage.value, page_size: materialPageSize.value }
+      if (materialSearch.value) params.keyword = materialSearch.value
+      const res = await request.get('/foundation/materials', { params })
+      pickerMaterialList.value = res.items || []
+      materialTotal.value = res.total || 0
+    } catch {}
+  } else {
+    try {
+      const params = { page: materialPage.value, page_size: materialPageSize.value }
+      if (materialSearch.value) params.keyword = materialSearch.value
+      const res = await request.get('/foundation/products', { params })
+      pickerProductList.value = res.items || []
+      materialTotal.value = res.total || 0
+    } catch {}
+  }
 }
 
 function openMaterialPicker(row) {
   materialSearch.value = ''
   materialPage.value = 1
-  searchMaterials()
+  searchPicker()
   materialPickerVisible.value = true
   materialPickerTarget.value = row
 }
@@ -492,6 +555,7 @@ function pickMaterial(m) {
   const target = materialPickerTarget.value
   if (target) {
     target.material_id = m.id
+    target.product_id = null
     target.material_code = m.code
     target.material_name = m.name
     target.unit = m.unit || ''
@@ -501,12 +565,82 @@ function pickMaterial(m) {
   materialPickerVisible.value = false
 }
 
-const materialPickerTarget = ref(null)
+function pickProduct(p) {
+  const target = materialPickerTarget.value
+  if (target) {
+    target.product_id = p.id
+    target.material_id = null
+    target.material_code = p.code
+    target.material_name = p.name_cn
+    target.unit = p.unit || ''
+    target.unit_price = p.estimated_cost || 0
+    calcItem(target)
+  }
+  materialPickerVisible.value = false
+}
+
+function itemDisplayName(item) {
+  if (item.product_id) return `${item.material_code || ''} ${item.material_name || ''}`
+  return `${item.material_code || ''} ${item.material_name || ''}`
+}
 
 async function loadSuppliers() {
   try {
     const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
     supplierList.value = res.items || []
+  } catch {}
+}
+
+// ========== 采购明细去向：转成品库入库 / 转原料库入库 ==========
+const toStockInVisible = ref(false)
+const toStockInForm = reactive({ item_id: null, product_id: null, linkType: 'link' })
+const candidateStockIns = ref([])
+const selectedCandidate = ref(null)
+
+async function openToStockIn(row) {
+  toStockInForm.item_id = row.id
+  toStockInForm.product_id = row.product_id
+  toStockInForm.linkType = 'link'
+  selectedCandidate.value = null
+  try {
+    const res = await request.get('/stock-in', { params: { page: 1, page_size: 200 } })
+    candidateStockIns.value = (res.items || []).filter(x =>
+      x.product_id === row.product_id &&
+      (x.status === '待入库' || x.status === '部分入库') &&
+      !x.purchase_item_id
+    )
+  } catch { candidateStockIns.value = [] }
+  toStockInVisible.value = true
+}
+
+function pickCandidate(row) { selectedCandidate.value = row }
+
+async function handleToStockIn() {
+  if (toStockInForm.linkType === 'link' && !selectedCandidate.value) { ElMessage.warning('请选择要关联的待入库单'); return }
+  submitting.value = true
+  try {
+    const res = await request.post(`/purchase/orders/${orderForm.id}/items/${toStockInForm.item_id}/to-stock-in`, {
+      stock_in_order_id: toStockInForm.linkType === 'link' ? selectedCandidate.value.id : 0,
+    })
+    ElMessage.success(res.message || '已转成品库入库')
+    toStockInVisible.value = false
+    await refreshOrderForm()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') } finally { submitting.value = false }
+}
+
+async function handleToMaterial(row) {
+  await ElMessageBox.confirm('确定该明细转「原料库入库」？收货在采购入库模块进行。', '提示', { type: 'info' })
+  try {
+    const res = await request.post(`/purchase/orders/${orderForm.id}/items/${row.id}/to-material`)
+    ElMessage.success(res.message || '已转原料库入库')
+    await refreshOrderForm()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
+}
+
+async function refreshOrderForm() {
+  try {
+    const res = await request.get(`/purchase/orders/${orderForm.id}`)
+    Object.assign(orderForm, { items: res.items || [], status: res.status })
   } catch {}
 }
 
@@ -552,6 +686,7 @@ async function openDetail(row) {
     const res = await request.get(`/purchase/orders/${row.id}`)
     Object.assign(orderForm, {
       id: res.id, supplier_id: res.supplier_id, supplier_name: res.supplier_name || '',
+      status: res.status || '',
       total_amount: res.total_amount || 0, tax_amount: res.tax_amount || 0,
       total_amount_excl_tax: res.total_amount_excl_tax || 0,
       tax_rate: res.tax_rate || 13, payment_terms: res.payment_terms || '', remark: res.remark || '',
@@ -564,6 +699,7 @@ async function openDetail(row) {
 function buildItemsPayload() {
   return orderForm.items.map(item => ({
     material_id: item.material_id,
+    product_id: item.product_id,
     quantity: parseFloat(item.quantity) || 0,
     unit_price: parseFloat(item.unit_price) || 0,
   }))

@@ -89,6 +89,8 @@ def _infer_field_name(prefix: str, model: Type[Any]) -> str:
         "QT": "quote_no",       # SalesQuote
         "SD": "delivery_no",    # SalesDelivery
         "MO": "order_no",       # ProductionOrder
+        "WO": "outsource_no",   # OutsourceOrder (委外订单)
+        "IN": "stock_in_no",    # StockInOrder (成品入库)
         "MI": "issue_no",       # MaterialIssueItem
         "AR": "ar_no",          # AccountsReceivable
         "CR": "collection_no",  # Collection

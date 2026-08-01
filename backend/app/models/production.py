@@ -121,6 +121,32 @@ class ProcessingInvoice(Base):
     created_at = Column(DateTime, default=func.now())
 
 
+# ==================== 委外订单（销售转外发生成） ====================
+
+class OutsourceOrder(Base):
+    """委外订单（销售订单明细转外发生成）"""
+    __tablename__ = "os_order"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    outsource_no = Column(String(64), unique=True, nullable=False, comment="委外单号: WO-YYYYMMDD-NNN")
+    sales_order_id = Column(Integer, ForeignKey("so_order.id"), comment="关联销售订单")
+    sales_item_id = Column(Integer, ForeignKey("so_order_item.id"), comment="关联销售明细行")
+    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False, comment="产品")
+    quantity = Column(Float, nullable=False, comment="委外数量")
+    outsourcer_id = Column(Integer, ForeignKey("fd_supplier.id"), comment="委外商(供应商)")
+    unit_price = Column(Float, default=0, comment="加工单价")
+    amount = Column(Float, default=0, comment="加工费金额")
+    due_date = Column(Date, comment="约定交期")
+    status = Column(String(16), default="待确认", comment="状态: 待确认/已审核/已完工/已入库/已退回")
+    remark = Column(Text)
+    created_by = Column(String(32))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    product = relationship("Product")
+    outsourcer = relationship("Supplier")
+
+
 # ==================== 以下为旧模型（保留兼容，新代码不再使用） ====================
 
 class OutsourcingOrder(Base):

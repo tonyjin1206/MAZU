@@ -41,17 +41,20 @@ class PurchaseOrderItem(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     order_id = Column(Integer, ForeignKey("po_order.id"), nullable=False)
-    material_id = Column(Integer, ForeignKey("fd_material.id"), nullable=False, comment="材料")
+    material_id = Column(Integer, ForeignKey("fd_material.id"), comment="材料（原料采购时使用）")
+    product_id = Column(Integer, ForeignKey("fd_product.id"), comment="产品（贸易品采购时使用）")
     quantity = Column(Float, nullable=False, comment="数量")
     unit_price = Column(Float, default=0, comment="单价(外币)")
     unit_price_local = Column(Float, default=0, comment="单价(本币)")
     total_amount = Column(Float, default=0, comment="含税金额")
     received_qty = Column(Float, default=0, comment="已入库数量")
+    receive_type = Column(String(16), default="", comment="去向: 成品库/原料库")
     tax_rate = Column(Float, default=13, comment="增值税率(%)")
     total_amount_excl_tax = Column(Float, default=0, comment="不含税金额")
     remark = Column(Text)
 
     material = relationship("Material")
+    product = relationship("Product")
 
 
 class PurchaseReceipt(Base):

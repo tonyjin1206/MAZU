@@ -207,12 +207,14 @@ def create_app() -> FastAPI:
         return response
 
     # 注册路由
-    from app.routers import auth, foundation, purchase, sales, production, tax_refund, inventory, dashboard
+    from app.routers import auth, foundation, purchase, sales, production, tax_refund, inventory, dashboard, outsource, stock_in
     app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
     app.include_router(foundation.router, prefix="/api/foundation", tags=["基础档案"])
     app.include_router(purchase.router, prefix="/api/purchase", tags=["采购管理"])
     app.include_router(sales.router, prefix="/api/sales", tags=["销售管理"])
     app.include_router(production.router, prefix="/api/production", tags=["生产管理"])
+    app.include_router(outsource.router, prefix="/api/outsource", tags=["委外管理"])
+    app.include_router(stock_in.router, prefix="/api/stock-in", tags=["库存管理"])
     app.include_router(tax_refund.router, prefix="/api/tax-refund", tags=["退税管理"])
     app.include_router(inventory.router, prefix="/api/inventory", tags=["库存管理"])
     app.include_router(dashboard.router, prefix="/api", tags=["驾驶舱"])

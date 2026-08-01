@@ -53,11 +53,10 @@
           <el-menu-item index="/sales/collections">收款管理</el-menu-item>
         </el-sub-menu>
 
-        <!-- 3. 生产管理 -->
-        <el-sub-menu index="production">
-          <template #title>生产管理</template>
-          <el-menu-item index="/production/orders">生产订单</el-menu-item>
-          <el-menu-item index="/production/workspace">生产工作台</el-menu-item>
+        <!-- 3. 委外管理 -->
+        <el-sub-menu index="outsource">
+          <template #title>委外管理</template>
+          <el-menu-item index="/outsource/orders">委外订单</el-menu-item>
           <el-menu-item index="/production/invoices">加工费发票</el-menu-item>
         </el-sub-menu>
 
@@ -75,6 +74,7 @@
         <el-sub-menu index="inventory">
           <template #title>库存管理</template>
           <el-menu-item index="/inventory/management">库存收发存</el-menu-item>
+          <el-menu-item index="/inventory/stock-ins">成品入库</el-menu-item>
           <el-menu-item index="/production/inventory">批次追溯</el-menu-item>
         </el-sub-menu>
 
@@ -154,6 +154,8 @@ const pageTitle = computed(() => {
     '/production/receipts': '完工入库',
     '/production/inventory': '批次库存/追溯',
     '/inventory/management': '库存管理',
+    '/inventory/stock-ins': '成品入库',
+    '/outsource/orders': '委外订单',
     '/tax-refund/declarations': '退税申报',
     '/system/users': '用户管理',
     '/system/roles': '角色管理',

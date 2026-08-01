@@ -91,3 +91,25 @@ class StockCheckItem(Base):
     actual_qty = Column(Float, default=0, comment="实盘数量")
     diff_qty = Column(Float, default=0, comment="差异数量")
     remark = Column(Text)
+
+
+class StockInOrder(Base):
+    """成品入库单（销售转入库/采购转成品库/委外完工 → 收货确认）"""
+    __tablename__ = "inv_stock_in"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    stock_in_no = Column(String(64), unique=True, nullable=False, comment="入库单号: IN-YYYYMMDD-NNN")
+    source_type = Column(String(16), nullable=False, comment="来源: sales/purchase/outsource")
+    sales_order_id = Column(Integer, ForeignKey("so_order.id"), comment="关联销售订单")
+    sales_item_id = Column(Integer, ForeignKey("so_order_item.id"), comment="关联销售明细行")
+    purchase_order_id = Column(Integer, ForeignKey("po_order.id"), comment="关联采购订单")
+    purchase_item_id = Column(Integer, ForeignKey("po_order_item.id"), comment="关联采购明细行")
+    outsource_order_id = Column(Integer, ForeignKey("os_order.id"), comment="关联委外订单")
+    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False, comment="产品")
+    quantity = Column(Float, nullable=False, comment="应入数量")
+    received_qty = Column(Float, default=0, comment="已入数量")
+    status = Column(String(16), default="待入库", comment="状态: 待入库/部分入库/已入库/已退回")
+    warehouse_id = Column(Integer, ForeignKey("fd_warehouse.id"), comment="收货仓库")
+    remark = Column(Text)
+    created_by = Column(String(32))
+    created_at = Column(DateTime, default=func.now())

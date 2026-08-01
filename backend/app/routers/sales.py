@@ -72,15 +72,16 @@ def list_quotes(
 # ==================== 销售订单 ====================
 
 def _recalc_order_totals(order):
-    """按明细行重算订单头金额（改明细后必须调用）"""
-    total_amount_fc = round(sum((i.total_amount or 0) for i in order.items), 2)
+    """按明细行重算订单头金额（改明细后必须调用；已停售行不参与）"""
+    active_items = [i for i in order.items if i.production_status != "已停售"]
+    total_amount_fc = round(sum((i.total_amount or 0) for i in active_items), 2)
     exchange_rate = order.exchange_rate or 1
     order.total_amount = total_amount_fc
     order.total_amount_local = round(total_amount_fc * exchange_rate, 2)
-    order.tax_amount = round(sum((i.tax_amount or 0) for i in order.items) * exchange_rate, 2)
-    order.total_amount_excl_tax = round(sum((i.total_amount_excl_tax or 0) for i in order.items), 2)
+    order.tax_amount = round(sum((i.tax_amount or 0) for i in active_items) * exchange_rate, 2)
+    order.total_amount_excl_tax = round(sum((i.total_amount_excl_tax or 0) for i in active_items), 2)
     order.total_amount_excl_tax_local = round(
-        sum((i.total_amount_excl_tax or 0) for i in order.items) * exchange_rate, 2)
+        sum((i.total_amount_excl_tax or 0) for i in active_items) * exchange_rate, 2)
 
 @router.post("/orders", tags=["销售管理"])
 def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -257,6 +258,7 @@ def list_sales_orders(
 
 @router.get("/orders/{order_id}", tags=["销售管理"])
 def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from app.models.inventory import StockInOrder
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
@@ -286,6 +288,11 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
              "tax_rate": item.tax_rate, "tax_amount": item.tax_amount,
              "total_amount_excl_tax": item.total_amount_excl_tax,
              "delivered_qty": item.delivered_qty or 0,
+             "received_qty": sum(
+                 (s.received_qty or 0) for s in db.query(StockInOrder).filter(
+                     StockInOrder.sales_item_id == item.id,
+                     StockInOrder.status != "已退回",
+                 ).all()),
              "production_status": item.production_status or "未生产"}
             for item in order.items
         ],
@@ -382,36 +389,19 @@ def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db),
 
 @router.post("/orders/{order_id}/approve", tags=["销售管理"])
 def approve_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """审核销售订单并生成生产订单"""
+    """审核销售订单（审核后明细行可转入库/转外发/变更）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
     if order.status != "待审核":
         raise HTTPException(400, "状态不正确")
     order.status = "已审"
-
-    # 遍历明细行，每个产品生成一个生产订单
-    from app.models.production import ProductionOrder
-    from app.utils.batch_no import generate_doc_no
-    mo_nos = []
+    # 明细行初始化生产状态（待转入库/转外发）
     for item in order.items:
-        # 初始化明细行生产状态
-        item.production_status = "未生产"
-        prod = ProductionOrder(
-            order_no=generate_doc_no(db, "MO", ProductionOrder, "order_no"),
-            sales_order_id=order.id,
-            sales_order_item_id=item.id,
-            product_id=item.product_id,
-            quantity=item.quantity,
-            due_date=order.delivery_date,
-            status="待排产",
-            created_by=current_user.display_name or current_user.username,
-        )
-        db.add(prod)
-        db.flush()  # 立即写入，确保下一个编号的 MAX 查询能识别
-        mo_nos.append(prod.order_no)
+        if item.production_status in (None, "", "未生产"):
+            item.production_status = "未生产"
     db.commit()
-    return {"message": f"订单已审核，已生成{len(mo_nos)}个生产订单", "production_order_nos": mo_nos}
+    return {"message": "订单已审核"}
 
 
 @router.post("/orders/{order_id}/items/{item_id}/re-produce", tags=["销售管理"])
@@ -452,6 +442,75 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
     db.commit()
     db.refresh(prod)
     return {"id": prod.id, "order_no": prod.order_no, "message": f"已重新生成生产订单 {prod.order_no}"}
+
+
+# ==================== 销售明细行：转入库 / 转外发 / 变更 ====================
+
+@router.post("/orders/{order_id}/items/{item_id}/stock-in", tags=["销售管理"])
+def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """销售明细「转入库」— 生成待入库单（成品入库模块收货），明细状态→已通知入库"""
+    from app.models.inventory import StockInOrder
+    from app.utils.batch_no import generate_doc_no
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id, SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "明细行不存在")
+    if item.production_status not in (None, "", "未生产"):
+        raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转入库")
+    existing = db.query(StockInOrder).filter(
+        StockInOrder.sales_item_id == item_id,
+        StockInOrder.status.in_(["待入库", "部分入库"]),
+    ).first()
+    if existing:
+        raise HTTPException(400, f"该明细行已有待入库单（{existing.stock_in_no}），无需重复转入库")
+    sin = StockInOrder(
+        stock_in_no=generate_doc_no(db, "IN", StockInOrder, "stock_in_no"),
+        source_type="sales",
+        sales_order_id=order_id,
+        sales_item_id=item_id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        status="待入库",
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(sin)
+    item.production_status = "已通知入库"
+    db.commit()
+    return {"message": f"已生成待入库单 {sin.stock_in_no}", "stock_in_no": sin.stock_in_no}
+
+
+@router.post("/orders/{order_id}/items/{item_id}/outsource", tags=["销售管理"])
+def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """销售明细「转外发」— 生成委外订单（草稿），明细状态→已通知外发"""
+    from app.models.production import OutsourceOrder
+    from app.utils.batch_no import generate_doc_no
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id, SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "明细行不存在")
+    if item.production_status not in (None, "", "未生产"):
+        raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转外发")
+    existing = db.query(OutsourceOrder).filter(
+        OutsourceOrder.sales_item_id == item_id,
+        OutsourceOrder.status.in_(["待确认", "已审核", "已完工"]),
+    ).first()
+    if existing:
+        raise HTTPException(400, f"该明细行已有委外订单（{existing.outsource_no}），无需重复转外发")
+    os_order = OutsourceOrder(
+        outsource_no=generate_doc_no(db, "WO", OutsourceOrder, "outsource_no"),
+        sales_order_id=order_id,
+        sales_item_id=item_id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        status="待确认",
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(os_order)
+    item.production_status = "已通知外发"
+    db.commit()
+    return {"message": f"已生成委外订单 {os_order.outsource_no}", "outsource_no": os_order.outsource_no}
 
 
 # ==================== 销售发货（批次出库） ====================
@@ -1122,43 +1181,87 @@ def update_order_item(
     order_id: int, item_id: int, data: dict,
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    """修改销售订单明细行（仅未生产状态允许）"""
+    """变更销售订单明细行 — 改数量 / 停售
+
+    规则：
+    - 未开始（无下游单据）：数量随便改，可停售
+    - 已通知（有待入库单/委外单）：必须先退回/删除下游单据，明细回「未生产」后才能变更
+    - 已入库一部分：只能改数量（新数量 ≥ 已入库数），不能停售
+    - 已确认完成：不能变更
+    """
+    from app.models.inventory import StockInOrder
+    from app.models.production import OutsourceOrder
     item = db.query(SalesOrderItem).filter(
-        SalesOrderItem.id == item_id,
-        SalesOrderItem.order_id == order_id,
+        SalesOrderItem.id == item_id, SalesOrderItem.order_id == order_id,
     ).first()
     if not item:
         raise HTTPException(404, "明细行不存在")
-    if item.production_status not in (None, "", "未生产"):
-        raise HTTPException(400, f"该明细行生产状态为「{item.production_status}」，不允许修改")
-    # 删除关联的待排产生产订单
-    from app.models.production import ProductionOrder
-    pending_mos = db.query(ProductionOrder).filter(
-        ProductionOrder.sales_order_item_id == item_id,
-        ProductionOrder.status == "待排产",
+    if item.production_status == "已停售":
+        raise HTTPException(400, "该明细行已停售，不能变更")
+
+    # 已入库数量（成品入库累计收货，不含已退回）
+    stock_ins = db.query(StockInOrder).filter(
+        StockInOrder.sales_item_id == item_id,
+        StockInOrder.status != "已退回",
     ).all()
-    for mo in pending_mos:
-        db.delete(mo)
-    # 更新明细行
-    if "product_id" in data:
-        item.product_id = data["product_id"]
-    if "quantity" in data:
-        item.quantity = float(data["quantity"])
-        item.total_amount = item.quantity * (item.unit_price or 0)
-    if "unit_price" in data:
-        item.unit_price = float(data["unit_price"])
-        item.total_amount = (item.quantity or 0) * item.unit_price
-    if "tax_rate" in data:
-        item.tax_rate = float(data["tax_rate"])
-    if "remark" in data:
-        item.remark = data["remark"]
-    # 重新计算金额
+    received_total = sum((s.received_qty or 0) for s in stock_ins)
+    active_stock_ins = [s for s in stock_ins if s.status in ("待入库", "部分入库")]
+    active_outsources = db.query(OutsourceOrder).filter(
+        OutsourceOrder.sales_item_id == item_id,
+        OutsourceOrder.status.in_(["待确认", "已审核", "已完工"]),
+    ).all()
+
+    stop_sale = bool(data.get("stop_sale"))
+
+    if stop_sale:
+        # ===== 停售 =====
+        if received_total > 0:
+            raise HTTPException(400, f"该明细行已入库 {received_total}，不能停售（货已动，只能改数量）")
+        if (item.delivered_qty or 0) > 0:
+            raise HTTPException(400, "该明细行已发货，不能停售")
+        if active_stock_ins:
+            raise HTTPException(400, f"请先退回待入库单（{active_stock_ins[0].stock_in_no}），再停售")
+        if active_outsources:
+            raise HTTPException(400, f"请先删除委外订单（{active_outsources[0].outsource_no}），再停售")
+        item.production_status = "已停售"
+        db.commit()
+        _recalc_order_totals(db.query(SalesOrder).filter(SalesOrder.id == order_id).first())
+        db.commit()
+        return {"message": "该明细行已停售，金额已从订单中剔除"}
+
+    # ===== 改数量 =====
+    if "quantity" not in data:
+        raise HTTPException(400, "请提供要变更的数量或停售标记")
+    new_qty = float(data["quantity"])
+    if new_qty < 0:
+        raise HTTPException(400, "数量不能为负")
+    if item.production_status == "已入库":
+        raise HTTPException(400, "该明细行已完成入库，不能变更数量（客户要改请新建订单）")
+    # 已通知但下游单据未处理 → 先退下游
+    if item.production_status == "已通知入库" and active_stock_ins:
+        raise HTTPException(400, f"请先退回待入库单（{active_stock_ins[0].stock_in_no}），再变更数量")
+    if item.production_status == "已通知外发" and active_outsources:
+        raise HTTPException(400, f"请先删除委外订单（{active_outsources[0].outsource_no}），再变更数量")
+    # 新数量不能小于已入库数
+    min_qty = max(received_total, item.delivered_qty or 0)
+    if new_qty < min_qty:
+        raise HTTPException(400, f"新数量 {new_qty} 小于已入库/已发货数量 {min_qty}，不能小于已交付数量")
+    item.quantity = new_qty
+    item.total_amount = round(new_qty * (item.unit_price or 0), 2)
     tax_rate_val = item.tax_rate or 13
-    item.total_amount_excl_tax = round((item.total_amount or 0) / (1 + tax_rate_val / 100), 2)
-    item.tax_amount = round((item.total_amount or 0) - (item.total_amount_excl_tax or 0), 2)
+    item.total_amount_excl_tax = round(item.total_amount / (1 + tax_rate_val / 100), 2)
+    item.tax_amount = round(item.total_amount - item.total_amount_excl_tax, 2)
+    # 同步待入库单应入数量（未完成的）
+    for s in active_stock_ins:
+        s.quantity = new_qty
+    # 同步委外单数量（待确认/已审核的）
+    for o in active_outsources:
+        if o.status in ("待确认", "已审核"):
+            o.quantity = new_qty
+            o.amount = round(new_qty * (o.unit_price or 0), 2)
     # 重算订单头金额
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if order:
         _recalc_order_totals(order)
     db.commit()
-    return {"message": "明细行已修改，关联待排产生产订单已删除"}
+    return {"message": f"明细行数量已变更为 {new_qty}"}
