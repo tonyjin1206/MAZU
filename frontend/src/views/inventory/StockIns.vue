@@ -52,11 +52,11 @@
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === '待入库' || row.status === '部分入库'" link type="primary" @click="openReceive(row)">入库</el-button>
-            <el-button v-if="row.status === '待入库' || row.status === '部分入库'" link type="success" @click="handleComplete(row)">确认完成</el-button>
-            <el-button v-if="row.status === '待入库'" link type="danger" @click="handleCancel(row)">退回</el-button>
+            <el-button v-if="row.status === '待入库'" link type="primary" size="small" @click="openReceive(row)">入库</el-button>
+            <el-button v-if="row.status === '已入库' || row.status === '部分入库'" link type="success" size="small" @click="confirmComplete(row)">确认完成</el-button>
+            <el-button v-if="row.status === '已入库' || row.status === '部分入库'" link type="danger" size="small" @click="openReturn(row)">退回</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -82,6 +82,21 @@
       <template #footer>
         <el-button @click="receiveVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="handleReceive">入库</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 退回已入库数量弹窗 -->
+    <el-dialog v-model="returnVisible" title="退回" width="380px" destroy-on-close>
+      <el-form label-width="100px">
+        <el-form-item label="入库单号"><el-input :model-value="returnForm.stock_in_no" readonly /></el-form-item>
+        <el-form-item label="已入数量"><span>{{ returnForm.received_qty }}</span></el-form-item>
+        <el-form-item label="退回数量" required>
+          <el-input-number v-model="returnForm.return_qty" :min="0" :max="returnForm.received_qty" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="returnVisible = false">取消</el-button>
+        <el-button type="danger" :loading="submitting" @click="handleReturn">确认退回</el-button>
       </template>
     </el-dialog>
   </div>
@@ -202,4 +217,22 @@ async function handleCancel(row) {
 }
 
 onMounted(() => { initColumnVisible(); fetchData(); loadWarehouses() })
+
+// ========== 退回已入库数量 ==========
+const returnVisible = ref(false)
+const returnForm = reactive({ id: null, stock_in_no: '', received_qty: 0, return_qty: 0 })
+async function openReturn(row) {
+  Object.assign(returnForm, { id: row.id, stock_in_no: row.stock_in_no, received_qty: row.received_qty || 0, return_qty: 0 })
+  returnVisible.value = true
+}
+async function handleReturn() {
+  if (!returnForm.return_qty || returnForm.return_qty <= 0) { ElMessage.warning('请输入退回数量'); return }
+  if (returnForm.return_qty > returnForm.received_qty) { ElMessage.warning('退回数量不能超过已入数量'); return }
+  try {
+    const res = await request.post(`/stock-in/${returnForm.id}/return`, { return_qty: returnForm.return_qty })
+    ElMessage.success(res.message || '已退回')
+    returnVisible.value = false
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '退回失败') }
+}
 </script>

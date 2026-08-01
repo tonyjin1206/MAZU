@@ -74,6 +74,7 @@
         <el-sub-menu index="inventory">
           <template #title>库存管理</template>
           <el-menu-item index="/inventory/management">库存查询</el-menu-item>
+          <el-menu-item index="/inventory/summary">收发存</el-menu-item>
           <el-menu-item index="/inventory/stock-ins">成品入库</el-menu-item>
           <el-menu-item index="/production/inventory">批次追溯</el-menu-item>
         </el-sub-menu>

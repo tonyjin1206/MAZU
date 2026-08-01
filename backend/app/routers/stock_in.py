@@ -230,3 +230,46 @@ def cancel_stock_in(
             os.status = "已审核"
     db.commit()
     return {"message": "待入库单已退回"}
+
+
+@router.post("/{stock_in_id}/return", tags=["库存管理"])
+def return_stock_in(
+    stock_in_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """退回已入库/部分入库的收货数量（填错数量时纠正）"""
+    sin = db.query(StockInOrder).filter(StockInOrder.id == stock_in_id).first()
+    if not sin:
+        raise HTTPException(404, "入库单不存在")
+    if sin.status not in ("已入库", "部分入库"):
+        raise HTTPException(400, f"当前状态「{sin.status}」不能退回")
+    return_qty = body.get("return_qty", 0)
+    if return_qty <= 0:
+        raise HTTPException(400, "退回数量必须大于0")
+    if return_qty > (sin.received_qty or 0):
+        raise HTTPException(400, f"退回数量不能超过已入数量 {sin.received_qty}")
+    # 减少已入数量
+    sin.received_qty = (sin.received_qty or 0) - return_qty
+    if sin.received_qty <= 0:
+        sin.received_qty = 0
+        sin.status = "待入库"
+        # 回退销售明细状态：部分入库/已入库 → 已通知入库 或 未生产（取决于是否还有其他入库单）
+        if sin.sales_item_id:
+            item = db.query(SalesOrderItem).filter(SalesOrderItem.id == sin.sales_item_id).first()
+            if item and item.production_status in ("部分入库", "已入库"):
+                item.production_status = "已通知入库"
+    else:
+        sin.status = "部分入库"
+    # 扣减库存批次
+    inv = db.query(WarehouseInventory).filter(
+        WarehouseInventory.source_doc_id == stock_in_id,
+        WarehouseInventory.source_type == "stock_in",
+        WarehouseInventory.quantity > 0
+    ).first()
+    if inv:
+        inv.quantity -= return_qty
+        inv.total_cost = inv.unit_cost * inv.quantity
+    db.commit()
+    return {"message": f"已退回 {return_qty}，当前已入 {sin.received_qty}"}
