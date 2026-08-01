@@ -27,15 +27,15 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-lock"/></svg>
             <span>系统管理</span>
           </template>
-          <el-menu-item index="/system/users">用户管理</el-menu-item>
-          <el-menu-item index="/system/roles">角色管理</el-menu-item>
-          <el-menu-item index="/system/wecom">企业微信</el-menu-item>
-          <el-menu-item index="/system/bot">AI 模型</el-menu-item>
+          <el-menu-item index="/system/users"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-user-group"/></svg>用户管理</el-menu-item>
+          <el-menu-item index="/system/roles"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-account"/></svg>角色管理</el-menu-item>
+          <el-menu-item index="/system/wecom"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-comment-dots"/></svg>企业微信</el-menu-item>
+          <el-menu-item index="/system/bot"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-application"/></svg>AI 模型</el-menu-item>
           <el-menu-item index="/system/bot-chat">
-            <svg width="16" height="16" style="margin-right:4px;vertical-align:middle"><use href="#icon-diagnose"/></svg>
+            <svg width="14" height="14" style="margin-right:4px;vertical-align:middle"><use href="#icon-diagnose"/></svg>
             <span>AI 助手</span>
           </el-menu-item>
-          <el-menu-item index="/system/reminders">提醒管理</el-menu-item>
+          <el-menu-item index="/system/reminders"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-bell"/></svg>提醒管理</el-menu-item>
         </el-sub-menu>
 
         <!-- 1. 基础档案 -->
@@ -51,7 +51,7 @@
           <el-menu-item index="/foundation/bom"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-Directory-tree"/></svg>BOM管理</el-menu-item>
           <el-menu-item index="/foundation/processes"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-switch"/></svg>工序管理</el-menu-item>
           <el-menu-item index="/foundation/hs-codes"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file-SQL"/></svg>HS编码/退税率</el-menu-item>
-          <el-menu-item index="/foundation/params"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-setting"/></svg>参数设置</el-menu-item>
+          <el-menu-item index="/foundation/params"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>参数设置</el-menu-item>
         </el-sub-menu>
 
         <!-- 2. 销售管理 -->
@@ -60,12 +60,12 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-exchange"/></svg>
             <span>销售管理</span>
           </template>
-          <el-menu-item index="/sales/orders">销售订单</el-menu-item>
-          <el-menu-item index="/sales/deliveries">销售发货</el-menu-item>
-          <el-menu-item index="/sales/invoices">销售发票</el-menu-item>
-          <el-menu-item index="/sales/customs">报关管理</el-menu-item>
-          <el-menu-item index="/sales/ar">应收账款</el-menu-item>
-          <el-menu-item index="/sales/collections">收款管理</el-menu-item>
+          <el-menu-item index="/sales/orders"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file"/></svg>销售订单</el-menu-item>
+          <el-menu-item index="/sales/deliveries"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-paper-plane"/></svg>销售发货</el-menu-item>
+          <el-menu-item index="/sales/invoices"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file-plus"/></svg>销售发票</el-menu-item>
+          <el-menu-item index="/sales/customs"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-scan"/></svg>报关管理</el-menu-item>
+          <el-menu-item index="/sales/ar"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-chart-line"/></svg>应收账款</el-menu-item>
+          <el-menu-item index="/sales/collections"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-inbox-in"/></svg>收款管理</el-menu-item>
         </el-sub-menu>
 
         <!-- 3. 生产管理 -->
@@ -74,9 +74,9 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>
             <span>生产管理</span>
           </template>
-          <el-menu-item index="/production/orders">生产订单</el-menu-item>
-          <el-menu-item index="/production/workspace">生产工作台</el-menu-item>
-          <el-menu-item index="/production/invoices">加工费发票</el-menu-item>
+          <el-menu-item index="/production/orders"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>生产订单</el-menu-item>
+          <el-menu-item index="/production/workspace"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-application"/></svg>生产工作台</el-menu-item>
+          <el-menu-item index="/production/invoices"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file"/></svg>加工费发票</el-menu-item>
         </el-sub-menu>
 
         <!-- 4. 采购管理 -->
@@ -85,11 +85,11 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-inbox-in"/></svg>
             <span>采购管理</span>
           </template>
-          <el-menu-item index="/purchase/orders">采购订单</el-menu-item>
-          <el-menu-item index="/purchase/receipts">采购入库</el-menu-item>
-          <el-menu-item index="/purchase/invoices">采购发票</el-menu-item>
-          <el-menu-item index="/purchase/ap">应付账款</el-menu-item>
-          <el-menu-item index="/purchase/payments">付款管理</el-menu-item>
+          <el-menu-item index="/purchase/orders"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file"/></svg>采购订单</el-menu-item>
+          <el-menu-item index="/purchase/receipts"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-download"/></svg>采购入库</el-menu-item>
+          <el-menu-item index="/purchase/invoices"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-file-plus"/></svg>采购发票</el-menu-item>
+          <el-menu-item index="/purchase/ap"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-chart-area"/></svg>应付账款</el-menu-item>
+          <el-menu-item index="/purchase/payments"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cloudupload"/></svg>付款管理</el-menu-item>
         </el-sub-menu>
 
         <!-- 5. 库存管理 -->
@@ -98,8 +98,8 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-database-set"/></svg>
             <span>库存管理</span>
           </template>
-          <el-menu-item index="/inventory/management">库存收发存</el-menu-item>
-          <el-menu-item index="/production/inventory">批次追溯</el-menu-item>
+          <el-menu-item index="/inventory/management"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-database-plus"/></svg>库存收发存</el-menu-item>
+          <el-menu-item index="/production/inventory"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-qrcode"/></svg>批次追溯</el-menu-item>
         </el-sub-menu>
 
         <!-- 6. 退税管理 -->
@@ -108,7 +108,7 @@
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-clouddownload"/></svg>
             <span>退税管理</span>
           </template>
-          <el-menu-item index="/tax-refund/declarations">退税申报</el-menu-item>
+          <el-menu-item index="/tax-refund/declarations"><svg width="14" height="14" style="margin-right: 4px; vertical-align: middle"><use href="#icon-clouddownload"/></svg>退税申报</el-menu-item>
         </el-sub-menu>
 
       </el-menu>

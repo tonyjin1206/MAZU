@@ -1,11 +1,12 @@
 <template>
-  <div>
-    <el-card style="margin-bottom: 12px">
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+    <!-- ========== 搜索区 ========== -->
+    <el-card style="margin-bottom: 8px; flex: none">
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openCreate()">新建订单</el-button>
+          <el-button type="primary" @click="openCreate">新建订单</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
@@ -23,9 +24,14 @@
       </el-form>
     </el-card>
 
-    <el-card>
-      <el-table :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'supplier_name'">
+    <!-- ========== 采购订单列表（高度可拖） ========== -->
+    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
+      <template #header>
+        <span>采购订单</span>
+        <span style="margin-left: 10px; font-size: 12px; color: #909399">点击订单行，下方查看该订单明细</span>
+      </template>
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
               <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
@@ -60,74 +66,151 @@
           </template>
         </el-table-column>
       </el-table>
-
-      <el-pagination
-        v-model:current-page="queryParams.page"
-        v-model:page-size="queryParams.page_size"
-        :total="total"
-        :page-sizes="[50, 100, 200]"
-        layout="total, sizes, prev, pager, next"
-        @change="fetchData"
-        style="margin-top: 16px"
-      />
+      <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 6px; flex: none" />
     </el-card>
 
-    <!-- 新建/编辑/详情弹窗（保持不变） -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="800px" destroy-on-close>
-      <el-form :model="orderForm" :rules="orderRules" ref="orderFormRef" label-width="90px" :disabled="viewMode">
+    <!-- 拖动条：上下拉动调节订单/明细区域高度 -->
+    <div
+      class="split-bar"
+      style="flex: none; height: 8px; margin: 0 -16px; cursor: row-resize; background: transparent; display: flex; align-items: center; justify-content: center; user-select: none"
+      @mousedown="onSplitterDown"
+    >
+      <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
+    </div>
+
+    <!-- ========== 订单明细（跟随选中订单，占剩余高度） ========== -->
+    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+      <template #header>
+        <span>订单明细</span>
+        <span v-if="selectedOrder" style="margin-left: 10px; font-size: 12px; color: #606266">
+          {{ selectedOrder.order_no }} · {{ selectedOrder.supplier_name }} · {{ $fm(selectedOrder.total_amount) }}
+        </span>
+      </template>
+      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+        <el-table-column v-for="col in itemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'unit_price' || col.prop === 'total_amount' || col.prop === 'tax_amount' || col.prop === 'total_amount_excl_tax'" #default="{ row }">{{ $fm(row[col.prop]) }}</template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
+    <!-- 新建/编辑/详情弹窗 -->
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="900px" destroy-on-close>
+      <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-form-item label="供应商" prop="supplier_id">
-          <el-select v-model="orderForm.supplier_id" placeholder="请选择供应商" filterable style="width: 100%" :disabled="!!orderForm.id" @change="onSupplierChange">
-            <el-option v-for="s in supplierList" :key="s.id" :label="s.code + ' - ' + s.name" :value="s.id" />
-          </el-select>
+          <el-input v-if="viewMode" :model-value="supplierDisplayName" readonly placeholder="-" />
+          <el-input v-else :model-value="supplierDisplayName" placeholder="点击选择供应商" readonly @click="openSupplierPicker">
+            <template #append>
+              <el-button @click="openSupplierPicker">选择</el-button>
+            </template>
+          </el-input>
         </el-form-item>
+
+        <!-- 订单明细 -->
         <el-form-item label="订单明细">
-          <el-table :data="orderForm.items" border size="small" style="width: 100%">
-            <el-table-column label="物料编码" width="140">
-              <template #default="{ row, $index }">
-                <el-select v-model="row.material_id" placeholder="选择物料" filterable size="small" @change="onMaterialChange($index)">
-                  <el-option v-for="m in materialList" :key="m.id" :label="m.code + ' - ' + m.name" :value="m.id" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column prop="material_name" label="物料名称" width="150" />
-            <el-table-column prop="material_code" label="物料编码" width="100" />
-            <el-table-column prop="unit" label="单位" width="70" />
-            <el-table-column label="数量" width="100">
-              <template #default="{ row, $index }">
-                <el-input type="number" v-model="row.quantity" :min="0" size="small" controls-position="right" @change="calcAmount($index)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="单价" width="110">
-              <template #default="{ row, $index }">
-                <el-input type="number" v-model="row.unit_price" :min="0" :precision="2" size="small" controls-position="right" @change="calcAmount($index)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="含税金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-            <el-table-column label="税率(%)" width="80">
-              <template #default="{ row, $index }">
-                <el-input type="number" v-model="row.tax_rate" :min="0" :max="17" size="small" controls-position="right" @change="calcAmount($index)" />
-              </template>
-            </el-table-column>
-            <el-table-column label="税额" width="100" align="right"><template #default="{ row }">{{ $fm(row.tax_amount) }}</template></el-table-column>
-            <el-table-column label="不含税金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.total_amount_excl_tax) }}</template></el-table-column>
-            <el-table-column v-if="!viewMode" label="" width="60">
-              <template #default="{ $index }">
-                <el-button link type="danger" size="small" @click="removeItem($index)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+          <div style="width: 100%">
+            <el-button v-if="!viewMode" size="small" @click="addItem">+ 添加物料</el-button>
+            <el-table :data="orderForm.items" border size="small" style="width: 100%; margin-top: 4px">
+              <el-table-column label="物料" width="220">
+                <template #default="{ row }">
+                  <template v-if="viewMode">{{ row.material_code }} {{ row.material_name }}</template>
+                  <template v-else>
+                    <el-input v-if="row.material_name" :model-value="`${row.material_code || ''} ${row.material_name}`" readonly size="small" @click="openMaterialPicker(row)">
+                      <template #append>
+                        <el-button size="small" @click.stop="openMaterialPicker(row)">换</el-button>
+                      </template>
+                    </el-input>
+                    <el-button v-else size="small" style="width: 100%" @click="openMaterialPicker(row)">+ 选择物料</el-button>
+                  </template>
+                </template>
+              </el-table-column>
+              <el-table-column label="数量" width="90">
+                <template #default="{ row }">
+                  <el-input type="number" v-model="row.quantity" :min="0" size="small" :disabled="viewMode" controls-position="right" @input="calcItem(row)" />
+                </template>
+              </el-table-column>
+              <el-table-column label="单价" width="110">
+                <template #default="{ row }">
+                  <el-input type="number" v-model="row.unit_price" :min="0" :precision="2" size="small" :disabled="viewMode" controls-position="right" @input="calcItem(row)" />
+                </template>
+              </el-table-column>
+              <el-table-column label="税率%" width="70">
+                <template #default="{ row }">
+                  <el-input type="number" v-model="row.tax_rate" :min="0" :max="17" size="small" :disabled="viewMode" controls-position="right" @input="calcItem(row)" />
+                </template>
+              </el-table-column>
+              <el-table-column label="含税金额" width="100" align="right">
+                <template #default="{ row }">{{ $fm(row.total_amount) }}</template>
+              </el-table-column>
+              <el-table-column label="税额" width="90" align="right">
+                <template #default="{ row }">{{ $fm(row.tax_amount) }}</template>
+              </el-table-column>
+              <el-table-column label="不含税" width="100" align="right">
+                <template #default="{ row }">{{ $fm(row.total_amount_excl_tax) }}</template>
+              </el-table-column>
+              <el-table-column v-if="!viewMode" width="50">
+                <template #default="{ $index }">
+                  <el-button link type="danger" size="small" @click="removeItem($index)">删</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
         </el-form-item>
-        <el-form-item v-if="!viewMode">
-          <el-button size="small" @click="addItem">+ 添加物料</el-button>
-        </el-form-item>
-        <el-form-item label="含税总金额"><span style="font-size: 18px; color: #409eff; font-weight: bold">{{ $fm(orderForm.total_amount) }}</span></el-form-item>
-        <el-form-item label="总税额"><span style="font-size: 16px; color: #e6a23c; font-weight: bold">{{ $fm(orderForm.tax_amount) }}</span></el-form-item>
-        <el-form-item label="不含税总金额"><span style="font-size: 16px; color: #909399; font-weight: bold">{{ $fm(orderForm.total_amount_excl_tax) }}</span></el-form-item>
       </el-form>
+
+      <!-- 底部汇总 -->
+      <div style="border-top: 1px solid #e4e7ed; padding-top: 12px; margin-top: 12px; display: flex; gap: 40px">
+        <div>含税总金额 <b style="color: #409eff">{{ $fm(orderForm.total_amount) }}</b></div>
+        <div>总税额 <b style="color: #e6a23c">{{ $fm(orderForm.tax_amount) }}</b></div>
+        <div>不含税总金额 <b style="color: #909399">{{ $fm(orderForm.total_amount_excl_tax) }}</b></div>
+      </div>
+
       <template #footer>
         <el-button @click="dialogVisible = false">{{ viewMode ? '关闭' : '取消' }}</el-button>
-        <el-button v-if="!viewMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button v-if="editMode" type="primary" :loading="submitting" @click="handleUpdate">保存修改</el-button>
+        <el-button v-if="!viewMode && !editMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 供应商选择弹窗 -->
+    <el-dialog v-model="supplierPickerVisible" title="选择供应商" width="760px" destroy-on-close>
+      <div style="display: flex; gap: 8px; margin-bottom: 10px">
+        <el-input v-model="supplierSearch" placeholder="输入编码/名称搜索，回车查询" clearable @keyup.enter="searchSuppliers" @clear="searchSuppliers" />
+        <el-button type="primary" @click="searchSuppliers">搜索</el-button>
+      </div>
+      <el-table :data="pickerSupplierList" height="420" border size="small" highlight-current-row @row-click="pickSupplier">
+        <el-table-column prop="code" label="编码" width="120" />
+        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="country" label="国家/地区" width="110" />
+        <el-table-column prop="contact_person" label="联系人" width="100" />
+        <el-table-column prop="phone" label="电话" width="120" show-overflow-tooltip />
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination v-model:current-page="supplierPage" v-model:page-size="supplierPageSize" :total="supplierTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchSuppliers" />
+      </div>
+    </el-dialog>
+
+    <!-- 物料选择弹窗 -->
+    <el-dialog v-model="materialPickerVisible" title="选择物料" width="780px" destroy-on-close>
+      <div style="display: flex; gap: 8px; margin-bottom: 10px">
+        <el-input v-model="materialSearch" placeholder="输入编码/名称搜索，回车查询" clearable @keyup.enter="searchMaterials" @clear="searchMaterials" />
+        <el-button type="primary" @click="searchMaterials">搜索</el-button>
+      </div>
+      <el-table :data="pickerMaterialList" height="420" border size="small" highlight-current-row @row-click="pickMaterial">
+        <el-table-column prop="code" label="编码" width="120" />
+        <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
+        <el-table-column prop="spec" label="规格" min-width="130" show-overflow-tooltip />
+        <el-table-column prop="unit" label="单位" width="70" />
+        <el-table-column prop="purchase_price" label="采购价" width="100" align="right" />
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination v-model:current-page="materialPage" v-model:page-size="materialPageSize" :total="materialTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchMaterials" />
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -137,52 +220,157 @@ import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { purchaseApi } from '../../api/business'
-import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
 const router = useRouter()
+const { fitTable } = useColumnAutoFit()
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_purchase_order_columns'
 const defaultColumns = [
-  { prop: 'order_date', label: '日期', width: 115, sortable: true },
-  { prop: 'order_no', label: '订单号', width: 130, sortable: true },
-  { prop: 'supplier_name', label: '供应商', width: 100, sortable: true },
-  { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true },
-  { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true },
-  { prop: 'received_amount', label: '已入库', width: 90, align: 'right', sortable: true },
-  { prop: 'unreceived_amount', label: '未入库', width: 90, align: 'right', sortable: true },
-  { prop: 'invoiced_amount', label: '已开票', width: 90, align: 'right', sortable: true },
-  { prop: 'uninvoiced_amount', label: '未开票', width: 90, align: 'right', sortable: true },
-  { prop: 'paid_amount', label: '已付款', width: 90, align: 'right', sortable: true },
-  { prop: 'unpaid_amount', label: '未付款', width: 90, align: 'right', sortable: true },
-  { prop: 'status', label: '状态', minWidth: 60, sortable: true },
+  { prop: 'order_date', label: '日期', width: 100, sortable: true },
+  { prop: 'order_no', label: '订单号', minWidth: 130, sortable: true },
+  { prop: 'supplier_name', label: '供应商', minWidth: 120, sortable: true },
+  { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true, fmt: 'qty' },
+  { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'received_amount', label: '已入库', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'unreceived_amount', label: '未入库', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'invoiced_amount', label: '已开票', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'uninvoiced_amount', label: '未开票', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'paid_amount', label: '已付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'unpaid_amount', label: '未付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
 
+const ITEM_STORAGE_KEY = 'mazu_purchase_order_item_columns'
+const defaultItemColumns = [
+  { prop: 'material_code', label: '物料编码', minWidth: 110, sortable: true },
+  { prop: 'material_name', label: '物料名称', minWidth: 150, sortable: true },
+  { prop: 'unit', label: '单位', width: 60, sortable: true },
+  { prop: 'quantity', label: '数量', width: 80, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'received_qty', label: '已入库', width: 80, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'unit_price', label: '单价', width: 100, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'tax_rate', label: '税率%', width: 70, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'tax_amount', label: '税额', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'total_amount_excl_tax', label: '不含税', width: 100, align: 'right', sortable: true, fmt: 'money' },
+]
+const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
+
+// ========== 采购订单查询 ==========
 const loading = ref(false)
 const dataList = ref([])
 const total = ref(0)
 const queryParams = reactive({ page: 1, page_size: 100 })
 
-// 搜索条件
 const searchForm = reactive({
   keyword: '', dateRange: null, amountMin: '', amountMax: '',
 })
 
 function resetSearch() {
-  searchForm.keyword = ''; searchForm.dateRange = null
-  searchForm.amountMin = ''; searchForm.amountMax = ''
-  queryParams.page = 1; fetchData()
+  searchForm.keyword = ''
+  searchForm.dateRange = null
+  searchForm.amountMin = ''
+  searchForm.amountMax = ''
+  queryParams.page = 1
+  fetchData()
 }
 
+// ========== 订单明细（跟随选中订单） ==========
+const orderTableRef = ref(null)
+const itemTableRef = ref(null)
+const itemLoading = ref(false)
+const selectedOrder = ref(null)
+const orderDetailList = ref([])
+
+// ========== 上下区域高度拖动 ==========
+const SPLIT_KEY = 'mazu_purchase_split_height'
+const topHeight = ref(parseInt(localStorage.getItem(SPLIT_KEY) || '400') || 400)
+
+function onSplitterDown(e) {
+  const startY = e.clientY
+  const startH = topHeight.value
+  const onMove = (ev) => {
+    const h = startH + (ev.clientY - startY)
+    topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    localStorage.setItem(SPLIT_KEY, String(topHeight.value))
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
+
+// ========== 合计栏 ==========
+function fmtMoney(v) {
+  const n = typeof v === 'string' ? parseFloat(v) : v
+  if (n === null || n === undefined || isNaN(n)) return '¥0.00'
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function orderSummary({ columns: cols, data }) {
+  const sumCols = new Set(['total_amount', 'received_amount', 'unreceived_amount', 'invoiced_amount', 'uninvoiced_amount', 'paid_amount', 'unpaid_amount'])
+  return cols.map((col, idx) => {
+    if (idx === 0) return '合计'
+    if (sumCols.has(col.property)) {
+      const v = data.reduce((s, r) => s + (parseFloat(r[col.property]) || 0), 0)
+      return fmtMoney(v)
+    }
+    return ''
+  })
+}
+
+function itemSummary({ columns: cols, data }) {
+  const sumCols = new Set(['quantity', 'total_amount', 'tax_amount', 'total_amount_excl_tax'])
+  return cols.map((col, idx) => {
+    if (idx === 0) return '合计'
+    if (!sumCols.has(col.property)) return ''
+    const v = data.reduce((s, r) => s + (parseFloat(r[col.property]) || 0), 0)
+    return col.property === 'quantity' ? String(v) : fmtMoney(v)
+  })
+}
+
+function onOrderSelect(row) {
+  if (!row) return
+  selectedOrder.value = row
+  loadOrderDetail(row.id)
+}
+
+async function loadOrderDetail(orderId) {
+  if (!orderId) { orderDetailList.value = []; return }
+  itemLoading.value = true
+  try {
+    const res = await request.get(`/purchase/orders/${orderId}`)
+    orderDetailList.value = res.items || []
+  } catch {} finally {
+    itemLoading.value = false
+    nextTick(() => {
+      initItemColumnDrag()
+      fitTable(itemTableRef.value, itemColumns, orderDetailList)
+    })
+  }
+}
+
+// ========== 弹窗 ==========
 const dialogVisible = ref(false)
 const viewMode = ref(false)
-const dialogTitle = computed(() => viewMode.value ? '订单详情' : '新建采购订单')
+const editMode = ref(false)
+const dialogTitle = computed(() => {
+  if (viewMode.value) return '订单详情'
+  if (editMode.value) return '修改订单'
+  return '新建采购订单'
+})
 const submitting = ref(false)
-const orderFormRef = ref(null)
-
 const supplierList = ref([])
 const materialList = ref([])
 
@@ -192,44 +380,28 @@ const orderForm = reactive({
   tax_rate: 13, payment_terms: '', remark: '', items: [],
 })
 
-const orderRules = {
-  supplier_id: [{ required: true, message: '请选择供应商', trigger: 'change' }],
-}
-
 function newItem() {
-  return { material_id: null, material_name: '', material_code: '', unit: '', quantity: 1, unit_price: 0, total_amount: 0, tax_rate: 13, tax_amount: 0, total_amount_excl_tax: 0 }
+  return { material_id: null, material_code: '', material_name: '', unit: '', quantity: 1, unit_price: 0, tax_rate: 13, total_amount: 0, tax_amount: 0, total_amount_excl_tax: 0 }
 }
 
 function addItem() { orderForm.items.push(newItem()) }
-function removeItem(index) { orderForm.items.splice(index, 1); calcTotal() }
+function removeItem(index) { orderForm.items.splice(index, 1); calcTotals() }
 
-function onMaterialChange(index) {
-  const m = materialList.value.find(x => x.id === orderForm.items[index].material_id)
-  if (m) {
-    const item = orderForm.items[index]
-    item.material_name = m.name || ''
-    item.material_code = m.code || ''
-    item.unit = m.unit || ''
-  }
+function calcItem(row) {
+  if (!row) return
+  const qty = parseFloat(row.quantity) || 0
+  const price = parseFloat(row.unit_price) || 0
+  const rate = parseFloat(row.tax_rate) || 0
+  row.total_amount = qty * price
+  row.total_amount_excl_tax = Math.round(row.total_amount / (1 + rate / 100) * 100) / 100
+  row.tax_amount = Math.round((row.total_amount_excl_tax * rate / 100) * 100) / 100
+  calcTotals()
 }
 
-function calcAmount(index) {
-  const item = orderForm.items[index]
-  item.total_amount = (item.quantity || 0) * (item.unit_price || 0)
-  item.total_amount_excl_tax = Math.round(item.total_amount / (1 + (item.tax_rate || 0) / 100) * 100) / 100
-  item.tax_amount = Math.round(((item.total_amount_excl_tax || 0) * (item.tax_rate || 0) / 100) * 100) / 100
-  calcTotal()
-}
-
-function calcTotal() {
+function calcTotals() {
   orderForm.total_amount = orderForm.items.reduce((s, i) => s + (i.total_amount || 0), 0)
   orderForm.tax_amount = orderForm.items.reduce((s, i) => s + (i.tax_amount || 0), 0)
   orderForm.total_amount_excl_tax = orderForm.items.reduce((s, i) => s + (i.total_amount_excl_tax || 0), 0)
-}
-
-function onSupplierChange() {
-  const s = supplierList.value.find(x => x.id === orderForm.supplier_id)
-  if (s) orderForm.supplier_name = s.name
 }
 
 function statusType(status) {
@@ -252,52 +424,188 @@ function statusLabel(status) {
   return map[status] || status
 }
 
-function openCreate() {
-  viewMode.value = false
-  Object.assign(orderForm, { id: null, supplier_id: null, supplier_name: '', total_amount: 0, tax_rate: 13, payment_terms: '', remark: '', items: [newItem()] })
-  if (!supplierList.value.length) loadSuppliers()
-  if (!materialList.value.length) loadMaterials()
-  dialogVisible.value = true
-}
+// ========== 供应商选择弹窗 ==========
+const supplierPickerVisible = ref(false)
+const supplierSearch = ref('')
+const pickerSupplierList = ref([])
+const supplierTotal = ref(0)
+const supplierPage = ref(1)
+const supplierPageSize = ref(100)
 
-async function openEdit(row) {
-  viewMode.value = false
-  if (!supplierList.value.length) loadSuppliers()
-  if (!materialList.value.length) loadMaterials()
-  Object.assign(orderForm, { id: row.id, supplier_id: row.supplier_id, supplier_name: row.supplier_name || '', total_amount: row.total_amount || 0, tax_rate: row.tax_rate || 13, payment_terms: row.payment_terms || '', remark: row.remark || '', items: [] })
-  await loadOrderDetail(row.id)
-  dialogVisible.value = true
-}
-
-async function openDetail(row) {
-  viewMode.value = true
-  if (!supplierList.value.length) loadSuppliers()
-  Object.assign(orderForm, { id: row.id, supplier_id: row.supplier_id, supplier_name: row.supplier_name || '', total_amount: row.total_amount || 0, tax_rate: row.tax_rate || 13, payment_terms: row.payment_terms || '', remark: row.remark || '', items: [] })
-  await loadOrderDetail(row.id)
-  dialogVisible.value = true
-}
-
-async function loadOrderDetail(orderId) {
+async function searchSuppliers() {
   try {
-    const res = await request.get(`/purchase/orders/${orderId}`)
-    if (res.items) orderForm.items = res.items
-    if (res.total_amount_excl_tax !== undefined) orderForm.total_amount_excl_tax = res.total_amount_excl_tax
-    if (res.tax_amount !== undefined) orderForm.tax_amount = res.tax_amount
+    const params = { page: supplierPage.value, page_size: supplierPageSize.value }
+    if (supplierSearch.value) params.keyword = supplierSearch.value
+    const res = await request.get('/foundation/suppliers', { params })
+    pickerSupplierList.value = res.items || []
+    supplierTotal.value = res.total || 0
   } catch {}
 }
 
+function openSupplierPicker() {
+  supplierSearch.value = ''
+  supplierPage.value = 1
+  searchSuppliers()
+  supplierPickerVisible.value = true
+}
+
+function pickSupplier(s) {
+  orderForm.supplier_id = s.id
+  orderForm.supplier_name = s.name
+  supplierPickerVisible.value = false
+}
+
+const supplierDisplayName = computed(() => {
+  if (!orderForm.supplier_id) return ''
+  const s = supplierList.value.find(x => x.id === orderForm.supplier_id)
+  if (s) return `${s.code} - ${s.name}`
+  return orderForm.supplier_name || ''
+})
+
+// ========== 物料选择弹窗 ==========
+const materialPickerVisible = ref(false)
+const materialSearch = ref('')
+const pickerMaterialList = ref([])
+const materialTotal = ref(0)
+const materialPage = ref(1)
+const materialPageSize = ref(100)
+
+async function searchMaterials() {
+  try {
+    const params = { page: materialPage.value, page_size: materialPageSize.value }
+    if (materialSearch.value) params.keyword = materialSearch.value
+    const res = await request.get('/foundation/materials', { params })
+    pickerMaterialList.value = res.items || []
+    materialTotal.value = res.total || 0
+  } catch {}
+}
+
+function openMaterialPicker(row) {
+  materialSearch.value = ''
+  materialPage.value = 1
+  searchMaterials()
+  materialPickerVisible.value = true
+  materialPickerTarget.value = row
+}
+
+function pickMaterial(m) {
+  const target = materialPickerTarget.value
+  if (target) {
+    target.material_id = m.id
+    target.material_code = m.code
+    target.material_name = m.name
+    target.unit = m.unit || ''
+    target.unit_price = m.purchase_price || 0
+    calcItem(target)
+  }
+  materialPickerVisible.value = false
+}
+
+const materialPickerTarget = ref(null)
+
 async function loadSuppliers() {
   try {
-    const res = await foundationApi.suppliers.list({ page: 1, pageSize: 100 })
-    supplierList.value = res.items || res.list || res.data || []
+    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    supplierList.value = res.items || []
   } catch {}
 }
 
 async function loadMaterials() {
   try {
-    const res = await foundationApi.materials.list({ page: 1, pageSize: 100 })
-    materialList.value = res.items || res.list || res.data || []
+    const res = await request.get('/foundation/materials', { params: { page: 1, page_size: 100 } })
+    materialList.value = res.items || []
   } catch {}
+}
+
+// ========== 新建/编辑/详情 ==========
+function openCreate() {
+  viewMode.value = false
+  editMode.value = false
+  Object.assign(orderForm, {
+    id: null, supplier_id: null, supplier_name: '',
+    total_amount: 0, tax_amount: 0, total_amount_excl_tax: 0,
+    tax_rate: 13, payment_terms: '', remark: '', items: [newItem()],
+  })
+  dialogVisible.value = true
+}
+
+async function openEdit(row) {
+  viewMode.value = false
+  editMode.value = true
+  try {
+    const res = await request.get(`/purchase/orders/${row.id}`)
+    Object.assign(orderForm, {
+      id: res.id, supplier_id: res.supplier_id, supplier_name: res.supplier_name || '',
+      total_amount: res.total_amount || 0, tax_amount: res.tax_amount || 0,
+      total_amount_excl_tax: res.total_amount_excl_tax || 0,
+      tax_rate: res.tax_rate || 13, payment_terms: res.payment_terms || '', remark: res.remark || '',
+      items: res.items || [],
+    })
+  } catch {}
+  dialogVisible.value = true
+}
+
+async function openDetail(row) {
+  viewMode.value = true
+  editMode.value = false
+  try {
+    const res = await request.get(`/purchase/orders/${row.id}`)
+    Object.assign(orderForm, {
+      id: res.id, supplier_id: res.supplier_id, supplier_name: res.supplier_name || '',
+      total_amount: res.total_amount || 0, tax_amount: res.tax_amount || 0,
+      total_amount_excl_tax: res.total_amount_excl_tax || 0,
+      tax_rate: res.tax_rate || 13, payment_terms: res.payment_terms || '', remark: res.remark || '',
+      items: res.items || [],
+    })
+  } catch {}
+  dialogVisible.value = true
+}
+
+function buildItemsPayload() {
+  return orderForm.items.map(item => ({
+    material_id: item.material_id,
+    quantity: parseFloat(item.quantity) || 0,
+    unit_price: parseFloat(item.unit_price) || 0,
+  }))
+}
+
+async function handleSubmit() {
+  if (!orderForm.supplier_id) { ElMessage.warning('请选择供应商'); return }
+  if (orderForm.items.length === 0) { ElMessage.warning('请添加至少一条物料明细'); return }
+  submitting.value = true
+  try {
+    const payload = {
+      supplier_id: orderForm.supplier_id,
+      payment_terms: orderForm.payment_terms,
+      remark: orderForm.remark,
+      tax_rate: orderForm.tax_rate,
+      items: buildItemsPayload(),
+    }
+    await purchaseApi.orders.create(payload)
+    ElMessage.success('订单创建成功')
+    dialogVisible.value = false
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { submitting.value = false }
+}
+
+async function handleUpdate() {
+  if (!orderForm.supplier_id) { ElMessage.warning('请选择供应商'); return }
+  if (orderForm.items.length === 0) { ElMessage.warning('请添加至少一条物料明细'); return }
+  submitting.value = true
+  try {
+    const payload = {
+      supplier_id: orderForm.supplier_id,
+      payment_terms: orderForm.payment_terms,
+      remark: orderForm.remark,
+      tax_rate: orderForm.tax_rate,
+      items: buildItemsPayload(),
+    }
+    await request.put(`/purchase/orders/${orderForm.id}`, payload)
+    ElMessage.success('修改成功')
+    dialogVisible.value = false
+    editMode.value = false
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { submitting.value = false }
 }
 
 async function fetchData() {
@@ -314,25 +622,22 @@ async function fetchData() {
     const res = await purchaseApi.orders.list(params)
     dataList.value = res.items || res.list || res.data || []
     total.value = res.total || dataList.value.length
-  } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(initColumnDrag) }
-}
-
-async function handleSubmit() {
-  const valid = await orderFormRef.value.validate().catch(() => false)
-  if (!valid) return
-  if (orderForm.items.length === 0) { ElMessage.warning('请添加至少一条物料明细'); return }
-  submitting.value = true
-  try {
-    const payload = { supplier_id: orderForm.supplier_id, payment_terms: orderForm.payment_terms, remark: orderForm.remark, tax_rate: orderForm.tax_rate, items: orderForm.items.map(({ material_id, quantity, unit_price }) => ({ material_id, quantity: parseFloat(quantity) || 0, unit_price: parseFloat(unit_price) || 0 })) }
-    if (orderForm.id) {
-      await request.put(`/purchase/orders/${orderForm.id}`, payload)
-      ElMessage.success('修改成功')
+    // 自动选中第一行，联动加载明细
+    if (dataList.value.length) {
+      selectedOrder.value = dataList.value[0]
+      loadOrderDetail(selectedOrder.value.id)
+      nextTick(() => { orderTableRef.value?.setCurrentRow(dataList.value[0]) })
     } else {
-      await purchaseApi.orders.create(payload)
-      ElMessage.success('订单创建成功')
+      selectedOrder.value = null
+      orderDetailList.value = []
     }
-    dialogVisible.value = false; fetchData()
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { submitting.value = false }
+  } catch (e) { ElMessage.error('加载数据失败') } finally {
+    loading.value = false
+    nextTick(() => {
+      initColumnDrag()
+      fitTable(orderTableRef.value, columns, dataList)
+    })
+  }
 }
 
 async function handleApprove(row) {
@@ -356,6 +661,8 @@ onMounted(() => { fetchData(); loadSuppliers(); loadMaterials() })
 </script>
 
 <style scoped>
-:deep(.el-table) { table-layout: auto; }
-:deep(.el-table .cell) { white-space: nowrap; }
+/* 单元格左右内边距收紧，列更紧凑 */
+:deep(.el-table .cell) {
+  padding: 0 8px;
+}
 </style>
