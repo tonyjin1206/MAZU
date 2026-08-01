@@ -48,13 +48,7 @@
               </template>
             </el-dropdown>
           </template>
-          <template v-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
-          <template v-else-if="col.prop === 'invoiced_amount'" #default="{ row }">{{ $fm(row.invoiced_amount) }}</template>
-          <template v-else-if="col.prop === 'uninvoiced_amount'" #default="{ row }">
-            <span :style="{ color: (row.total_amount - row.invoiced_amount) > 0 ? '#e6a23c' : '#909399' }">
-              {{ $fm((row.total_amount || 0) - (row.invoiced_amount || 0)) }}
-            </span>
-          </template>
+          <template v-if="col.prop === 'total_amount' || col.prop === 'total_amount_excl_tax'" #default="{ row }">{{ $fm(row[col.prop]) }}</template>
           <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag v-if="row.status === '已发货'" type="success" size="small">已发货</el-tag>
             <el-tag v-else-if="row.status === '部分发货'" type="warning" size="small">部分发货</el-tag>
@@ -66,25 +60,12 @@
           <template v-else-if="col.prop === 'pending_count'" #default="{ row }">
             <el-tag :type="(row.pending_count || 0) > 0 ? 'warning' : 'success'" size="small">{{ (row.pending_count || 0) > 0 ? '待处理' : '已处理' }}</el-tag>
           </template>
-          <template v-else-if="col.prop === 'delivered_amount'" #default="{ row }">{{ $fm(row.delivered_amount) }}</template>
-          <template v-else-if="col.prop === 'undelivered_amount'" #default="{ row }">
-            <span :style="{ color: (row.undelivered_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
-              {{ $fm(row.undelivered_amount) }}
-            </span>
-          </template>
-          <template v-else-if="col.prop === 'collected_amount'" #default="{ row }">{{ $fm(row.collected_amount) }}</template>
-          <template v-else-if="col.prop === 'uncollected_amount'" #default="{ row }">
-            <span :style="{ color: (row.uncollected_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
-              {{ $fm(row.uncollected_amount) }}
-            </span>
-          </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === '待审核'" link type="primary" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待审核'" link type="primary" @click="openEdit(row)">修改</el-button>
             <el-button v-if="row.status === '待审核'" link type="danger" @click="handleDelete(row)">删除</el-button>
-            <el-button link type="primary" @click="openDialog(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -345,20 +326,15 @@ const { fitTable } = useColumnAutoFit()
 const STORAGE_KEY = 'mazu_sales_order_columns'
 const defaultColumns = [
   { prop: 'order_date', label: '订单日期', width: 100, sortable: true },
-  { prop: 'order_no', label: '订单号', minWidth: 140, sortable: true },
-  { prop: 'customer_name', label: '客户', width: 170, sortable: true },
+  { prop: 'order_no', label: '订单号', minWidth: 130, sortable: true },
+  { prop: 'customer_name', label: '客户', width: 150, sortable: true },
   { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true, fmt: 'qty' },
   { prop: 'pending_count', label: '待处理', width: 90, align: 'center', sortable: true, fmt: 'tag' },
+  { prop: 'total_amount_excl_tax', label: '不含税', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'invoiced_amount', label: '已开票', width: 100, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'uninvoiced_amount', label: '未开票', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'currency_code', label: '币种', width: 80, sortable: true },
   { prop: 'trade_term', label: '贸易术语', width: 100, sortable: true },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
-  { prop: 'delivered_amount', label: '已发货', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'undelivered_amount', label: '未发货', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'collected_amount', label: '已收款', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'uncollected_amount', label: '未收款', width: 90, align: 'right', sortable: true, fmt: 'money' },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
 
@@ -439,7 +415,7 @@ function fmtMoney(v) {
 }
 
 function orderSummary({ columns: cols, data }) {
-  const sumCols = new Set(['total_amount', 'invoiced_amount', 'uninvoiced_amount', 'delivered_amount', 'undelivered_amount', 'collected_amount', 'uncollected_amount'])
+  const sumCols = new Set(['total_amount', 'total_amount_excl_tax'])
   return cols.map((col, idx) => {
     if (idx === 0) return '合计'
     if (sumCols.has(col.property)) {

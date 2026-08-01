@@ -193,64 +193,100 @@ def get_inventory_balance(
             query = query.filter(WarehouseInventory.id == -1)
 
     total = query.count()
-    items = query.order_by(WarehouseInventory.id.desc()).offset(
-        (page - 1) * page_size
-    ).limit(page_size).all()
+    # 按批次号汇总（同一批次多次收货合并为一行）
+    all_items = query.order_by(WarehouseInventory.id.desc()).all()
+    grouped = {}
+    for inv in all_items:
+        key = (inv.warehouse_id, inv.material_id, inv.product_id, inv.batch_no)
+        if key not in grouped:
+            grouped[key] = {"rows": [], "qty": 0.0, "cost": 0.0}
+        grouped[key]["rows"].append(inv)
+        grouped[key]["qty"] += inv.quantity or 0
+        grouped[key]["cost"] += inv.total_cost or 0
 
     result = []
-    for inv in items:
-        wh = db.query(Warehouse).filter(Warehouse.id == inv.warehouse_id).first()
-        mat = db.query(Material).filter(Material.id == inv.material_id).first() if inv.material_id else None
-        prod = db.query(Product).filter(Product.id == inv.product_id).first() if inv.product_id else None
+    for (wh_id, mat_id, prod_id, batch_no), g in grouped.items():
+        inv = g["rows"][0]  # 取第一条作为代表
+        wh = db.query(Warehouse).filter(Warehouse.id == wh_id).first()
+        mat = db.query(Material).filter(Material.id == mat_id).first() if mat_id else None
+        prod = db.query(Product).filter(Product.id == prod_id).first() if prod_id else None
 
         # 关联销售订单（成品入库 → 销售明细 → 销售订单）
         so_order_no, so_order_qty, so_received_qty = "", 0, 0
-        unit_cost = inv.unit_cost
-        source_label = inv.source_type or ""
+        unit_cost = inv.unit_cost or 0
         if inv.source_doc_id:
             stock_in = db.query(StockInOrder).filter(StockInOrder.id == inv.source_doc_id).first()
-            if stock_in:
-                source_label = "成品入库 " + (inv.receipt_no or "")
-                if stock_in.sales_item_id:
-                    so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == stock_in.sales_item_id).first()
-                    if so_item:
-                        so_order = db.query(SalesOrder).filter(SalesOrder.id == stock_in.sales_order_id).first()
-                        so_order_no = so_order.order_no if so_order else ""
-                        so_order_qty = so_item.quantity or 0
-                        unit_cost = so_item.unit_price or 0
-                        # 该明细行累计已入库数量
-                        so_received_qty = (
-                            db.query(func.sum(StockInOrder.received_qty))
-                            .filter(StockInOrder.sales_item_id == stock_in.sales_item_id, StockInOrder.status.in_(["已入库", "部分入库"]))
-                            .scalar() or 0
-                        )
+            if stock_in and stock_in.sales_item_id:
+                so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == stock_in.sales_item_id).first()
+                if so_item:
+                    so_order = db.query(SalesOrder).filter(SalesOrder.id == stock_in.sales_order_id).first()
+                    so_order_no = so_order.order_no if so_order else ""
+                    so_order_qty = so_item.quantity or 0
+                    unit_cost = so_item.unit_price or 0
+                    # 该明细行累计已入库数量
+                    so_received_qty = (
+                        db.query(func.sum(StockInOrder.received_qty))
+                        .filter(StockInOrder.sales_item_id == stock_in.sales_item_id, StockInOrder.status.in_(["已入库", "部分入库"]))
+                        .scalar() or 0
+                    )
 
         result.append({
             "id": inv.id,
             "warehouse": wh.name if wh else "",
-            "material_id": inv.material_id,
+            "material_id": mat_id,
             "material_name": mat.name if mat else "",
             "material_code": mat.code if mat else "",
             "material_spec": mat.spec if mat else "",
             "material_model": mat.model if mat else "",
-            "product_id": inv.product_id,
+            "product_id": prod_id,
             "product_name": prod.name_cn if prod else "",
             "product_code": prod.code if prod else "",
             "product_spec": prod.spec if prod else "",
             "product_model": prod.model if prod else "",
-            "batch_no": inv.batch_no,
-            "quantity": inv.quantity,
+            "batch_no": batch_no,
+            "quantity": round(g["qty"], 2),
             "unit_cost": round(unit_cost, 2),
-            "total_cost": round(unit_cost * (inv.quantity or 0), 2),
+            "total_cost": round(unit_cost * g["qty"], 2),
             "in_date": str(inv.in_date),
-            "source_type": source_label,
+            "source_type": "成品入库",
             "so_order_no": so_order_no,
             "so_order_qty": so_order_qty,
             "so_received_qty": so_received_qty,
-            "is_frozen": inv.is_frozen,
+            "receipt_count": len(g["rows"]),
         })
 
-    return {"total": total, "page": page, "page_size": page_size, "items": result}
+    # 分页
+    total = len(result)
+    start_idx = (page - 1) * page_size
+    paged = result[start_idx:start_idx + page_size]
+
+    return {"total": total, "page": page, "page_size": page_size, "items": paged}
+
+
+@router.get("/batch-receipts", tags=["库存管理"])
+def get_batch_receipts(
+    batch_no: str = Query(..., description="批次号"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """穿透查询：某批次的所有入库记录（每次收货一条：入库单号/日期/仓库/数量）"""
+    records = db.query(WarehouseInventory).filter(
+        WarehouseInventory.batch_no == batch_no
+    ).order_by(WarehouseInventory.id.desc()).all()
+    items = []
+    for inv in records:
+        wh = db.query(Warehouse).filter(Warehouse.id == inv.warehouse_id).first()
+        prod = db.query(Product).filter(Product.id == inv.product_id).first() if inv.product_id else None
+        mat = db.query(Material).filter(Material.id == inv.material_id).first() if inv.material_id else None
+        items.append({
+            "receipt_no": inv.receipt_no or "",
+            "warehouse": wh.name if wh else "",
+            "product_name": prod.name_cn if prod else (mat.name if mat else ""),
+            "product_code": prod.code if prod else (mat.code if mat else ""),
+            "quantity": inv.quantity,
+            "in_date": str(inv.in_date),
+        })
+    return {"batch_no": batch_no, "items": items}
 
 
 @router.get("/summary", tags=["库存管理"])

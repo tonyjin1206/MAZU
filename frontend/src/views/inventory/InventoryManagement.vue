@@ -32,7 +32,7 @@
               <el-date-picker v-model="balanceQuery.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 280px" @change="onDateRangeChange" />
             </el-form-item>
           </el-form>
-          <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border @row-click="viewTransactions" :show-summary="true" :summary-method="getBalanceSummary">
+          <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border @row-click="openBatchReceipts" :show-summary="true" :summary-method="getBalanceSummary">
             <el-table-column v-for="col in visibleBalanceColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -77,10 +77,6 @@
               <template v-else-if="col.prop === 'closing_cost'" #default="{ row }">
                 <span style="color: #409eff; font-weight: bold">{{ $fm(row.closing_cost) }}</span>
               </template>
-              <template v-else-if="col.prop === 'source_type'" #default="{ row }">
-                <el-tag v-if="row.source_type && row.source_type.includes('成品入库')" type="success" size="small">{{ row.source_type }}</el-tag>
-                <el-tag v-else size="small">{{ row.source_type }}</el-tag>
-              </template>
               <template v-else-if="col.prop === 'so_order_qty' || col.prop === 'so_received_qty'" #default="{ row }">{{ $fq(row[col.prop]) }}</template>
             </el-table-column>
           </el-table>
@@ -89,6 +85,17 @@
     
     <!-- 列排序弹窗 -->
     <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+    
+    <!-- 批次收货记录弹窗（点击批次行穿透） -->
+    <el-dialog v-model="batchReceiptVisible" :title="'批次收货记录 — ' + (batchReceiptBatch || '')" width="640px" destroy-on-close>
+      <el-table :data="batchReceiptList" border stripe size="small" show-summary :summary-method="batchReceiptSummary">
+        <el-table-column prop="in_date" label="入库日期" width="120" />
+        <el-table-column prop="warehouse" label="仓库" width="120" />
+        <el-table-column prop="receipt_no" label="入库单号" min-width="140" />
+        <el-table-column prop="quantity" label="本次数量" width="100" align="right" />
+      </el-table>
+      <div style="color: #909399; font-size: 12px; margin-top: 8px">点击上方批次行查看该批次的每次入库记录</div>
+    </el-dialog>
   </div>
 </template>
 
@@ -119,10 +126,8 @@ const defaultColumns = [
   { prop: 'period_out_qty', label: '出库', width: 80, align: 'right', group: 'period' },
   { prop: 'closing_qty', label: '期末数量', width: 90, align: 'right', group: 'period' },
   { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', group: 'period' },
-  { prop: 'so_order_no', label: '销售订单号', width: 150 },
   { prop: 'so_order_qty', label: '订单数', width: 70, align: 'right' },
   { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right' },
-  { prop: 'source_type', label: '入库单号', width: 180 },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
 const { fitTable } = useColumnAutoFit()
@@ -287,6 +292,32 @@ function viewTransactions(row) {
   transPage.value = 1
   activeTab.value = 'transactions'
   fetchTransactions()
+}
+
+// ===== 批次收货记录弹窗（点击批次行穿透） =====
+const batchReceiptVisible = ref(false)
+const batchReceiptBatch = ref('')
+const batchReceiptList = ref([])
+
+async function openBatchReceipts(row) {
+  if (!row.batch_no) return
+  batchReceiptBatch.value = row.batch_no
+  batchReceiptVisible.value = true
+  batchReceiptList.value = []
+  try {
+    const res = await request.get('/inventory/batch-receipts', { params: { batch_no: row.batch_no } })
+    batchReceiptList.value = res.items || []
+  } catch { batchReceiptList.value = [] }
+}
+
+function batchReceiptSummary({ columns, data }) {
+  const sums = []
+  columns.forEach((col, i) => {
+    if (i === 0) sums[i] = '合计'
+    else if (col.property === 'quantity') sums[i] = data.reduce((s, r) => s + (r.quantity || 0), 0)
+    else sums[i] = ''
+  })
+  return sums
 }
 
 function onTabChange(tab) {
