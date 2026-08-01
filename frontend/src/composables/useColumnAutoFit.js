@@ -87,6 +87,15 @@ export function useColumnAutoFit() {
           })
         }
       }
+      // 🔴 直接更新 el-table 内部列宽（store 列 config 是响应式，改 width 触发重算）
+      const store = el?.store
+      if (store && store.states?.columns?.value?.length) {
+        store.states.columns.value.forEach(sc => {
+          const c = cols.find(x => x.prop === (sc.rawColumnKey || sc.property))
+          if (c && c.width) sc.width = c.width
+        })
+      }
+      requestAnimationFrame(() => el?.doLayout?.())
     })
   }
   return { fitTable }

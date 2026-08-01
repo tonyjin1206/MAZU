@@ -27,10 +27,12 @@
     <!-- ========== 销售订单列表（高度可拖） ========== -->
     <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
       <template #header>
-        <span>销售订单</span>
-        <span style="margin-left: 10px; font-size: 12px; color: #909399">点击订单行，下方查看该订单明细</span>
-        <span style="flex: 1" />
-        <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
+        <div style="display: flex; align-items: center">
+          <span>销售订单</span>
+          <span style="margin-left: 10px; font-size: 12px; color: #909399">点击订单行，下方查看该订单明细</span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
+        </div>
       </template>
       <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
@@ -83,10 +85,14 @@
     <!-- ========== 订单明细（跟随选中订单，占剩余高度） ========== -->
     <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
-        <span>订单明细</span>
-        <span v-if="selectedOrder" style="margin-left: 10px; font-size: 12px; color: #606266">
-          {{ selectedOrder.order_no }} · {{ selectedOrder.customer_name }} · {{ $fm(selectedOrder.total_amount) }}
-        </span>
+        <div style="display: flex; align-items: center">
+          <span>订单明细</span>
+          <span v-if="selectedOrder" style="margin-left: 10px; font-size: 12px; color: #606266">
+            {{ selectedOrder.order_no }} · {{ selectedOrder.customer_name }} · {{ $fm(selectedOrder.total_amount) }}
+          </span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
+        </div>
       </template>
       <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
         <el-table-column v-for="col in visibleItemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">

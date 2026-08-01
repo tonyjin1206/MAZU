@@ -4,7 +4,10 @@
       <template #header></template>
       <el-tabs v-model="activeTab">
         <el-tab-pane label="汇总" name="summary">
-          <el-table class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+        <el-button size="small" @click="openOrderSettingsRaw">⚙ 列设置</el-button>
+      </div>
+<el-table ref="tableRef" class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
             <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -105,8 +108,8 @@
     </el-dialog>
     
     <!-- 列排序弹窗 -->
-    <ColumnOrderDialog v-model:visible="orderOrderVisible" :columns="orderOrderList" @opened="initOrderOrderDrag" @confirm="confirmOrderOrder" />
-    <ColumnOrderDialog v-model:visible="cdOrderVisible" :columns="cdOrderList" @opened="initCdOrderDrag" @confirm="confirmCdOrder" />
+    <ColumnSettingsDialog v-model:visible="orderSettingsVisible" :columns="orderSettingsList" @confirm="confirmOrderSettingsFn" />
+    <ColumnSettingsDialog v-model:visible="cdSettingsVisible" :columns="cdSettingsList" @confirm="confirmCdSettingsFn" />
   </div>
 </template>
 
@@ -114,7 +117,8 @@
 import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -126,7 +130,7 @@ const defaultColumns = [
   { prop: 'total_collected', label: '已收金额', width: 130, align: 'right' , sortable: true },
   { prop: 'balance', label: '余额', width: 130, align: 'right' , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, settingsVisible: orderSettingsVisible, settingsList: orderSettingsList, openColumnSettings: openOrderSettingsRaw, confirmSettings: confirmOrderSettingsFn, resetSettings: resetOrderSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
 
 const CD_STORAGE_KEY = 'mazu_ar_detail_columns'
 const defaultCdColumns = [
@@ -139,10 +143,11 @@ const defaultCdColumns = [
   { prop: 'collected_amount', label: '收款金额', width: 120, align: 'right' , sortable: true },
   { prop: 'balance', label: '余额', width: 110, align: 'right' , sortable: true },
 ]
-const { columns: cdColumns, columnVersion: cdColumnVersion, initColumnDrag: initCdColumnDrag, orderDialogVisible: cdOrderVisible, orderList: cdOrderList, openOrderDialog: openCdOrder, initOrderDrag: initCdOrderDrag, confirmOrder: confirmCdOrder } = useColumnDrag(defaultCdColumns, CD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
+const { columns: cdColumns, columnVersion: cdColumnVersion, initColumnDrag: initCdColumnDrag, settingsVisible: cdSettingsVisible, settingsList: cdSettingsList, openColumnSettings: openCdSettingsRaw, confirmSettings: confirmCdSettingsFn, resetSettings: resetCdSettings } = useColumnDrag(defaultCdColumns, CD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
 
 const activeTab = ref('summary')
 const loading = ref(false)
+const tableRef = ref(null)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)

@@ -17,7 +17,10 @@
 
     <el-card>
       <!-- 材料类别：大类 + 小类 两级树 -->
-      <el-table
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+<el-table ref="tableRef"
         v-if="activeGroup === 'material_category'"
         :data="materialTree" row-key="key" default-expand-all
         v-loading="loading" stripe border size="small" style="width: 100%"
@@ -83,7 +86,7 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                  <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+                  <el-dropdown-item @click.stop="openColumnSettings" style="color: #409eff">列设置...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -162,7 +165,7 @@
     </el-dialog>
     
     <!-- 列排序弹窗 -->
-    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
@@ -172,7 +175,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -183,7 +186,7 @@ const defaultColumns = [
   { prop: 'param_key', label: '参数值', minWidth: 140 , sortable: true },
   { prop: 'remark', label: '说明', minWidth: 180 , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)

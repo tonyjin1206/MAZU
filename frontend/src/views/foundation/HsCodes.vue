@@ -16,7 +16,10 @@
           <el-input v-model="searchForm.name" placeholder="商品名称" clearable style="width: 180px" @keyup.enter="fetchData" />
         </el-form-item>
       </el-form>
-      <el-table
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+<el-table ref="tableRef"
         :key="columnVersion"
         :data="filteredList"
         v-loading="loading"
@@ -94,7 +97,7 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
-    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
 
   </div>
 </template>
@@ -103,11 +106,13 @@
 import { ref, reactive, onMounted, computed, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
 // 单位选项（来自参数设置）
+const tableRef = ref(null)
 const unitOptions = ref([])
 async function loadUnitOptions() {
   try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
@@ -123,7 +128,7 @@ const defaultColumns = [
   { prop: 'tax_rate', label: '增值税率%', width: 100, sortable: true },
   { prop: 'effective_date', label: '生效日期', width: 120, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])

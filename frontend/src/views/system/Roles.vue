@@ -10,7 +10,10 @@
     </el-card>
 
     <el-card>
-      <el-table
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+<el-table ref="tableRef"
         :key="columnVersion"
         :data="roleList"
         v-loading="loading"
@@ -104,7 +107,7 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
-    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
 
   </div>
 </template>
@@ -113,7 +116,8 @@
 import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { authApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
@@ -126,10 +130,11 @@ const defaultColumns = [
   { prop: 'is_system', label: '内置', width: 70, align: 'center' , sortable: true },
   { prop: 'description', label: '描述', minWidth: 180 , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
+const tableRef = ref(null)
 const roleList = ref([])
 const permGroups = ref([])
 const permNameMap = ref({})

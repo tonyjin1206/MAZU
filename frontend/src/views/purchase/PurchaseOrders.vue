@@ -27,8 +27,12 @@
     <!-- ========== 采购订单列表（高度可拖） ========== -->
     <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
       <template #header>
-        <span>采购订单</span>
-        <span style="margin-left: 10px; font-size: 12px; color: #909399">点击订单行，下方查看该订单明细</span>
+        <div style="display: flex; align-items: center">
+          <span>采购订单</span>
+          <span style="margin-left: 10px; font-size: 12px; color: #909399">点击订单行，下方查看该订单明细</span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
+        </div>
       </template>
       <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
@@ -43,7 +47,7 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                  <el-dropdown-item divided @click.stop="openOrderOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                  <el-dropdown-item @click.stop="openOrderSettings" style="color: #409eff">列设置...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -91,10 +95,14 @@
     <!-- ========== 订单明细（跟随选中订单，占剩余高度） ========== -->
     <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
-        <span>订单明细</span>
-        <span v-if="selectedOrder" style="margin-left: 10px; font-size: 12px; color: #606266">
-          {{ selectedOrder.order_no }} · {{ selectedOrder.supplier_name }} · {{ $fm(selectedOrder.total_amount) }}
-        </span>
+        <div style="display: flex; align-items: center">
+          <span>订单明细</span>
+          <span v-if="selectedOrder" style="margin-left: 10px; font-size: 12px; color: #606266">
+            {{ selectedOrder.order_no }} · {{ selectedOrder.supplier_name }} · {{ $fm(selectedOrder.total_amount) }}
+          </span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
+        </div>
       </template>
       <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
         <el-table-column v-for="col in visibleItemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
@@ -109,7 +117,7 @@
                   <el-dropdown-item v-for="c in allItemColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleItemColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                  <el-dropdown-item divided @click.stop="openItemOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                  <el-dropdown-item @click.stop="openItemSettings" style="color: #409eff">列设置...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -286,8 +294,8 @@
     </el-dialog>
     
     <!-- 列排序弹窗 -->
-    <ColumnOrderDialog v-model:visible="orderOrderVisible" :columns="orderOrderList" @opened="initOrderOrderDrag" @confirm="confirmOrderOrder" />
-    <ColumnOrderDialog v-model:visible="itemOrderVisible" :columns="itemOrderList" @opened="initItemOrderDrag" @confirm="confirmItemOrder" />
+    <ColumnSettingsDialog v-model:visible="orderSettingsVisible" :columns="orderSettingsList" @confirm="confirmOrderSettingsFn" />
+    <ColumnSettingsDialog v-model:visible="itemSettingsVisible" :columns="itemSettingsList" @confirm="confirmItemSettingsFn" />
   </div>
 </template>
 
@@ -298,7 +306,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { purchaseApi } from '../../api/business'
 import request from '../../api/request'
 
@@ -321,7 +329,7 @@ const defaultColumns = [
   { prop: 'unpaid_amount', label: '未付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, settingsVisible: orderSettingsVisible, settingsList: orderSettingsList, openColumnSettings: openOrderSettingsRaw, confirmSettings: confirmOrderSettingsFn, resetSettings: resetOrderSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
 
 const ITEM_STORAGE_KEY = 'mazu_purchase_order_item_columns'
 const defaultItemColumns = [
@@ -336,7 +344,7 @@ const defaultItemColumns = [
   { prop: 'tax_amount', label: '税额', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'total_amount_excl_tax', label: '不含税', width: 100, align: 'right', sortable: true, fmt: 'money' },
 ]
-const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, orderDialogVisible: itemOrderVisible, orderList: itemOrderList, openOrderDialog: openItemOrder, initOrderDrag: initItemOrderDrag, confirmOrder: confirmItemOrder } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
+const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, settingsVisible: itemSettingsVisible, settingsList: itemSettingsList, openColumnSettings: openItemSettingsRaw, confirmSettings: confirmItemSettingsFn, resetSettings: resetItemSettings } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 const { visibleColumns: visibleItemColumns, allColumns: allItemColumns, toggleColumn: toggleItemColumn, initColumnVisible: initItemVisible } = useColumnCustomize(itemColumns, ITEM_STORAGE_KEY)
 

@@ -5,6 +5,7 @@
             <div style="display: flex; justify-content: flex-end; gap: 8px">
               <el-button type="primary" @click="fetchBalance">查询</el-button>
               <el-button @click="resetBalance">重置</el-button>
+              <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
             </div>
           </template>
           <el-form :inline="true" label-width="70px">
@@ -45,7 +46,7 @@
                       <el-dropdown-item v-for="c in allBalanceColumns" :key="c.prop">
                         <el-checkbox :model-value="c.visible !== false" @change="toggleBalanceColumn(c)">{{ c.label }}</el-checkbox>
                       </el-dropdown-item>
-                      <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+                      <el-dropdown-item @click.stop="openColumnSettings" style="color: #409eff">列设置...</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -85,7 +86,7 @@
         </el-card>
     
     <!-- 列排序弹窗 -->
-    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
     
     <!-- 批次收货记录弹窗（点击批次行穿透） -->
     <el-dialog v-model="batchReceiptVisible" :title="'批次收货记录 — ' + (batchReceiptBatch || '')" width="640px" destroy-on-close>
@@ -106,7 +107,7 @@ import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '@/api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -130,12 +131,19 @@ const defaultColumns = [
   { prop: 'so_order_qty', label: '订单数', width: 70, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right', sortable: true, fmt: 'qty' },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings: openColumnSettingsRaw, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
 const { fitTable } = useColumnAutoFit()
 const balanceTableRef = ref(null)
 const transTableRef = ref(null)
 const balanceColumns = computed(() => columns.value.filter(c => balancePeriod.value ? c.group !== 'snapshot' : c.group !== 'period'))
 const { visibleColumns: visibleBalanceColumns, allColumns: allBalanceColumns, toggleColumn: toggleBalanceColumn, initColumnVisible: initBalanceVisible } = useColumnCustomize(balanceColumns, STORAGE_KEY)
+
+// ===== 列设置弹窗（注入当前显隐状态）=====
+function openColumnSettings() {
+  const visMap = {}
+  for (const c of allBalanceColumns.value) visMap[c.prop] = c.visible !== false
+  openColumnSettingsRaw(visMap)
+}
 
 const TRANS_STORAGE_KEY = 'mazu_inventory_trans_columns'
 const defaultTransColumns = [

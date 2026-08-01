@@ -32,7 +32,10 @@
           <el-date-picker v-model="query.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchData" />
         </el-form-item>
       </el-form>
-      <el-table ref="tableRef" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="summaryMethod">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+<el-table ref="tableRef" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="summaryMethod">
         <el-table-column prop="warehouse" label="仓库" width="110" sortable />
         <el-table-column prop="material_name" label="物料名称" min-width="140" sortable>
           <template #default="{ row }"><span style="font-weight:500">{{ row.material_name || row.product_name }}</span></template>
@@ -67,6 +70,7 @@ import { ElMessage } from 'element-plus'
 import request from '@/api/request'
 
 const loading = ref(false)
+const tableRef = ref(null)
 const dataList = ref([])
 const total = ref(0)
 const page = ref(1)

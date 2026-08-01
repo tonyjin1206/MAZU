@@ -26,7 +26,10 @@
     </el-card>
 
     <el-card>
-      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+<el-table ref="tableRef" :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
         <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
           <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -181,7 +184,7 @@
         <el-button type="primary" :loading="saving" @click="confirmRefund">确认退税</el-button>
       </template>
     </el-dialog>
-    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
 
   </div>
 </template>
@@ -190,7 +193,8 @@
 import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -204,8 +208,9 @@ const defaultColumns = [
   { prop: 'actual_refund_amount', label: '实际退税', width: 110, align: 'right' , sortable: true },
   { prop: 'created_at', label: '创建时间', minWidth: 150 , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
+const tableRef = ref(null)
 const list = ref([])
 const loading = ref(false)
 const total = ref(0)

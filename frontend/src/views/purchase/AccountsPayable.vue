@@ -9,7 +9,10 @@
               <el-input v-model="searchKeyword" placeholder="输入供应商名称查询" clearable style="width: 260px" @input="filterSummary" />
             </el-form-item>
           </el-form>
-          <el-table class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+<el-table ref="tableRef" class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
             <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <span class="col-header-wrap">
@@ -102,6 +105,7 @@
 import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -130,6 +134,7 @@ const { columns: pdColumns, columnVersion: pdColumnVersion, initColumnDrag: init
 
 const activeTab = ref('summary')
 const loading = ref(false)
+const tableRef = ref(null)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)
