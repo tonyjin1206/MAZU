@@ -23,7 +23,7 @@
     </el-card>
 
     <el-card>
-      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
+      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="getSummary" style="width: 100%">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -248,4 +248,16 @@ async function openDetail(row) {
 }
 
 onMounted(() => { initColumnVisible(); fetchData(); loadSuppliers() })
+
+function getSummary({ columns, data }) {
+  const sums = []
+  columns.forEach((col, i) => { sums[i] = '' })
+  const qtyCols = ['quantity', 'received_qty']
+  qtyCols.forEach(prop => {
+    const idx = columns.findIndex(c => c.prop === prop)
+    if (idx >= 0) sums[idx] = data.reduce((s, r) => s + (Number(r[prop]) || 0), 0)
+  })
+  if (data.length > 0) sums[0] = '合计'
+  return sums
+}
 </script>

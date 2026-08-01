@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.auth import User
-from app.models.foundation import Product
+from app.models.foundation import Product, Warehouse
 from app.models.inventory import StockInOrder, WarehouseInventory, StockTransaction
 from app.models.sales import SalesOrder, SalesOrderItem
 from app.models.purchase import PurchaseOrder, PurchaseOrderItem
@@ -273,3 +273,30 @@ def return_stock_in(
         inv.total_cost = inv.unit_cost * inv.quantity
     db.commit()
     return {"message": f"已退回 {return_qty}，当前已入 {sin.received_qty}"}
+
+
+@router.get("/{stock_in_id}/records", tags=["库存管理"])
+def get_stock_in_records(
+    stock_in_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """穿透查询：该入库单的所有收货记录（批次库存）"""
+    records = db.query(WarehouseInventory).filter(
+        WarehouseInventory.source_doc_id == stock_in_id,
+        WarehouseInventory.source_type == "stock_in"
+    ).order_by(WarehouseInventory.id.desc()).all()
+    items = []
+    for inv in records:
+        wh = db.query(Warehouse).filter(Warehouse.id == inv.warehouse_id).first()
+        prod = db.query(Product).filter(Product.id == inv.product_id).first() if inv.product_id else None
+        items.append({
+            "id": inv.id,
+            "warehouse": wh.name if wh else "",
+            "product_name": prod.name_cn if prod else "",
+            "product_code": prod.code if prod else "",
+            "batch_no": inv.batch_no,
+            "quantity": inv.quantity,
+            "in_date": str(inv.in_date),
+        })
+    return {"items": items}

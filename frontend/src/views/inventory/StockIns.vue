@@ -30,7 +30,7 @@
     </el-card>
 
     <el-card>
-      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
+      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="getSummary" @row-click="openDetail" style="width: 100%">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -98,6 +98,16 @@
         <el-button @click="returnVisible = false">取消</el-button>
         <el-button type="danger" :loading="submitting" @click="handleReturn">确认退回</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 收货明细分录弹窗（穿透看多次入库） -->
+    <el-dialog v-model="detailVisible" :title="`入库明细 — ${detailStockInNo}`" width="600px" destroy-on-close>
+      <el-table :data="detailList" v-loading="detailLoading" stripe border size="small">
+        <el-table-column prop="warehouse" label="仓库" width="100" />
+        <el-table-column prop="batch_no" label="批次号" width="150" />
+        <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" />
+        <el-table-column prop="in_date" label="入库日期" width="120" />
+      </el-table>
     </el-dialog>
   </div>
 </template>
@@ -218,6 +228,18 @@ async function handleCancel(row) {
 
 onMounted(() => { initColumnVisible(); fetchData(); loadWarehouses() })
 
+function getSummary({ columns, data }) {
+  const sums = []
+  columns.forEach((col, i) => { sums[i] = '' })
+  const qtyCols = ['quantity', 'received_qty']
+  qtyCols.forEach(prop => {
+    const idx = columns.findIndex(c => c.prop === prop)
+    if (idx >= 0) sums[idx] = data.reduce((s, r) => s + (Number(r[prop]) || 0), 0)
+  })
+  if (data.length > 0) sums[0] = '合计'
+  return sums
+}
+
 // ========== 退回已入库数量 ==========
 const returnVisible = ref(false)
 const returnForm = reactive({ id: null, stock_in_no: '', received_qty: 0, return_qty: 0 })
@@ -234,5 +256,20 @@ async function handleReturn() {
     returnVisible.value = false
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退回失败') }
+}
+
+// ========== 穿透看收货明细 ==========
+const detailVisible = ref(false)
+const detailStockInNo = ref('')
+const detailList = ref([])
+const detailLoading = ref(false)
+async function openDetail(row) {
+  detailStockInNo.value = row.stock_in_no || ''
+  detailVisible.value = true
+  detailLoading.value = true
+  try {
+    const res = await request.get(`/stock-in/${row.id}/records`)
+    detailList.value = res.items || []
+  } catch { detailList.value = [] } finally { detailLoading.value = false }
 }
 </script>

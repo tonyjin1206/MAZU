@@ -27,7 +27,7 @@
         ref="tableRef"
         :key="columnVersion"
         :data="batchList"
-        border stripe v-loading="loading"
+        border stripe v-loading="loading" show-summary :summary-method="getBatchSummary"
         size="small"
         style="width: 100%"
       >
@@ -114,6 +114,18 @@ onMounted(async () => {
   initColumnVisible()
   try { warehouseList.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch {}
 })
+
+function getBatchSummary({ columns, data }) {
+  const sums = []
+  columns.forEach((col, i) => { sums[i] = '' })
+  const qtyCols = ['quantity']
+  qtyCols.forEach(prop => {
+    const idx = columns.findIndex(c => c.prop === prop)
+    if (idx >= 0) sums[idx] = data.reduce((s, r) => s + (Number(r[prop]) || 0), 0)
+  })
+  if (data.length > 0) sums[0] = '合计'
+  return sums
+}
 
 async function search() {
   loading.value = true
