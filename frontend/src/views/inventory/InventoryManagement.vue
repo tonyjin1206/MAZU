@@ -29,7 +29,7 @@
               <el-date-picker v-model="balanceQuery.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 280px" @change="onDateRangeChange" />
             </el-form-item>
           </el-form>
-          <el-table class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border @row-click="viewTransactions" :show-summary="true" :summary-method="getBalanceSummary">
+          <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border @row-click="viewTransactions" :show-summary="true" :summary-method="getBalanceSummary">
             <el-table-column v-for="col in balanceColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <span class="col-header-wrap">
@@ -107,7 +107,7 @@
               <el-input v-model="transQuery.keyword" placeholder="名称/编码" clearable style="width: 160px" @keyup.enter="fetchTransactions" />
             </el-form-item>
           </el-form>
-          <el-table class="drag-table-trans" :key="transColumnVersion" :data="transactionList" v-loading="transLoading" stripe border :show-summary="true" :summary-method="getTransSummary">
+          <el-table ref="transTableRef" class="drag-table-trans" :key="transColumnVersion" :data="transactionList" v-loading="transLoading" stripe border :show-summary="true" :summary-method="getTransSummary">
             <el-table-column v-for="col in transColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <span class="col-header-wrap">
@@ -140,6 +140,7 @@
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import request from '@/api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -163,6 +164,9 @@ const defaultColumns = [
   { prop: 'source_type', label: '来源', width: 60 },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
+const { fitTable } = useColumnAutoFit()
+const balanceTableRef = ref(null)
+const transTableRef = ref(null)
 const balanceColumns = computed(() => columns.value.filter(c => balancePeriod.value ? c.group !== 'snapshot' : c.group !== 'period'))
 
 const TRANS_STORAGE_KEY = 'mazu_inventory_trans_columns'
@@ -208,7 +212,10 @@ async function fetchBalance() {
     const res = await request.get('/inventory/balance', { params })
     balanceList.value = res.items || []
     balanceTotal.value = res.total || 0
-  } catch (e) { ElMessage.error('加载失败') } finally { balanceLoading.value = false; nextTick(initColumnDrag) }
+  } catch (e) { ElMessage.error('加载失败') } finally {
+    balanceLoading.value = false
+    nextTick(() => { initColumnDrag(); fitTable(balanceTableRef.value, balanceColumns, balanceList) })
+  }
 }
 
 function onDateRangeChange() {
@@ -276,7 +283,10 @@ async function fetchTransactions() {
     const res = await request.get('/inventory/transactions', { params })
     transactionList.value = res.items || []
     transTotal.value = res.total || 0
-  } catch (e) { ElMessage.error('加载失败') } finally { transLoading.value = false; nextTick(initTransColumnDrag) }
+  } catch (e) { ElMessage.error('加载失败') } finally {
+    transLoading.value = false
+    nextTick(() => { initTransColumnDrag(); fitTable(transTableRef.value, transColumns, transactionList) })
+  }
 }
 
 function resetTransactions() {

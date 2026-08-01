@@ -23,7 +23,7 @@
     </el-card>
 
     <el-card>
-      <el-table :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
+      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
         <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
@@ -105,6 +105,7 @@
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -122,6 +123,8 @@ const defaultColumns = [
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { fitTable } = useColumnAutoFit()
+const tableRef = ref(null)
 
 const loading = ref(false)
 const dataList = ref([])
@@ -151,7 +154,7 @@ async function fetchData() {
     const res = await request.get('/outsource/orders', { params })
     dataList.value = res.items || []
     total.value = res.total || 0
-  } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(initColumnDrag) }
+  } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, dataList) }) }
 }
 
 async function loadSuppliers() {

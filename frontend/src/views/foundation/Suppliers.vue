@@ -158,6 +158,7 @@
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
@@ -196,6 +197,7 @@ const defaultColumns = [
   { prop: 'is_active', label: '状态', width: 80, align: 'center' },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { fitTable } = useColumnAutoFit()
 
 function rowClassName({ row }) {
   return row.is_active === 0 ? 'mazu-disabled-row' : ''
@@ -259,7 +261,7 @@ async function fetchData() {
     })
     tableData.value = res.items || []
     total.value = res.total || 0
-    nextTick(initColumnDrag)
+    nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, filteredList) })
   } catch (e) {
     ElMessage.error('加载失败')
   } finally {

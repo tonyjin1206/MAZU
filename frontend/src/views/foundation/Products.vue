@@ -130,6 +130,7 @@
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
@@ -152,6 +153,7 @@ const defaultColumns = [
   { prop: 'is_active', label: '状态', width: 80, align: 'center' },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { fitTable } = useColumnAutoFit()
 
 const loading = ref(false)
 const tableData = ref([])
@@ -215,7 +217,7 @@ async function fetchData() {
     })
     tableData.value = res.items || []
     pagination.value.total = res.total || 0
-    nextTick(initColumnDrag)
+    nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, filteredList) })
   } catch (e) {
     // handled by interceptor
   } finally {

@@ -90,7 +90,21 @@ def list_params_by_group(group_name: str, db: Session = Depends(get_db)):
 register_crud(router, Process,        ProcessCreate,    ProcessUpdate,    ProcessOut,    "processes",   "基础档案-工序",   search_fields=["code", "name"])
 register_crud(router, Department,     DepartmentCreate, None,             DepartmentOut, "departments", "基础档案-部门",   search_fields=["code", "name"])
 register_crud(router, Employee,       EmployeeCreate,   None,             EmployeeOut,   "employees",   "基础档案-人员",   search_fields=["code", "name"])
-register_crud(router, Warehouse,      WarehouseCreate,  None,             WarehouseOut,  "warehouses",  "基础档案-仓库",   search_fields=["code", "name"])
+def _warehouse_delete_guard(db: Session, item: Warehouse):
+    """仓库删除保护：被库存单据引用的仓库不能删，只能停用"""
+    from app.models.inventory import StockInOrder, WarehouseInventory, StockTransaction
+    refs = [
+        ("待入库单", db.query(StockInOrder).filter(StockInOrder.warehouse_id == item.id).count()),
+        ("库存批次", db.query(WarehouseInventory).filter(WarehouseInventory.warehouse_id == item.id).count()),
+        ("库存流水", db.query(StockTransaction).filter(StockTransaction.warehouse_id == item.id).count()),
+    ]
+    used = [(name, n) for name, n in refs if n > 0]
+    if used:
+        desc = "、".join(f"{name}{n}条" for name, n in used)
+        raise HTTPException(400, f"该仓库已被使用（{desc}），不能删除，只能停用")
+
+
+register_crud(router, Warehouse,      WarehouseCreate,  None,             WarehouseOut,  "warehouses",  "基础档案-仓库",   search_fields=["code", "name"], delete_guard=_warehouse_delete_guard)
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])

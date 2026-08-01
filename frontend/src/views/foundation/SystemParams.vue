@@ -4,7 +4,7 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div style="font-weight: 600">参数设置</div>
-          <el-button type="primary" @click="openCreate">{{ activeGroup === 'material_category' ? '新增大类' : '新增参数' }}</el-button>
+          <el-button type="primary" @click="openCreate">{{ activeGroup === 'material_category' ? '新增大类' : (activeGroup === 'warehouse' ? '新增仓库' : '新增参数') }}</el-button>
         </div>
       </template>
       <el-tabs v-model="activeGroup" @tab-change="onTabChange">
@@ -43,8 +43,33 @@
         </el-table-column>
       </el-table>
 
+      <!-- 仓库：预编号维护（成品入库收货时从这里选） -->
+      <el-table
+        v-else-if="activeGroup === 'warehouse'"
+        :data="warehouseList" v-loading="loading" stripe border size="small" style="width: 100%"
+      >
+        <el-table-column prop="code" label="编码" width="100" align="center" />
+        <el-table-column prop="name" label="仓库名称" min-width="160" />
+        <el-table-column prop="wh_type" label="类型" width="120" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.wh_type === '成品仓库' ? 'primary' : 'warning'" size="small">{{ row.wh_type }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-switch :model-value="row.is_active === 1" size="small" @change="(v) => toggleWarehouse(row, v)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="140" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openWarehouseEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="handleWarehouseDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
       <!-- 其他参数组：通用表格（可拖拽列） -->
-      <el-table v-else :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
+      <el-table ref="tableRef" v-else :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
         <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
@@ -104,6 +129,26 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新增/编辑仓库弹窗 -->
+    <el-dialog v-model="warehouseDialogVisible" :title="warehouseEditId ? '编辑仓库' : '新增仓库'" width="420px" destroy-on-close>
+      <el-form :model="warehouseForm" label-width="80px" ref="warehouseFormRef" :rules="warehouseRules">
+        <el-form-item label="仓库名称" prop="name">
+          <el-input v-model="warehouseForm.name" placeholder="如：原辅料仓库、成品仓库" />
+        </el-form-item>
+        <el-form-item label="类型" prop="wh_type">
+          <el-select v-model="warehouseForm.wh_type" style="width: 100%">
+            <el-option label="原辅料仓库" value="原辅料仓库" />
+            <el-option label="成品仓库" value="成品仓库" />
+          </el-select>
+        </el-form-item>
+        <div style="color: #909399; font-size: 12px; line-height: 1.5">编码自动生成（WH001、WH002…），成品入库收货时从仓库列表里选择。</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="warehouseDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleWarehouseSave">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -111,6 +156,7 @@
 import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -122,6 +168,8 @@ const defaultColumns = [
   { prop: 'remark', label: '说明', minWidth: 180 },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { fitTable } = useColumnAutoFit()
+const tableRef = ref(null)
 
 const GROUP_LABELS = {
   supplier_type: '供应商类型',
@@ -129,6 +177,7 @@ const GROUP_LABELS = {
   unit: '计量单位',
   payment_method: '付款方式',
   country: '国家',
+  warehouse: '仓库',
 }
 
 function groupLabel(g) { return GROUP_LABELS[g] || g }
@@ -190,11 +239,87 @@ async function loadMaterialTree() {
 async function loadGroup() {
   if (!activeGroup.value) return
   if (activeGroup.value === 'material_category') { loadMaterialTree(); return }
+  if (activeGroup.value === 'warehouse') { loadWarehouses(); return }
   loading.value = true
   try {
     const res = await request.get(`/foundation/params/group/${activeGroup.value}`)
     list.value = res.items || []
-  } catch { list.value = [] } finally { loading.value = false; nextTick(initColumnDrag) }
+  } catch { list.value = [] } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, list) }) }
+}
+
+// ===== 仓库（参数设置内维护，编码自动 WH+流水）=====
+const warehouseList = ref([])
+const warehouseDialogVisible = ref(false)
+const warehouseEditId = ref(null)
+const warehouseFormRef = ref(null)
+const warehouseForm = reactive({ name: '', wh_type: '原辅料仓库' })
+const warehouseRules = { name: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }] }
+
+async function loadWarehouses() {
+  loading.value = true
+  try {
+    const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
+    warehouseList.value = res.items || []
+  } catch { warehouseList.value = [] } finally { loading.value = false }
+}
+
+function nextWarehouseCode() {
+  let max = 0
+  for (const w of warehouseList.value) {
+    const m = String(w.code || '').match(/^WH(\d+)$/)
+    if (m) max = Math.max(max, parseInt(m[1], 10))
+  }
+  return 'WH' + String(max + 1).padStart(3, '0')
+}
+
+function openWarehouseCreate() {
+  warehouseEditId.value = null
+  Object.assign(warehouseForm, { name: '', wh_type: '原辅料仓库' })
+  warehouseDialogVisible.value = true
+}
+
+function openWarehouseEdit(row) {
+  warehouseEditId.value = row.id
+  Object.assign(warehouseForm, { name: row.name, wh_type: row.wh_type || '原辅料仓库' })
+  warehouseDialogVisible.value = true
+}
+
+async function handleWarehouseSave() {
+  const valid = await warehouseFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  saving.value = true
+  try {
+    if (warehouseEditId.value) {
+      await request.put(`/foundation/warehouses/${warehouseEditId.value}`, { ...warehouseForm })
+      ElMessage.success('已保存')
+    } else {
+      await request.post('/foundation/warehouses', { ...warehouseForm, code: nextWarehouseCode() })
+      ElMessage.success('已新增')
+    }
+    warehouseDialogVisible.value = false
+    loadWarehouses()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally { saving.value = false }
+}
+
+async function toggleWarehouse(row, v) {
+  try {
+    await request.put(`/foundation/warehouses/${row.id}`, { is_active: v ? 1 : 0 })
+    row.is_active = v ? 1 : 0
+    ElMessage.success(v ? '已启用' : '已停用')
+  } catch { }
+}
+
+async function handleWarehouseDelete(row) {
+  await ElMessageBox.confirm(`确定删除仓库「${row.name}」？<br><span style="color:#e6a23c;font-size:12px">有单据使用的仓库不能删除，只能停用。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
+  try {
+    await request.delete(`/foundation/warehouses/${row.id}`)
+    ElMessage.success('已删除')
+    loadWarehouses()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
 }
 
 async function loadGroups() {
@@ -230,6 +355,7 @@ function regenerateKey() {
 
 function openCreate() {
   editId.value = null
+  if (activeGroup.value === 'warehouse') { openWarehouseCreate(); return }
   if (activeGroup.value === 'material_category') {
     Object.assign(form, { group_name: 'material_main_category', param_label: '', param_key: nextParamKey(), parent_key: '', sort_order: (materialTree.value.length || 0) + 1, remark: '' })
     loadMainCategories()

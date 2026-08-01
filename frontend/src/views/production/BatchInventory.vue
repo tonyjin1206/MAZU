@@ -24,6 +24,7 @@
 
     <el-card>
       <el-table
+        ref="tableRef"
         :key="columnVersion"
         :data="batchList"
         border stripe v-loading="loading"
@@ -74,6 +75,7 @@
 <script setup>
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { productionApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
 
@@ -87,6 +89,8 @@ const defaultColumns = [
   { prop: 'source_type', label: '来源', width: 120 },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { fitTable } = useColumnAutoFit()
+const tableRef = ref(null)
 
 const warehouseList = ref([])
 const batchList = ref([])
@@ -109,7 +113,7 @@ async function search() {
     const res = await productionApi.batch.query(params)
     batchList.value = res.items || []
   } finally { loading.value = false
-  nextTick(initColumnDrag) }
+  nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, batchList) }) }
 }
 
 async function trace(batchNo) {
