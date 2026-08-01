@@ -45,6 +45,7 @@ def register_crud(
     tag: str,
     search_fields: list[str] | None = None,
     list_requires_admin: bool = False,
+    delete_guard=None,
 ):
     """为模型注册标准 CRUD 路由"""
 
@@ -130,7 +131,7 @@ def register_crud(
         db.refresh(item)
         return out_schema.model_validate(item)
 
-    # 删除（软删除，修改 is_active）
+    # 删除（软删除，修改 is_active；delete_guard 可阻止删除）
     @router.delete(f"/{prefix}/{{item_id}}", tags=[tag])
     def delete_item(
         item_id: int,
@@ -138,6 +139,8 @@ def register_crud(
         current_user: User = Depends(get_current_user),
     ):
         item = _get_or_404(db, model, item_id)
+        if delete_guard:
+            delete_guard(db, item)
         if hasattr(item, "is_active"):
             item.is_active = 0
             db.commit()

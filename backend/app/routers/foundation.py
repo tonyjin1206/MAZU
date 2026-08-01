@@ -70,7 +70,7 @@ def list_param_options(group: str = Query(..., description="参数组名"), db: 
             .filter(SystemParam.group_name == group, SystemParam.is_active == 1)
             .order_by(SystemParam.sort_order, SystemParam.id)
             .all())
-    return [{"key": r.param_key, "label": r.param_label} for r in rows]
+    return [{"key": r.param_key, "label": r.param_label, "parent_key": r.parent_key or ""} for r in rows]
 
 
 @router.get("/params/group/{group_name}", response_model=dict, tags=["基础档案-参数设置"])
@@ -93,7 +93,36 @@ register_crud(router, Warehouse,      WarehouseCreate,  None,             Wareho
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])
-register_crud(router, SystemParam,    SystemParamCreate, SystemParamUpdate, SystemParamOut, "params",      "基础档案-参数设置", search_fields=["group_name", "param_key", "param_label"])
+def _params_delete_guard(db: Session, item: SystemParam):
+    """参数删除保护：被业务数据引用的参数不能删，只能停用（防止历史数据错乱）"""
+    from app.models.foundation import Customer, Material, Product, Supplier
+    from app.models.purchase import PurchaseOrder
+    from app.models.sales import SalesOrder
+    label = item.param_label
+    g = item.group_name
+    refs = []
+    if g == "country":
+        refs.append(("客户", db.query(Customer).filter(Customer.country == label).count()))
+        refs.append(("供应商", db.query(Supplier).filter(Supplier.country == label).count()))
+    elif g == "supplier_type":
+        refs.append(("供应商", db.query(Supplier).filter(Supplier.supplier_type == label).count()))
+    elif g == "unit":
+        refs.append(("材料", db.query(Material).filter(Material.unit == label).count()))
+        refs.append(("产品", db.query(Product).filter(Product.unit == label).count()))
+    elif g in ("material_main_category", "material_category"):
+        refs.append(("材料", db.query(Material).filter(Material.category == label).count()))
+    elif g == "material_sub_category":
+        refs.append(("材料", db.query(Material).filter(Material.category_sub == label).count()))
+    elif g == "payment_method":
+        refs.append(("采购订单", db.query(PurchaseOrder).filter(PurchaseOrder.payment_terms == label).count()))
+        refs.append(("销售订单", db.query(SalesOrder).filter(SalesOrder.payment_terms == label).count()))
+    used = [(name, n) for name, n in refs if n > 0]
+    if used:
+        desc = "、".join(f"{name}{n}条" for name, n in used)
+        raise HTTPException(400, f"该参数已被使用（{desc}），不能删除，只能停用")
+
+
+register_crud(router, SystemParam,    SystemParamCreate, SystemParamUpdate, SystemParamOut, "params",      "基础档案-参数设置", search_fields=["group_name", "param_key", "param_label"], delete_guard=_params_delete_guard)
 
 
 @router.delete("/params/{item_id}/hard", tags=["基础档案-参数设置"])
@@ -102,6 +131,7 @@ def hard_delete_param(item_id: int, db: Session = Depends(get_db), current_user:
     item = db.query(SystemParam).filter(SystemParam.id == item_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="参数不存在")
+    _params_delete_guard(db, item)  # 被引用的参数同样禁止物理删除
     db.delete(item)
     db.commit()
     return {"message": "已删除"}
@@ -145,7 +175,7 @@ def list_materials(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
     if category:
         query = query.filter(Material.category == category)
     total = query.count()
-    items = query.order_by(Material.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    items = query.order_by(Material.code.asc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,
             "items": [MaterialOut.model_validate(m) for m in items]}
 
@@ -240,7 +270,7 @@ def list_products(
     if is_active is not None:
         query = query.filter(Product.is_active == is_active)
     total = query.count()
-    items = query.order_by(Product.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    items = query.order_by(Product.code.asc()).offset((page-1)*page_size).limit(page_size).all()
     result = []
     for item in items:
         obj = ProductOut.model_validate(item).model_dump()
@@ -401,7 +431,7 @@ def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
         if country:
             query = query.filter(Customer.country.like(f"%{country}%"))
     total = query.count()
-    items = query.order_by(Customer.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    items = query.order_by(Customer.code.asc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,
             "items": [CustomerOut.model_validate(c) for c in items]}
 
@@ -568,7 +598,7 @@ def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
         if country:
             query = query.filter(Supplier.country.like(f"%{country}%"))
     total = query.count()
-    items = query.order_by(Supplier.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    items = query.order_by(Supplier.code.asc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size,
             "items": [SupplierOut.model_validate(s) for s in items]}
 

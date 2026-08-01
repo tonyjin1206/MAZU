@@ -105,9 +105,14 @@
             <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
-        <el-form-item label="类别" prop="category">
-          <el-select v-model="form.category" placeholder="请选择" style="width: 100%">
-            <el-option v-for="o in categoryOptions" :key="o.key" :label="o.label" :value="o.label" />
+        <el-form-item label="大类" prop="category">
+          <el-select v-model="form.category" placeholder="请选择大类" style="width: 100%" @change="onMainCategoryChange">
+            <el-option v-for="o in mainCategoryOptions" :key="o.key" :label="o.label" :value="o.label" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="小类" prop="category_sub">
+          <el-select v-model="form.category_sub" placeholder="请选择小类" style="width: 100%" :disabled="!form.category">
+            <el-option v-for="o in subCategoryOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
         <el-form-item label="单价" prop="purchase_price">
@@ -131,10 +136,20 @@ import request from '../../api/request'
 
 // 下拉选项（来自参数设置）
 const unitOptions = ref([])
-const categoryOptions = ref([])
+const mainCategoryOptions = ref([])
+const subCategoryOptionsRaw = ref([])
+// 小类下拉：按所选大类过滤（参数里小类用 parent_key 关联大类）
+const subCategoryOptions = computed(() => {
+  if (!form.category) return []
+  const main = mainCategoryOptions.value.find(o => o.label === form.category)
+  if (!main) return []
+  return subCategoryOptionsRaw.value.filter(o => o.parent_key === main.key)
+})
+function onMainCategoryChange() { form.category_sub = '' }
 async function loadParamOptions() {
   try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
-  try { categoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_category' } }) || [] } catch { categoryOptions.value = [] }
+  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch { mainCategoryOptions.value = [] }
+  try { subCategoryOptionsRaw.value = await request.get('/foundation/params/options', { params: { group: 'material_sub_category' } }) || [] } catch { subCategoryOptionsRaw.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -145,7 +160,8 @@ const defaultColumns = [
   { prop: 'spec', label: '规格', minWidth: 140, sortable: true },
   { prop: 'model', label: '型号', minWidth: 120, sortable: true },
   { prop: 'unit', label: '单位', width: 100, align: 'center', sortable: true },
-  { prop: 'category', label: '类别', width: 100, align: 'center', sortable: true },
+  { prop: 'category', label: '大类', width: 100, align: 'center', sortable: true },
+  { prop: 'category_sub', label: '小类', width: 100, align: 'center', sortable: true },
   { prop: 'purchase_price', label: '单价', width: 100, align: 'right', sortable: true },
   { prop: 'is_active', label: '状态', width: 80, align: 'center' },
 ]
@@ -163,14 +179,13 @@ const dialogVisible = ref(false)
 const dialogLoading = ref(false)
 const dialogMode = ref('create')
 const formRef = ref(null)
-const form = reactive({ id: null, name: '', spec: '', model: '', unit: '', category: '', purchase_price: 0 })
+const form = reactive({ id: null, name: '', spec: '', model: '', unit: '', category: '', category_sub: '', purchase_price: 0 })
 
 const formRules = {
   name: [{ required: true, message: '请输入名称', trigger: 'blur' }],
-  spec: [{ required: true, message: '请输入规格', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
-  category: [{ required: true, message: '请选择类别', trigger: 'change' }],
-  purchase_price: [{ required: true, message: '请输入单价', trigger: 'blur' }],
+  category: [{ required: true, message: '请选择大类', trigger: 'change' }],
+  category_sub: [{ required: true, message: '请选择小类', trigger: 'change' }],
 }
 
 async function fetchData() {
@@ -207,9 +222,9 @@ function resetSearch() {
 function openDialog(mode, row = {}) {
   dialogMode.value = mode
   if (mode === 'edit') {
-    Object.assign(form, { id: row.id, name: row.name, spec: row.spec || '', model: row.model || '', unit: row.unit || '', category: row.category || '', purchase_price: row.purchase_price || 0 })
+    Object.assign(form, { id: row.id, name: row.name, spec: row.spec || '', model: row.model || '', unit: row.unit || '', category: row.category || '', category_sub: row.category_sub || '', purchase_price: row.purchase_price || 0 })
   } else {
-    Object.assign(form, { id: null, name: '', spec: '', model: '', unit: '', category: '', purchase_price: 0 })
+    Object.assign(form, { id: null, name: '', spec: '', model: '', unit: '', category: '', category_sub: '', purchase_price: 0 })
   }
   dialogVisible.value = true
 }

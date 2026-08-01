@@ -13,6 +13,7 @@ class MaterialCreate(BaseModel):
     model: str = ""
     unit: str
     category: str = "原材料"
+    category_sub: str = ""
     purchase_price: float = 0
     default_supplier_id: int | None = None
     remark: str = ""
@@ -24,6 +25,7 @@ class MaterialUpdate(BaseModel):
     model: str | None = None
     unit: str | None = None
     category: str | None = None
+    category_sub: str | None = None
     purchase_price: float | None = None
     default_supplier_id: int | None = None
     remark: str | None = None
@@ -38,6 +40,7 @@ class MaterialOut(BaseModel):
     model: str | None
     unit: str
     category: str | None
+    category_sub: str | None
     purchase_price: float
     is_active: int
     remark: str | None
@@ -515,6 +518,7 @@ class SystemParamCreate(BaseModel):
     group_name: str
     param_key: str
     param_label: str
+    parent_key: str = ""
     sort_order: int = 0
     remark: str = ""
 
@@ -522,6 +526,7 @@ class SystemParamCreate(BaseModel):
 class SystemParamUpdate(BaseModel):
     param_key: str | None = None
     param_label: str | None = None
+    parent_key: str | None = None
     sort_order: int | None = None
     remark: str | None = None
     is_active: int | None = None
@@ -532,6 +537,7 @@ class SystemParamOut(BaseModel):
     group_name: str
     param_key: str
     param_label: str
+    parent_key: str = ""
     sort_order: int
     remark: str = ""
     is_active: int
@@ -544,6 +550,7 @@ class SystemParamOptionOut(BaseModel):
     """下拉选项（只含启用项）"""
     key: str
     label: str
+    parent_key: str = ""
 
     class Config:
         from_attributes = True

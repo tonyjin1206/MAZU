@@ -101,7 +101,7 @@
           <el-input v-model="form.name_en" />
         </el-form-item>
         <el-form-item label="国家" prop="country">
-          <el-select v-model="form.country" filterable allow-create placeholder="搜索或输入" style="width: 100%">
+          <el-select v-model="form.country" filterable placeholder="选择国家" style="width: 100%">
             <el-option v-for="c in countryList" :key="c" :label="c" :value="c" />
           </el-select>
         </el-form-item>
@@ -161,15 +161,16 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { foundationApi } from '../../api/foundation'
+import request from '../../api/request'
 
-const countryList = [
-  '中国', '美国', '日本', '韩国', '德国', '英国', '法国', '意大利', '西班牙',
-  '荷兰', '比利时', '瑞士', '瑞典', '挪威', '丹麦', '芬兰', '澳大利亚',
-  '新西兰', '加拿大', '墨西哥', '巴西', '阿根廷', '智利', '印度',
-  '印度尼西亚', '马来西亚', '菲律宾', '新加坡', '泰国', '越南', '缅甸',
-  '柬埔寨', '老挝', '阿联酋', '沙特阿拉伯', '土耳其', '俄罗斯', '南非',
-  '尼日利亚', '埃及', '肯尼亚',
-]
+// 国家列表（来自参数设置「国家」组，可在参数设置里自行增删）
+const countryList = ref([])
+async function loadCountries() {
+  try {
+    const opts = await request.get('/foundation/params/options', { params: { group: 'country' } }) || []
+    countryList.value = opts.map(o => o.label)
+  } catch { countryList.value = [] }
+}
 
 // ===== 列配置（可拖拽排序，localStorage 记住个人偏好）=====
 const STORAGE_KEY = 'mazu_customer_columns'
@@ -342,6 +343,7 @@ async function handleToggle(row) {
 
 onMounted(() => {
   fetchData()
+  loadCountries()
 })
 </script>
 

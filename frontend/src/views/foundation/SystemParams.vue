@@ -8,7 +8,7 @@
         </div>
       </template>
       <el-tabs v-model="activeGroup" @tab-change="loadGroup">
-        <el-tab-pane v-for="g in groups" :key="g" :label="groupLabel(g)" :name="g" />
+        <el-tab-pane v-for="g in groupOptions" :key="g" :label="groupLabel(g)" :name="g" />
       </el-tabs>
       <div style="color: #909399; font-size: 12px; margin-bottom: 8px">
         在这里维护好选项后，新增供应商/材料/收付款单时，下拉框会自动出现这些选项。停用的选项不再出现在下拉里（历史数据不受影响）。
@@ -20,6 +20,9 @@
         <el-table-column prop="sort_order" label="排序" width="70" align="center" />
         <el-table-column prop="param_label" label="显示名称" min-width="140" />
         <el-table-column prop="param_key" label="参数值" min-width="140" />
+        <el-table-column v-if="activeGroup === 'material_sub_category'" label="所属大类" min-width="120">
+          <template #default="{ row }">{{ parentLabel(row.parent_key) }}</template>
+        </el-table-column>
         <el-table-column prop="remark" label="说明" min-width="160" />
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
@@ -38,9 +41,15 @@
     <el-dialog v-model="dialogVisible" :title="editId ? '编辑参数' : '新增参数'" width="480px" destroy-on-close>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="90px">
         <el-form-item label="参数组" prop="group_name">
-          <el-select v-model="form.group_name" style="width: 100%" :disabled="!!editId">
+          <el-select v-model="form.group_name" style="width: 100%" :disabled="!!editId" @change="onGroupChange">
             <el-option v-for="g in groupOptions" :key="g" :label="groupLabel(g)" :value="g" />
           </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.group_name === 'material_sub_category'" label="所属大类" prop="parent_key">
+          <el-select v-model="form.parent_key" style="width: 100%" placeholder="选择该小类属于哪个大类">
+            <el-option v-for="o in mainCategoryOptions" :key="o.key" :label="o.label" :value="o.key" />
+          </el-select>
+          <div style="font-size: 12px; color: #909399; line-height: 1.5; margin-top: 4px">先添加大类（材料大类组），再在这里添加小类并指定所属大类。</div>
         </el-form-item>
         <el-form-item label="显示名称" prop="param_label">
           <el-input v-model="form.param_label" placeholder="下拉框里看到的文字，如：原材料" />
@@ -92,6 +101,9 @@ const GROUP_LABELS = {
   material_category: '材料类别',
   unit: '计量单位',
   payment_method: '付款方式',
+  country: '国家',
+  material_main_category: '材料大类',
+  material_sub_category: '材料小类',
 }
 
 function groupLabel(g) { return GROUP_LABELS[g] || g }
@@ -105,11 +117,29 @@ const saving = ref(false)
 const editId = ref(null)
 const formRef = ref(null)
 
-const form = reactive({ group_name: '', param_label: '', param_key: '', sort_order: 0, remark: '' })
+const form = reactive({ group_name: '', param_label: '', param_key: '', parent_key: '', sort_order: 0, remark: '' })
 const rules = {
   group_name: [{ required: true, message: '请选择参数组', trigger: 'change' }],
   param_label: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
   param_key: [{ required: true, message: '请输入参数值', trigger: 'blur' }],
+  parent_key: [{ required: true, message: '请选择所属大类', trigger: 'change' }],
+}
+
+// 材料大类选项（小类选择所属大类用）
+const mainCategoryOptions = ref([])
+async function loadMainCategories() {
+  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch { mainCategoryOptions.value = [] }
+}
+
+function onGroupChange() {
+  form.parent_key = ''
+  if (form.group_name === 'material_sub_category') loadMainCategories()
+}
+
+function parentLabel(key) {
+  if (!key) return ''
+  const found = mainCategoryOptions.value.find(o => o.key === key)
+  return found ? found.label : key
 }
 
 const groupOptions = computed(() => {
@@ -150,13 +180,15 @@ function regenerateKey() {
 
 function openCreate() {
   editId.value = null
-  Object.assign(form, { group_name: activeGroup.value || groups.value[0] || '', param_label: '', param_key: nextParamKey(), sort_order: (list.value.length || 0) + 1, remark: '' })
+  Object.assign(form, { group_name: activeGroup.value || groups.value[0] || '', param_label: '', param_key: nextParamKey(), parent_key: '', sort_order: (list.value.length || 0) + 1, remark: '' })
+  if (form.group_name === 'material_sub_category') loadMainCategories()
   dialogVisible.value = true
 }
 
 function openEdit(row) {
   editId.value = row.id
-  Object.assign(form, { group_name: row.group_name, param_label: row.param_label, param_key: row.param_key, sort_order: row.sort_order, remark: row.remark || '' })
+  Object.assign(form, { group_name: row.group_name, param_label: row.param_label, param_key: row.param_key, parent_key: row.parent_key || '', sort_order: row.sort_order, remark: row.remark || '' })
+  if (form.group_name === 'material_sub_category') loadMainCategories()
   dialogVisible.value = true
 }
 
@@ -189,7 +221,7 @@ async function toggleActive(row, v) {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(`确定删除「${row.param_label}」？删除后相关下拉不再出现。`, '提示', { type: 'warning' })
+  await ElMessageBox.confirm(`确定删除「${row.param_label}」？<br><span style="color:#e6a23c;font-size:12px">注意：有业务数据正在使用的参数不能删除，只能停用（停用后下拉不再出现，历史数据不受影响）。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
   try {
     await request.delete(`/foundation/params/${row.id}/hard`)
     ElMessage.success('已删除')
