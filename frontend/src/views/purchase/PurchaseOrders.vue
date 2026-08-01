@@ -97,9 +97,6 @@
       <template #header>
         <div style="display: flex; align-items: center">
           <span>订单明细</span>
-          <span v-if="selectedOrder" style="margin-left: 10px; font-size: 12px; color: #606266">
-            {{ selectedOrder.order_no }} · {{ selectedOrder.supplier_name }} · {{ $fm(selectedOrder.total_amount) }}
-          </span>
           <span style="flex: 1" />
           <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
         </div>
