@@ -244,7 +244,7 @@ function openCreateSub(mainRow) {
   Object.assign(form, {
     group_name: 'material_sub_category',
     param_label: '',
-    param_key: nextSubKey(mainRow.param_key),
+    param_key: nextSubKey(),
     parent_key: mainRow.param_key,
     sort_order: (mainRow.children?.length || 0) + 1,
     remark: '',
@@ -252,12 +252,14 @@ function openCreateSub(mainRow) {
   dialogVisible.value = true
 }
 
-function nextSubKey(mainKey) {
-  const subs = materialTree.value.find(m => m.param_key === mainKey)?.children || []
+function nextSubKey() {
+  // 小类编号全组唯一：取所有小类里最大编号 +1（避免与已有小类冲突）
   let max = 0
-  for (const s of subs) {
-    const n = parseInt(s.param_key, 10)
-    if (!isNaN(n) && n > max) max = n
+  for (const m of materialTree.value) {
+    for (const s of m.children || []) {
+      const n = parseInt(s.param_key, 10)
+      if (!isNaN(n) && n > max) max = n
+    }
   }
   return String(max + 1).padStart(2, '0')
 }
