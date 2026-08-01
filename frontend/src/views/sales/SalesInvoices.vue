@@ -29,11 +29,18 @@
       <el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small">
         <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'remark'">
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
-          </template>
+                <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                  <span class="col-header-wrap">
+                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                    {{ col.label }}
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </template>
           <template v-if="col.prop === 'amount'" #default="{ row }">{{ $fm(row.amount) }}</template>
           <template v-else-if="col.prop === 'tax_amount'" #default="{ row }">{{ $fm(row.tax_amount) }}</template>
           <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
@@ -106,13 +113,16 @@
         <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderListDlg" @opened="initOrderDrag" @confirm="confirmOrder" />
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '../../api/request'
 import { salesApi } from '../../api/business'
 
@@ -129,7 +139,7 @@ const defaultColumns = [
   { prop: 'status', label: '状态', width: 100, sortable: true },
   { prop: 'remark', label: '备注', minWidth: 150, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList: orderListDlg, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
@@ -177,6 +187,12 @@ const rules = {
   amount: [{ required: true, message: '请输入金额', trigger: 'blur' }],
   invoice_date: [{ required: true, message: '请选择发票日期', trigger: 'change' }],
 }
+
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnDrag() })
+})
 
 onMounted(() => {
   fetchList()

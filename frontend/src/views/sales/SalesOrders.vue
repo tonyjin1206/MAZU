@@ -43,6 +43,7 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
+                  <el-dropdown-item divided @click.stop="openOrderOrder" style="color: #409eff">列排序...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -117,6 +118,7 @@
                   <el-dropdown-item v-for="c in allItemColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleItemColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
+                  <el-dropdown-item divided @click.stop="openItemOrder" style="color: #409eff">列排序...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -318,6 +320,10 @@
         <el-pagination v-model:current-page="productPage" v-model:page-size="productPageSize" :total="productTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchProducts" />
       </div>
     </el-dialog>
+    
+    <!-- 列排序弹窗 -->
+    <ColumnOrderDialog v-model:visible="orderOrderVisible" :columns="orderOrderList" @opened="initOrderOrderDrag" @confirm="confirmOrderOrder" />
+    <ColumnOrderDialog v-model:visible="itemOrderVisible" :columns="itemOrderList" @opened="initItemOrderDrag" @confirm="confirmItemOrder" />
   </div>
 </template>
 
@@ -327,6 +333,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '../../api/request'
 
 const { fitTable } = useColumnAutoFit()
@@ -349,12 +356,13 @@ const defaultColumns = [
   { prop: 'collected_amount', label: '已收款', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'uncollected_amount', label: '未收款', width: 90, align: 'right', sortable: true, fmt: 'money' },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
 
 const ITEM_STORAGE_KEY = 'mazu_sales_order_item_columns'
 const defaultItemColumns = [
   { prop: 'product_code', label: '产品编码', minWidth: 110, sortable: true },
   { prop: 'product_name', label: '产品名称', minWidth: 150, sortable: true },
+  { prop: 'batch_no', label: '批次号', minWidth: 150, sortable: true },
   { prop: 'quantity', label: '数量', width: 80, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'unit_price', label: '单价', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'tax_rate', label: '税率%', width: 70, align: 'right', sortable: true, fmt: 'qty' },
@@ -364,7 +372,7 @@ const defaultItemColumns = [
   { prop: 'received_qty', label: '已入库', width: 80, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'production_status', label: '状态', width: 100, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
+const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, orderDialogVisible: itemOrderVisible, orderList: itemOrderList, openOrderDialog: openItemOrder, initOrderDrag: initItemOrderDrag, confirmOrder: confirmItemOrder } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 const { visibleColumns: visibleItemColumns, allColumns: allItemColumns, toggleColumn: toggleItemColumn, initColumnVisible: initItemVisible } = useColumnCustomize(itemColumns, ITEM_STORAGE_KEY)
 
@@ -872,6 +880,22 @@ async function handleItemUpdate() {
 
 watch(() => orderForm.items.length, () => {
   orderForm.items.forEach(item => calcItem(item))
+})
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => {
+    initColumnVisible()
+    initColumnDrag()
+    if (dataList.value.length) fitTable(orderTableRef.value, columns, dataList)
+  })
+})
+watch(itemColumnVersion, () => {
+  nextTick(() => {
+    initItemVisible()
+    initItemColumnDrag()
+    if (orderDetailList.value.length) fitTable(itemTableRef.value, itemColumns, orderDetailList)
+  })
 })
 
 onMounted(() => { initColumnVisible(); initItemVisible(); fetchData(); loadCustomers(); loadCurrencies(); loadTradeTerms(); loadProducts() })</script>

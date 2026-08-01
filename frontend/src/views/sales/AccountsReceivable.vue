@@ -7,10 +7,17 @@
           <el-table class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
             <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
-                <span class="col-header-wrap">
-                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-                  {{ col.label }}
-                </span>
+                <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                  <span class="col-header-wrap">
+                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                    {{ col.label }}
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click.stop="openOrderOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
               <template v-if="col.prop === 'customer_name'" #default="{ row }"><span style="color: #409eff; cursor: pointer; font-weight: 500">{{ row.customer_name }}</span></template>
               <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
@@ -26,10 +33,17 @@
           <el-table class="drag-table-detail" :key="cdColumnVersion" :data="cdList" border stripe v-loading="cdLoading" style="width: 100%" :summary-method="cdTotal" show-summary>
             <el-table-column v-for="col in cdColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
-                <span class="col-header-wrap">
-                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-                  {{ col.label }}
-                </span>
+                <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                  <span class="col-header-wrap">
+                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                    {{ col.label }}
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click.stop="openCdOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
               <template v-if="col.prop === 'ar_amount'" #default="{ row }">{{ $fm(row.ar_amount) }}</template>
               <template v-else-if="col.prop === 'collected_amount'" #default="{ row }">{{ $fm(row.collected_amount) }}</template>
@@ -89,6 +103,10 @@
       </el-table>
       <span v-else style="color: #909399">无核销明细</span>
     </el-dialog>
+    
+    <!-- 列排序弹窗 -->
+    <ColumnOrderDialog v-model:visible="orderOrderVisible" :columns="orderOrderList" @opened="initOrderOrderDrag" @confirm="confirmOrderOrder" />
+    <ColumnOrderDialog v-model:visible="cdOrderVisible" :columns="cdOrderList" @opened="initCdOrderDrag" @confirm="confirmCdOrder" />
   </div>
 </template>
 
@@ -96,6 +114,7 @@
 import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -107,7 +126,7 @@ const defaultColumns = [
   { prop: 'total_collected', label: '已收金额', width: 130, align: 'right' },
   { prop: 'balance', label: '余额', width: 130, align: 'right' },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
 
 const CD_STORAGE_KEY = 'mazu_ar_detail_columns'
 const defaultCdColumns = [
@@ -120,7 +139,7 @@ const defaultCdColumns = [
   { prop: 'collected_amount', label: '收款金额', width: 120, align: 'right' },
   { prop: 'balance', label: '余额', width: 110, align: 'right' },
 ]
-const { columns: cdColumns, columnVersion: cdColumnVersion, initColumnDrag: initCdColumnDrag } = useColumnDrag(defaultCdColumns, CD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
+const { columns: cdColumns, columnVersion: cdColumnVersion, initColumnDrag: initCdColumnDrag, orderDialogVisible: cdOrderVisible, orderList: cdOrderList, openOrderDialog: openCdOrder, initOrderDrag: initCdOrderDrag, confirmOrder: confirmCdOrder } = useColumnDrag(defaultCdColumns, CD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
 
 const activeTab = ref('summary')
 const loading = ref(false)
@@ -265,6 +284,14 @@ async function viewCollection(row) {
 }
 
 onMounted(fetchData)
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnDrag() })
+})
+watch(cdColumnVersion, () => {
+  nextTick(() => { initCdColumnDrag() })
+})
 </script>
 
 <style scoped>

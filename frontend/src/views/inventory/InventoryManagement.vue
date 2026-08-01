@@ -45,6 +45,7 @@
                       <el-dropdown-item v-for="c in allBalanceColumns" :key="c.prop">
                         <el-checkbox :model-value="c.visible !== false" @change="toggleBalanceColumn(c)">{{ c.label }}</el-checkbox>
                       </el-dropdown-item>
+                      <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -85,15 +86,19 @@
           </el-table>
           <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
         </el-card>
+    
+    <!-- 列排序弹窗 -->
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '@/api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -119,7 +124,7 @@ const defaultColumns = [
   { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right' },
   { prop: 'source_type', label: '入库单号', width: 180 },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
 const { fitTable } = useColumnAutoFit()
 const balanceTableRef = ref(null)
 const transTableRef = ref(null)
@@ -324,6 +329,11 @@ onMounted(() => {
   }).catch(() => {})
   fetchBalance()
   nextTick(initTransColumnDrag)
+})
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initBalanceVisible(); initColumnDrag() })
 })
 
 </script>

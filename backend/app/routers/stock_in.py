@@ -126,6 +126,18 @@ def receive_stock_in(
     operator = current_user.display_name or current_user.username
     batch_no = generate_batch_no(db, "FG")
 
+    # 生成入库单号（每次收货唯一）
+    from app.models.inventory import WarehouseInventory as _WI
+    _today_receipt = (
+        db.query(func.max(_WI.receipt_no))
+        .filter(_WI.receipt_no.like(f"RE-{date.today().strftime('%Y%m%d')}-%"))
+        .scalar()
+    )
+    _seq = 1
+    if _today_receipt:
+        _seq = int(_today_receipt.rsplit("-", 1)[1]) + 1
+    receipt_no = f"RE-{date.today().strftime('%Y%m%d')}-{_seq:03d}"
+
     # 成本：优先取关联采购明细单价
     unit_cost = 0.0
     if sin.purchase_item_id:
@@ -143,6 +155,7 @@ def receive_stock_in(
         in_date=date.today(),
         source_type="stock_in",
         source_doc_id=sin.id,
+        receipt_no=receipt_no,
     )
     db.add(inventory)
 
@@ -296,6 +309,7 @@ def get_stock_in_records(
             "product_name": prod.name_cn if prod else "",
             "product_code": prod.code if prod else "",
             "batch_no": inv.batch_no,
+            "receipt_no": inv.receipt_no or "",
             "quantity": inv.quantity,
             "in_date": str(inv.in_date),
         })

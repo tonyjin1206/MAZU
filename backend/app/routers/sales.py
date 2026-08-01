@@ -166,7 +166,7 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
 
     # 创建明细行
     from app.models.sales import SalesOrderItem
-    for item in items_data:
+    for idx, item in enumerate(items_data, 1):
         item_qty = float(item.get("quantity", 0) or 0)
         item_price = float(item.get("unit_price", 0) or 0)
         item_total_raw = float(item.get("total_amount", 0) or 0)
@@ -187,6 +187,7 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
             tax_rate=item.get("tax_rate", 13),
             tax_amount=item_tax,
             hs_code_id=item.get("hs_code_id"),
+            batch_no=f"{order_no[3:]}-{idx:02d}",
             remark=item.get("remark", ""),
         )
         db.add(so_item)
@@ -287,6 +288,7 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
              "total_amount": item.total_amount,
              "tax_rate": item.tax_rate, "tax_amount": item.tax_amount,
              "total_amount_excl_tax": item.total_amount_excl_tax,
+             "batch_no": item.batch_no or "",
              "delivered_qty": item.delivered_qty or 0,
              "received_qty": sum(
                  (s.received_qty or 0) for s in db.query(StockInOrder).filter(

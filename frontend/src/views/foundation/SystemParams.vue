@@ -83,6 +83,7 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
+                  <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -159,15 +160,19 @@
         <el-button type="primary" :loading="saving" @click="handleWarehouseSave">保存</el-button>
       </template>
     </el-dialog>
+    
+    <!-- 列排序弹窗 -->
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -178,7 +183,7 @@ const defaultColumns = [
   { prop: 'param_key', label: '参数值', minWidth: 140 },
   { prop: 'remark', label: '说明', minWidth: 180 },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
@@ -460,4 +465,9 @@ async function handleDelete(row) {
 }
 
 onMounted(() => { initColumnVisible(); loadGroups(); loadMainCategories() })
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnVisible(); initColumnDrag() })
+})
 </script>

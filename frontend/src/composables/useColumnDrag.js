@@ -2,10 +2,10 @@ import { ref, nextTick, onBeforeUnmount } from 'vue'
 import Sortable from 'sortablejs'
 
 /**
- * 通用列拖拽 composable
+ * 通用列拖拽 composable（含列排序弹窗）
  * 
  * 用法：
- *   const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, 'my_storage_key')
+ *   const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, 'my_storage_key')
  *   
  *   模板中：
  *   <el-table :key="columnVersion" ...>
@@ -19,6 +19,8 @@ import Sortable from 'sortablejs'
  *     </el-table-column>
  *   </el-table>
  *   
+ *   右键菜单底部加"列排序..."项 → openOrderDialog()
+ *   弹窗中用 column-order-list class 的容器 + initOrderDrag()
  *   fetchData 后调用 nextTick(initColumnDrag)
  * 
  * @param {Array} defaultColumns  默认列定义 [{ prop, label, width?, minWidth?, sortable?, align?, ... }]
@@ -83,5 +85,42 @@ export function useColumnDrag(defaultColumns, storageKey, selector = '.el-table_
 
   onBeforeUnmount(destroyColumnDrag)
 
-  return { columns, columnVersion, initColumnDrag }
+  // ===== 列排序弹窗 =====
+  const orderDialogVisible = ref(false)
+  const orderList = ref([])
+  let orderSortable = null
+
+  function openOrderDialog() {
+    orderList.value = columns.value.map(c => ({ ...c }))
+    orderDialogVisible.value = true
+    nextTick(() => initOrderDrag())
+  }
+
+  function initOrderDrag() {
+    const el = document.querySelector('.column-order-list')
+    if (!el) return
+    if (orderSortable) orderSortable.destroy()
+    orderSortable = Sortable.create(el, {
+      animation: 150,
+      handle: '.col-order-handle',
+      ghostClass: 'sortable-ghost',
+      onEnd: (evt) => {
+        const { oldIndex, newIndex } = evt
+        if (oldIndex === newIndex) return
+        const cols = [...orderList.value]
+        const [moved] = cols.splice(oldIndex, 1)
+        cols.splice(newIndex, 0, moved)
+        orderList.value = cols
+      },
+    })
+  }
+
+  function confirmOrder() {
+    columns.value = orderList.value.map(c => ({ ...c }))
+    localStorage.setItem(storageKey, JSON.stringify(orderList.value.map(c => c.prop)))
+    columnVersion.value++
+    orderDialogVisible.value = false
+  }
+
+  return { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder }
 }

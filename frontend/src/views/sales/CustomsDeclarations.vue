@@ -30,11 +30,18 @@
       <el-table :key="columnVersion" :data="list" v-loading="loading" stripe>
         <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
-          </template>
+                <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                  <span class="col-header-wrap">
+                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                    {{ col.label }}
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </template>
           <template v-if="col.prop === 'declare_amount'" #default="{ row }">{{ $fm(row.declare_amount) }}</template>
           <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
@@ -99,13 +106,16 @@
         <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderListDlg" @opened="initOrderDrag" @confirm="confirmOrder" />
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -121,7 +131,7 @@ const defaultColumns = [
   { prop: 'declare_date', label: '报关日期', width: 100, sortable: true },
   { prop: 'status', label: '状态', width: 100, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList: orderListDlg, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
@@ -172,6 +182,12 @@ const rules = {
   declare_date: [{ required: true, message: '请选择报关日期', trigger: 'change' }],
   customs_broker: [{ required: true, message: '请输入报关行', trigger: 'blur' }],
 }
+
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnDrag() })
+})
 
 onMounted(() => {
   fetchList()

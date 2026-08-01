@@ -36,7 +36,8 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                </el-dropdown-menu>
+                                  <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+</el-dropdown-menu>
               </template>
             </el-dropdown>
           </template>
@@ -107,15 +108,18 @@
         <el-button @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -132,7 +136,7 @@ const defaultColumns = [
   { prop: 'due_date', label: '交期', width: 100, sortable: true },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
@@ -246,6 +250,12 @@ async function openDetail(row) {
   } catch {}
   detailVisible.value = true
 }
+
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnVisible(); initColumnDrag() })
+})
 
 onMounted(() => { initColumnVisible(); fetchData(); loadSuppliers() })
 

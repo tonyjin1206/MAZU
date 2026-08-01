@@ -32,11 +32,18 @@
           :align="col.align"
         >
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
-          </template>
+                <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                  <span class="col-header-wrap">
+                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                    {{ col.label }}
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </template>
           <template v-if="col.prop === 'role_name'" #default="{ row }">
             <el-tag v-if="row.role_code === 'admin'" type="danger" size="small">管理员</el-tag>
             <el-tag v-else-if="row.role_code === 'manager'" type="warning" size="small">经理</el-tag>
@@ -93,13 +100,16 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import { authApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
@@ -112,7 +122,7 @@ const defaultColumns = [
   { prop: 'is_active', label: '状态', width: 80, align: 'center' },
   { prop: 'created_at', label: '创建时间', width: 160 },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -229,6 +239,12 @@ async function handleDelete(row) {
     // 取消或错误
   }
 }
+
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnDrag() })
+})
 
 onMounted(() => {
   fetchData()

@@ -43,6 +43,7 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
+                  <el-dropdown-item divided @click.stop="openOrderOrder" style="color: #409eff">列排序...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -108,6 +109,7 @@
                   <el-dropdown-item v-for="c in allItemColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleItemColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
+                  <el-dropdown-item divided @click.stop="openItemOrder" style="color: #409eff">列排序...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -280,16 +282,21 @@
         <el-button type="primary" :loading="submitting" @click="handleToStockIn">确定</el-button>
       </template>
     </el-dialog>
+    
+    <!-- 列排序弹窗 -->
+    <ColumnOrderDialog v-model:visible="orderOrderVisible" :columns="orderOrderList" @opened="initOrderOrderDrag" @confirm="confirmOrderOrder" />
+    <ColumnOrderDialog v-model:visible="itemOrderVisible" :columns="itemOrderList" @opened="initItemOrderDrag" @confirm="confirmItemOrder" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import { purchaseApi } from '../../api/business'
 import request from '../../api/request'
 
@@ -312,7 +319,7 @@ const defaultColumns = [
   { prop: 'unpaid_amount', label: '未付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
 
 const ITEM_STORAGE_KEY = 'mazu_purchase_order_item_columns'
 const defaultItemColumns = [
@@ -327,7 +334,7 @@ const defaultItemColumns = [
   { prop: 'tax_amount', label: '税额', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'total_amount_excl_tax', label: '不含税', width: 100, align: 'right', sortable: true, fmt: 'money' },
 ]
-const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
+const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, orderDialogVisible: itemOrderVisible, orderList: itemOrderList, openOrderDialog: openItemOrder, initOrderDrag: initItemOrderDrag, confirmOrder: confirmItemOrder } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 const { visibleColumns: visibleItemColumns, allColumns: allItemColumns, toggleColumn: toggleItemColumn, initColumnVisible: initItemVisible } = useColumnCustomize(itemColumns, ITEM_STORAGE_KEY)
 
@@ -815,6 +822,14 @@ async function handleDelete(row) {
 }
 
 onMounted(() => { initColumnVisible(); initItemVisible(); fetchData(); loadSuppliers(); loadMaterials() })
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnVisible(); initColumnDrag() })
+})
+watch(itemColumnVersion, () => {
+  nextTick(() => { initItemVisible(); initItemColumnDrag() })
+})
 </script>
 
 <style scoped>

@@ -61,7 +61,8 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                </el-dropdown-menu>
+                                  <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+</el-dropdown-menu>
               </template>
             </el-dropdown>
           </template>
@@ -133,15 +134,18 @@
         <el-button type="primary" :loading="dialogLoading" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed, nextTick } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
@@ -176,7 +180,7 @@ const defaultColumns = [
   { prop: 'purchase_price', label: '单价', width: 100, align: 'right', sortable: true },
   { prop: 'is_active', label: '状态', width: 80, align: 'center' },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 
@@ -288,6 +292,12 @@ async function handleToggle(row) {
 function rowClassName({ row }) {
   return row.is_active === 1 ? '' : 'mazu-disabled-row'
 }
+
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnVisible(); initColumnDrag() })
+})
 
 onMounted(() => { fetchData(); loadParamOptions() })
 initColumnVisible()

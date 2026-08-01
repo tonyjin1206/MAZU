@@ -43,6 +43,7 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
+                  <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -66,11 +67,12 @@
       <!-- 收货明细分录（点击上方行穿透） -->
       <el-card v-if="selectedRow" style="margin-top: 12px">
       <template #header>
-        <span style="font-weight: 600">收货明细 — {{ selectedRow.product_name || '' }} (入库单号 {{ selectedRow.stock_in_no }})</span>
+        <span style="font-weight: 600">收货明细</span>
       </template>
       <el-table :data="detailList" v-loading="detailLoading" stripe border size="small" show-summary :summary-method="detailSummary">
         <el-table-column prop="in_date" label="入库日期" width="120" />
         <el-table-column prop="warehouse" label="仓库" width="110" />
+        <el-table-column prop="receipt_no" label="入库单号" minWidth="160" />
         <el-table-column prop="batch_no" label="批次号" width="160" />
         <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" />
       </el-table>
@@ -112,21 +114,24 @@
         <el-button type="danger" :loading="submitting" @click="handleReturn">确认退回</el-button>
       </template>
     </el-dialog>
+    
+    <!-- 列排序弹窗 -->
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_stock_in_columns'
 const defaultColumns = [
-  { prop: 'stock_in_no', label: '入库单号', width: 140, sortable: true, visible: false },
   { prop: 'source_label', label: '销售订单号', minWidth: 130, sortable: true },
   { prop: 'product_code', label: '产品编码', minWidth: 110, sortable: true },
   { prop: 'product_name', label: '产品名称', minWidth: 140, sortable: true },
@@ -134,7 +139,7 @@ const defaultColumns = [
   { prop: 'received_qty', label: '已入', width: 80, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
@@ -230,6 +235,15 @@ async function handleCancel(row) {
 }
 
 onMounted(() => { initColumnVisible(); fetchData(); loadWarehouses() })
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => {
+    initColumnVisible()
+    initColumnDrag()
+    if (dataList.value.length) fitTable(tableRef.value, visibleColumns, dataList)
+  })
+})
 
 function getSummary({ columns, data }) {
   const sums = []

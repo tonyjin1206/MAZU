@@ -50,7 +50,8 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                </el-dropdown-menu>
+                                  <el-dropdown-item divided @click.stop="openOrderDialog" style="color: #409eff">列排序...</el-dropdown-item>
+</el-dropdown-menu>
               </template>
             </el-dropdown>
           </template>
@@ -78,14 +79,17 @@
         </el-timeline-item>
       </el-timeline>
     </el-card>
+    <ColumnOrderDialog v-model:visible="orderDialogVisible" :columns="orderList" @opened="initOrderDrag" @confirm="confirmOrder" />
+
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
 import { productionApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
 
@@ -98,7 +102,7 @@ const defaultColumns = [
   { prop: 'in_date', label: '入库日期', width: 110 },
   { prop: 'source_type', label: '来源', width: 120 },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
@@ -109,6 +113,12 @@ const traceData = ref([])
 const traceBatchNo = ref('')
 const loading = ref(false)
 const query = reactive({ batch_no: '', keyword: '', warehouse_id: null })
+
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnVisible(); initColumnDrag() })
+})
 
 onMounted(async () => {
   initColumnVisible()
