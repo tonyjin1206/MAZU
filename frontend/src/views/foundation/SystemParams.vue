@@ -4,10 +4,10 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div style="font-weight: 600">参数设置</div>
-          <el-button type="primary" @click="openCreate">新增参数</el-button>
+          <el-button type="primary" @click="openCreate">{{ activeGroup === 'material_category' ? '新增大类' : '新增参数' }}</el-button>
         </div>
       </template>
-      <el-tabs v-model="activeGroup" @tab-change="loadGroup">
+      <el-tabs v-model="activeGroup" @tab-change="onTabChange">
         <el-tab-pane v-for="g in groupOptions" :key="g" :label="groupLabel(g)" :name="g" />
       </el-tabs>
       <div style="color: #909399; font-size: 12px; margin-bottom: 8px">
@@ -16,17 +16,46 @@
     </el-card>
 
     <el-card>
-      <el-table :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="sort_order" label="排序" width="70" align="center" />
-        <el-table-column prop="param_label" label="显示名称" min-width="140" />
-        <el-table-column prop="param_key" label="参数值" min-width="140" />
-        <el-table-column v-if="activeGroup === 'material_sub_category'" label="所属大类" min-width="120">
-          <template #default="{ row }">{{ parentLabel(row.parent_key) }}</template>
+      <!-- 材料类别：大类 + 小类 两级树 -->
+      <el-table
+        v-if="activeGroup === 'material_category'"
+        :data="materialTree" row-key="key" default-expand-all
+        v-loading="loading" stripe border size="small" style="width: 100%"
+      >
+        <el-table-column label="大类 / 小类" min-width="220">
+          <template #default="{ row }">
+            <span v-if="row.is_sub" style="color: #606266">{{ row.label }}</span>
+            <span v-else style="font-weight: 600">{{ row.label }}</span>
+          </template>
         </el-table-column>
-        <el-table-column prop="remark" label="说明" min-width="160" />
+        <el-table-column prop="param_key" label="编号" width="90" align="center" />
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-switch :model-value="row.is_active === 1" @change="(v) => toggleActive(row, v)" />
+            <el-switch :model-value="row.is_active === 1" size="small" @change="(v) => toggleActive(row, v)" />
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="240" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="!row.is_sub" link type="primary" size="small" @click="openCreateSub(row)">+ 新增小类</el-button>
+            <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 其他参数组：通用表格（可拖拽列） -->
+      <el-table v-else :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-switch :model-value="row.is_active === 1" size="small" @change="(v) => toggleActive(row, v)" />
           </template>
         </el-table-column>
         <el-table-column label="操作" width="140" fixed="right">
@@ -38,26 +67,25 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="editId ? '编辑参数' : '新增参数'" width="480px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="editId ? '编辑参数' : (activeGroup === 'material_category' ? (isSubForm ? '新增小类' : '新增大类') : '新增参数')" width="480px" destroy-on-close>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="90px">
-        <el-form-item label="参数组" prop="group_name">
-          <el-select v-model="form.group_name" style="width: 100%" :disabled="!!editId" @change="onGroupChange">
+        <el-form-item v-if="!inMaterialCategory" label="参数组" prop="group_name">
+          <el-select v-model="form.group_name" style="width: 100%" :disabled="!!editId">
             <el-option v-for="g in groupOptions" :key="g" :label="groupLabel(g)" :value="g" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.group_name === 'material_sub_category'" label="所属大类" prop="parent_key">
-          <el-select v-model="form.parent_key" style="width: 100%" placeholder="选择该小类属于哪个大类">
+        <el-form-item v-if="isSubForm" label="所属大类" prop="parent_key">
+          <el-select v-model="form.parent_key" style="width: 100%" placeholder="选择该小类属于哪个大类" :disabled="!!editId">
             <el-option v-for="o in mainCategoryOptions" :key="o.key" :label="o.label" :value="o.key" />
           </el-select>
-          <div style="font-size: 12px; color: #909399; line-height: 1.5; margin-top: 4px">先添加大类（材料大类组），再在这里添加小类并指定所属大类。</div>
         </el-form-item>
         <el-form-item label="显示名称" prop="param_label">
-          <el-input v-model="form.param_label" placeholder="下拉框里看到的文字，如：原材料" />
+          <el-input v-model="form.param_label" :placeholder="inMaterialCategory ? (isSubForm ? '如：面布、底布、拉链' : '如：主材、辅材、包装材料') : '下拉框里看到的文字'" />
         </el-form-item>
         <el-form-item label="参数值">
-          <el-input :model-value="form.param_key" disabled>
+          <el-input :model-value="form.param_key" disabled style="width: 150px">
             <template #append>
-              <el-button v-if="!editId" @click="regenerateKey">重新编号</el-button>
+              <el-button v-if="!editId" style="padding: 0 10px" @click="regenerateKey">重编号</el-button>
             </template>
           </el-input>
           <div style="font-size: 12px; color: #909399; line-height: 1.5; margin-top: 4px">
@@ -89,10 +117,9 @@ import request from '../../api/request'
 const STORAGE_KEY = 'mazu_system_param_columns'
 const defaultColumns = [
   { prop: 'sort_order', label: '排序', width: 70, align: 'center' },
-  { prop: 'param_label', label: '显示名称', minWidth: 140 },
+  { prop: 'param_label', label: '显示名称', minWidth: 160 },
   { prop: 'param_key', label: '参数值', minWidth: 140 },
-  { prop: 'remark', label: '说明', minWidth: 160 },
-  { prop: 'is_active', label: '状态', width: 90, align: 'center' },
+  { prop: 'remark', label: '说明', minWidth: 180 },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
@@ -102,8 +129,6 @@ const GROUP_LABELS = {
   unit: '计量单位',
   payment_method: '付款方式',
   country: '国家',
-  material_main_category: '材料大类',
-  material_sub_category: '材料小类',
 }
 
 function groupLabel(g) { return GROUP_LABELS[g] || g }
@@ -125,27 +150,52 @@ const rules = {
   parent_key: [{ required: true, message: '请选择所属大类', trigger: 'change' }],
 }
 
-// 材料大类选项（小类选择所属大类用）
-const mainCategoryOptions = ref([])
-async function loadMainCategories() {
-  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch { mainCategoryOptions.value = [] }
-}
-
-function onGroupChange() {
-  form.parent_key = ''
-  if (form.group_name === 'material_sub_category') loadMainCategories()
-}
-
-function parentLabel(key) {
-  if (!key) return ''
-  const found = mainCategoryOptions.value.find(o => o.key === key)
-  return found ? found.label : key
-}
+// 这两个组并入「材料类别」tab 内管理，不单独显示
+const HIDDEN_GROUPS = ['material_main_category', 'material_sub_category']
 
 const groupOptions = computed(() => {
   const all = [...new Set([...groups.value, ...Object.keys(GROUP_LABELS)])]
-  return all
+  return all.filter(g => !HIDDEN_GROUPS.includes(g))
 })
+
+const inMaterialCategory = computed(() => activeGroup.value === 'material_category')
+const isSubForm = computed(() => form.group_name === 'material_sub_category')
+const mainCategoryOptions = ref([])
+
+// ===== 材料类别树（大类 + 小类）=====
+const materialTree = ref([])
+
+async function loadMaterialTree() {
+  loading.value = true
+  try {
+    const [mainRes, subRes] = await Promise.all([
+      request.get('/foundation/params/group/material_main_category').catch(() => ({ items: [] })),
+      request.get('/foundation/params/group/material_sub_category').catch(() => ({ items: [] })),
+    ])
+    const mains = mainRes.items || []
+    const subs = subRes.items || []
+    materialTree.value = mains.map(m => ({
+      key: m.param_key, label: m.param_label, param_key: m.param_key, id: m.id,
+      sort_order: m.sort_order, remark: m.remark || '',
+      is_active: m.is_active, is_sub: false,
+      children: subs.filter(s => s.parent_key === m.param_key).map(s => ({
+        key: s.param_key, label: s.param_label, param_key: s.param_key,
+        parent_key: s.parent_key, is_active: s.is_active, is_sub: true, id: s.id,
+        sort_order: s.sort_order, remark: s.remark || '',
+      })),
+    }))
+  } catch { materialTree.value = [] } finally { loading.value = false }
+}
+
+async function loadGroup() {
+  if (!activeGroup.value) return
+  if (activeGroup.value === 'material_category') { loadMaterialTree(); return }
+  loading.value = true
+  try {
+    const res = await request.get(`/foundation/params/group/${activeGroup.value}`)
+    list.value = res.items || []
+  } catch { list.value = [] } finally { loading.value = false; nextTick(initColumnDrag) }
+}
 
 async function loadGroups() {
   try { groups.value = await request.get('/foundation/params/groups') || [] } catch { groups.value = [] }
@@ -155,19 +205,19 @@ async function loadGroups() {
   }
 }
 
-async function loadGroup() {
-  if (!activeGroup.value) return
-  loading.value = true
-  try {
-    const res = await request.get(`/foundation/params/group/${activeGroup.value}`)
-    list.value = res.items || []
-  } catch { list.value = [] } finally { loading.value = false; nextTick(initColumnDrag) }
+async function loadMainCategories() {
+  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch { mainCategoryOptions.value = [] }
+}
+
+async function onTabChange() {
+  loadGroup()
 }
 
 function nextParamKey() {
   // 组内下一个编号：取现有两位数字编号最大值 +1
   let max = 0
-  for (const r of list.value) {
+  const src = activeGroup.value === 'material_category' ? materialTree.value : list.value
+  for (const r of src) {
     const n = parseInt(r.param_key, 10)
     if (!isNaN(n) && n > max) max = n
   }
@@ -180,15 +230,50 @@ function regenerateKey() {
 
 function openCreate() {
   editId.value = null
-  Object.assign(form, { group_name: activeGroup.value || groups.value[0] || '', param_label: '', param_key: nextParamKey(), parent_key: '', sort_order: (list.value.length || 0) + 1, remark: '' })
-  if (form.group_name === 'material_sub_category') loadMainCategories()
+  if (activeGroup.value === 'material_category') {
+    Object.assign(form, { group_name: 'material_main_category', param_label: '', param_key: nextParamKey(), parent_key: '', sort_order: (materialTree.value.length || 0) + 1, remark: '' })
+    loadMainCategories()
+  } else {
+    Object.assign(form, { group_name: activeGroup.value || groups.value[0] || '', param_label: '', param_key: nextParamKey(), parent_key: '', sort_order: (list.value.length || 0) + 1, remark: '' })
+  }
   dialogVisible.value = true
+}
+
+function openCreateSub(mainRow) {
+  editId.value = null
+  Object.assign(form, {
+    group_name: 'material_sub_category',
+    param_label: '',
+    param_key: nextSubKey(mainRow.param_key),
+    parent_key: mainRow.param_key,
+    sort_order: (mainRow.children?.length || 0) + 1,
+    remark: '',
+  })
+  dialogVisible.value = true
+}
+
+function nextSubKey(mainKey) {
+  const subs = materialTree.value.find(m => m.param_key === mainKey)?.children || []
+  let max = 0
+  for (const s of subs) {
+    const n = parseInt(s.param_key, 10)
+    if (!isNaN(n) && n > max) max = n
+  }
+  return String(max + 1).padStart(2, '0')
 }
 
 function openEdit(row) {
   editId.value = row.id
-  Object.assign(form, { group_name: row.group_name, param_label: row.param_label, param_key: row.param_key, parent_key: row.parent_key || '', sort_order: row.sort_order, remark: row.remark || '' })
-  if (form.group_name === 'material_sub_category') loadMainCategories()
+  if (activeGroup.value === 'material_category') {
+    Object.assign(form, {
+      group_name: row.is_sub ? 'material_sub_category' : 'material_main_category',
+      param_label: row.label, param_key: row.param_key, parent_key: row.parent_key || '',
+      sort_order: row.sort_order || 0, remark: row.remark || '',
+    })
+    if (row.is_sub) loadMainCategories()
+  } else {
+    Object.assign(form, { group_name: row.group_name, param_label: row.param_label, param_key: row.param_key, parent_key: row.parent_key || '', sort_order: row.sort_order, remark: row.remark || '' })
+  }
   dialogVisible.value = true
 }
 
@@ -221,13 +306,15 @@ async function toggleActive(row, v) {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(`确定删除「${row.param_label}」？<br><span style="color:#e6a23c;font-size:12px">注意：有业务数据正在使用的参数不能删除，只能停用（停用后下拉不再出现，历史数据不受影响）。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
+  await ElMessageBox.confirm(`确定删除「${row.label || row.param_label}」？<br><span style="color:#e6a23c;font-size:12px">注意：有业务数据正在使用的参数不能删除，只能停用（停用后下拉不再出现，历史数据不受影响）。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
   try {
     await request.delete(`/foundation/params/${row.id}/hard`)
     ElMessage.success('已删除')
     loadGroup()
-  } catch { }
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
 }
 
-onMounted(() => { loadGroups() })
+onMounted(() => { loadGroups(); loadMainCategories() })
 </script>
