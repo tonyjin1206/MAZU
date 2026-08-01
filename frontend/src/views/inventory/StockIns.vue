@@ -54,17 +54,30 @@
         </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === '待入库'" link type="primary" size="small" @click="openReceive(row)">入库</el-button>
-            <el-button v-if="row.status === '已入库' || row.status === '部分入库'" link type="success" size="small" @click="confirmComplete(row)">确认完成</el-button>
+            <el-button v-if="row.status === '待入库' || row.status === '部分入库'" link type="primary" size="small" @click="openReceive(row)">入库</el-button>
+            <el-button v-if="row.status === '待入库' || row.status === '部分入库' || row.status === '已入库'" link type="success" size="small" @click="confirmComplete(row)">确认完成</el-button>
             <el-button v-if="row.status === '已入库' || row.status === '部分入库'" link type="danger" size="small" @click="openReturn(row)">退回</el-button>
           </template>
         </el-table-column>
       </el-table>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 16px" />
-    </el-card>
+      </el-card>
 
-    <!-- 入库弹窗 -->
-    <el-dialog v-model="receiveVisible" title="入库收货" width="440px" destroy-on-close>
+      <!-- 收货明细分录（点击上方行穿透） -->
+      <el-card v-if="selectedRow" style="margin-top: 12px">
+      <template #header>
+        <span style="font-weight: 600">收货明细 — {{ selectedRow.product_name || '' }} (入库单号 {{ selectedRow.stock_in_no }})</span>
+      </template>
+      <el-table :data="detailList" v-loading="detailLoading" stripe border size="small" show-summary :summary-method="detailSummary">
+        <el-table-column prop="in_date" label="入库日期" width="120" />
+        <el-table-column prop="warehouse" label="仓库" width="110" />
+        <el-table-column prop="batch_no" label="批次号" width="160" />
+        <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" />
+      </el-table>
+      </el-card>
+
+      <!-- 入库弹窗 -->
+      <el-dialog v-model="receiveVisible" title="入库收货" width="440px" destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="入库单号"><el-input :model-value="receiveForm.stock_in_no" readonly /></el-form-item>
         <el-form-item label="产品"><el-input :model-value="`${receiveForm.product_code || ''} ${receiveForm.product_name || ''}`" readonly /></el-form-item>
@@ -99,16 +112,6 @@
         <el-button type="danger" :loading="submitting" @click="handleReturn">确认退回</el-button>
       </template>
     </el-dialog>
-
-    <!-- 收货明细分录弹窗（穿透看多次入库） -->
-    <el-dialog v-model="detailVisible" :title="`入库明细 — ${detailStockInNo}`" width="600px" destroy-on-close>
-      <el-table :data="detailList" v-loading="detailLoading" stripe border size="small">
-        <el-table-column prop="warehouse" label="仓库" width="100" />
-        <el-table-column prop="batch_no" label="批次号" width="150" />
-        <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" />
-        <el-table-column prop="in_date" label="入库日期" width="120" />
-      </el-table>
-    </el-dialog>
   </div>
 </template>
 
@@ -123,8 +126,8 @@ import request from '../../api/request'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_stock_in_columns'
 const defaultColumns = [
-  { prop: 'stock_in_no', label: '入库单号', width: 140, sortable: true },
-  { prop: 'source_label', label: '来源', minWidth: 130, sortable: true },
+  { prop: 'stock_in_no', label: '入库单号', width: 140, sortable: true, visible: false },
+  { prop: 'source_label', label: '销售订单号', minWidth: 130, sortable: true },
   { prop: 'product_code', label: '产品编码', minWidth: 110, sortable: true },
   { prop: 'product_name', label: '产品名称', minWidth: 140, sortable: true },
   { prop: 'quantity', label: '应入', width: 80, align: 'right', sortable: true, fmt: 'qty' },
@@ -259,17 +262,27 @@ async function handleReturn() {
 }
 
 // ========== 穿透看收货明细 ==========
-const detailVisible = ref(false)
-const detailStockInNo = ref('')
+const selectedRow = ref(null)
 const detailList = ref([])
 const detailLoading = ref(false)
+const detailStockInNo = ref('')
 async function openDetail(row) {
+  selectedRow.value = row
   detailStockInNo.value = row.stock_in_no || ''
-  detailVisible.value = true
   detailLoading.value = true
   try {
     const res = await request.get(`/stock-in/${row.id}/records`)
     detailList.value = res.items || []
   } catch { detailList.value = [] } finally { detailLoading.value = false }
+}
+
+function detailSummary({ columns, data }) {
+  const sums = []
+  columns.forEach((col, i) => {
+    if (i === 0) sums[i] = '合计'
+    else if (col.property === 'quantity') sums[i] = data.reduce((s, r) => s + (r.quantity || 0), 0)
+    else sums[i] = ''
+  })
+  return sums
 }
 </script>

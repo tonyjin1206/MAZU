@@ -1,0 +1,18 @@
+/* 列拖拽手柄加大点击区域（⠿ 旁 8px padding，整个区域可拖） */
+.col-drag-handle {
+  cursor: grab;
+  padding: 4px 8px;
+  margin: -4px -4px -4px 0;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+}
+.col-drag-handle:active { cursor: grabbing; }
+.col-header-wrap {
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+/* Sortable 拖拽时的幽灵列样式 */
+.sortable-ghost { opacity: 0.4; }
+.sortable-drag { background: #ecf5ff; }

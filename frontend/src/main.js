@@ -6,6 +6,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import App from './App.vue'
 import router from './router'
 import '../../docs/vi-design/mts-variables.css'
+import './assets/drag-fix.css'
 
 // 启动时：清理无效的登录缓存
 const token = localStorage.getItem('token')
