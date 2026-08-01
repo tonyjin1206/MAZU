@@ -28,8 +28,8 @@ function fmtMoney(v) {
  *   fmt: 'money' 金额（含 ¥ 前缀与千分位）
  *   fmt: 'qty'   数量
  *   fmt: 'tag'   状态标签（含标签内边距）
- * 默认开启一屏适配：所有列加起来不足表格宽度时按比例补足，
- * 保证一屏完整显示；内容真的放不下时才出现横向滚动。
+ * 默认按内容测量（不撑满屏）：所有列加起来不足表格宽度时右侧留白，
+ * 内容放不下时才出现横向滚动；如需补足一屏可传 options.fitToContainer=true。
  *
  * @param {Ref} el        el-table 的 ref（组件实例或 DOM 均可，自动取 $el）
  * @param {Ref<Array>} columns  列配置 ref（[{ prop, label, width, fmt?, ... }]）
@@ -38,7 +38,7 @@ function fmtMoney(v) {
  */
 export function useColumnAutoFit() {
   function fitTable(el, columns, data, options = {}) {
-    const { padding = 4, minWidth = 50, fitToContainer = true } = options
+    const { padding = 4, minWidth = 50, fitToContainer = false } = options
     nextTick(() => {
       const root = el?.$el || el
       if (!root || !columns?.value?.length) return

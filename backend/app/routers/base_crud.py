@@ -50,6 +50,8 @@ def register_crud(
     """为模型注册标准 CRUD 路由"""
 
     entity_name = model.__name__
+    # 未提供独立 update schema 时复用 create schema（修复 PUT 422 Field required）
+    UpdateSchema = update_schema or create_schema
 
     # 列表查询
     @router.get(f"/{prefix}", response_model=dict, tags=[tag])
@@ -119,7 +121,7 @@ def register_crud(
     @router.put(f"/{prefix}/{{item_id}}", response_model=out_schema, tags=[tag])
     def update_item(
         item_id: int,
-        data: update_schema,
+        data: UpdateSchema,
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ):

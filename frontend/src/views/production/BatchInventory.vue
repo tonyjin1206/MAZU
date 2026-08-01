@@ -32,7 +32,7 @@
         style="width: 100%"
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -40,10 +40,19 @@
           :align="col.align"
         >
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
+            <el-dropdown trigger="contextmenu" :hide-on-click="false">
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="c in allColumns" :key="c.prop">
+                    <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <template v-if="col.prop === 'quantity'" #default="{ row }">
             {{ $fq(row.quantity) }}
@@ -76,6 +85,7 @@
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import { productionApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
 
@@ -91,6 +101,7 @@ const defaultColumns = [
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
+const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 
 const warehouseList = ref([])
 const batchList = ref([])
@@ -100,6 +111,7 @@ const loading = ref(false)
 const query = reactive({ batch_no: '', keyword: '', warehouse_id: null })
 
 onMounted(async () => {
+  initColumnVisible()
   try { warehouseList.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch {}
 })
 
@@ -113,7 +125,7 @@ async function search() {
     const res = await productionApi.batch.query(params)
     batchList.value = res.items || []
   } finally { loading.value = false
-  nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, batchList) }) }
+  nextTick(() => { initColumnDrag(); fitTable(tableRef.value, visibleColumns, batchList) }) }
 }
 
 async function trace(batchNo) {

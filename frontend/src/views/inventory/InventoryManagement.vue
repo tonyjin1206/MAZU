@@ -30,12 +30,21 @@
             </el-form-item>
           </el-form>
           <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border @row-click="viewTransactions" :show-summary="true" :summary-method="getBalanceSummary">
-            <el-table-column v-for="col in balanceColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+            <el-table-column v-for="col in visibleBalanceColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
-                <span class="col-header-wrap">
-                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-                  {{ col.label }}
-                </span>
+                <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                  <span class="col-header-wrap">
+                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                    {{ col.label }}
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item v-for="c in allBalanceColumns" :key="c.prop">
+                        <el-checkbox :model-value="c.visible !== false" @change="toggleBalanceColumn(c)">{{ c.label }}</el-checkbox>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
               <template v-if="col.prop === 'material_name'" #default="{ row }">
                 <span style="font-weight: 500; color: #409eff; cursor: pointer">{{ row.material_name || row.product_name }}</span>
@@ -108,12 +117,21 @@
             </el-form-item>
           </el-form>
           <el-table ref="transTableRef" class="drag-table-trans" :key="transColumnVersion" :data="transactionList" v-loading="transLoading" stripe border :show-summary="true" :summary-method="getTransSummary">
-            <el-table-column v-for="col in transColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+            <el-table-column v-for="col in visibleTransColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
-                <span class="col-header-wrap">
-                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-                  {{ col.label }}
-                </span>
+                <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                  <span class="col-header-wrap">
+                    <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                    {{ col.label }}
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item v-for="c in allTransColumns" :key="c.prop">
+                        <el-checkbox :model-value="c.visible !== false" @change="toggleTransColumn(c)">{{ c.label }}</el-checkbox>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
               <template v-if="col.prop === 'trans_date'" #default="{ row }">{{ (row.trans_date || '').slice(0, 10) }}</template>
               <template v-else-if="col.prop === 'trans_type'" #default="{ row }">
@@ -141,6 +159,7 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import request from '@/api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -168,6 +187,7 @@ const { fitTable } = useColumnAutoFit()
 const balanceTableRef = ref(null)
 const transTableRef = ref(null)
 const balanceColumns = computed(() => columns.value.filter(c => balancePeriod.value ? c.group !== 'snapshot' : c.group !== 'period'))
+const { visibleColumns: visibleBalanceColumns, allColumns: allBalanceColumns, toggleColumn: toggleBalanceColumn, initColumnVisible: initBalanceVisible } = useColumnCustomize(balanceColumns, STORAGE_KEY)
 
 const TRANS_STORAGE_KEY = 'mazu_inventory_trans_columns'
 const defaultTransColumns = [
@@ -184,6 +204,7 @@ const defaultTransColumns = [
   { prop: 'source_doc_no', label: '单据号', width: 140 },
 ]
 const { columns: transColumns, columnVersion: transColumnVersion, initColumnDrag: initTransColumnDrag } = useColumnDrag(defaultTransColumns, TRANS_STORAGE_KEY, '.drag-table-trans .el-table__header-wrapper thead tr')
+const { visibleColumns: visibleTransColumns, allColumns: allTransColumns, toggleColumn: toggleTransColumn, initColumnVisible: initTransVisible } = useColumnCustomize(transColumns, TRANS_STORAGE_KEY)
 
 const activeTab = ref('balance')
 const warehouseList = ref([])
@@ -214,7 +235,7 @@ async function fetchBalance() {
     balanceTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally {
     balanceLoading.value = false
-    nextTick(() => { initColumnDrag(); fitTable(balanceTableRef.value, balanceColumns, balanceList) })
+    nextTick(() => { initColumnDrag(); fitTable(balanceTableRef.value, visibleBalanceColumns, balanceList) })
   }
 }
 
@@ -285,7 +306,7 @@ async function fetchTransactions() {
     transTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally {
     transLoading.value = false
-    nextTick(() => { initTransColumnDrag(); fitTable(transTableRef.value, transColumns, transactionList) })
+    nextTick(() => { initTransColumnDrag(); fitTable(transTableRef.value, visibleTransColumns, transactionList) })
   }
 }
 
@@ -349,6 +370,8 @@ function getTransSummary({ columns, data }) {
 }
 
 onMounted(() => {
+  initBalanceVisible()
+  initTransVisible()
   request.get('/foundation/warehouses', { params: { page_size: 50 } }).then(res => {
     warehouseList.value = res.items || []
   }).catch(() => {})

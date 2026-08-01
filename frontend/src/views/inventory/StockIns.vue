@@ -31,12 +31,21 @@
 
     <el-card>
       <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
+            <el-dropdown trigger="contextmenu" :hide-on-click="false">
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="c in allColumns" :key="c.prop">
+                    <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <template v-if="col.prop === 'quantity' || col.prop === 'received_qty'" #default="{ row }">{{ row[col.prop] || 0 }}</template>
           <template v-else-if="col.prop === 'status'" #default="{ row }">
@@ -83,6 +92,7 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -99,6 +109,7 @@ const defaultColumns = [
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
+const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 
 const loading = ref(false)
 const dataList = ref([])
@@ -130,7 +141,7 @@ async function fetchData() {
     const res = await request.get('/stock-in', { params })
     dataList.value = res.items || []
     total.value = res.total || 0
-  } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, dataList) }) }
+  } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, visibleColumns, dataList) }) }
 }
 
 async function loadWarehouses() {
@@ -190,5 +201,5 @@ async function handleCancel(row) {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退回失败') }
 }
 
-onMounted(() => { fetchData(); loadWarehouses() })
+onMounted(() => { initColumnVisible(); fetchData(); loadWarehouses() })
 </script>

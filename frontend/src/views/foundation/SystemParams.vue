@@ -57,25 +57,35 @@
         </el-table-column>
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-switch :model-value="row.is_active === 1" size="small" @change="(v) => toggleWarehouse(row, v)" />
+            <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">{{ row.is_active === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openWarehouseEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleWarehouseDelete(row)">删除</el-button>
+            <el-button link :type="row.is_active === 1 ? 'warning' : 'success'" size="small" @click="toggleWarehouse(row)">{{ row.is_active === 1 ? '停用' : '启用' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
 
       <!-- 其他参数组：通用表格（可拖拽列） -->
       <el-table ref="tableRef" v-else :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
+            <el-dropdown trigger="contextmenu" :hide-on-click="false">
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="c in allColumns" :key="c.prop">
+                    <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="90" align="center">
@@ -157,6 +167,7 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
@@ -170,6 +181,7 @@ const defaultColumns = [
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
 const tableRef = ref(null)
+const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 
 const GROUP_LABELS = {
   supplier_type: '供应商类型',
@@ -252,7 +264,7 @@ const warehouseList = ref([])
 const warehouseDialogVisible = ref(false)
 const warehouseEditId = ref(null)
 const warehouseFormRef = ref(null)
-const warehouseForm = reactive({ name: '', wh_type: '原辅料仓库' })
+const warehouseForm = reactive({ code: '', name: '', wh_type: '原辅料仓库' })
 const warehouseRules = { name: [{ required: true, message: '请输入仓库名称', trigger: 'blur' }] }
 
 async function loadWarehouses() {
@@ -274,13 +286,13 @@ function nextWarehouseCode() {
 
 function openWarehouseCreate() {
   warehouseEditId.value = null
-  Object.assign(warehouseForm, { name: '', wh_type: '原辅料仓库' })
+  Object.assign(warehouseForm, { code: '', name: '', wh_type: '原辅料仓库' })
   warehouseDialogVisible.value = true
 }
 
 function openWarehouseEdit(row) {
   warehouseEditId.value = row.id
-  Object.assign(warehouseForm, { name: row.name, wh_type: row.wh_type || '原辅料仓库' })
+  Object.assign(warehouseForm, { code: row.code || '', name: row.name, wh_type: row.wh_type || '原辅料仓库' })
   warehouseDialogVisible.value = true
 }
 
@@ -303,12 +315,15 @@ async function handleWarehouseSave() {
   } finally { saving.value = false }
 }
 
-async function toggleWarehouse(row, v) {
+async function toggleWarehouse(row) {
+  const next = row.is_active === 1 ? 0 : 1
   try {
-    await request.put(`/foundation/warehouses/${row.id}`, { is_active: v ? 1 : 0 })
-    row.is_active = v ? 1 : 0
-    ElMessage.success(v ? '已启用' : '已停用')
-  } catch { }
+    await request.put(`/foundation/warehouses/${row.id}`, { is_active: next })
+    row.is_active = next
+    ElMessage.success(next ? '已启用' : '已停用')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '操作失败')
+  }
 }
 
 async function handleWarehouseDelete(row) {
@@ -444,5 +459,5 @@ async function handleDelete(row) {
   }
 }
 
-onMounted(() => { loadGroups(); loadMainCategories() })
+onMounted(() => { initColumnVisible(); loadGroups(); loadMainCategories() })
 </script>

@@ -41,7 +41,7 @@
         :row-class-name="rowClassName"
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -51,10 +51,19 @@
           :align="col.align"
         >
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
+            <el-dropdown trigger="contextmenu" :hide-on-click="false">
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="c in allColumns" :key="c.prop">
+                    <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <template v-if="col.prop === 'is_active'" #default="{ row }">
             <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">
@@ -159,6 +168,7 @@ import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
@@ -198,6 +208,7 @@ const defaultColumns = [
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()
+const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 
 function rowClassName({ row }) {
   return row.is_active === 0 ? 'mazu-disabled-row' : ''
@@ -357,6 +368,7 @@ async function handleToggle(row) {
 }
 
 onMounted(() => {
+  initColumnVisible()
   fetchData()
   loadSupplierTypes()
   loadCountries()
