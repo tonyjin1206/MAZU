@@ -111,21 +111,21 @@ import request from '@/api/request'
 // 余额表：快照视图(snapshot)与期间视图(period)列互斥，由 balancePeriod 过滤显示
 const STORAGE_KEY = 'mazu_inventory_balance_columns'
 const defaultColumns = [
-  { prop: 'warehouse', label: '仓库', width: 100 },
-  { prop: 'material_name', label: '物料', minWidth: 45 },
-  { prop: 'material_spec', label: '规格', minWidth: 80 },
-  { prop: 'material_model', label: '型号', minWidth: 80 },
-  { prop: 'material_id', label: '类型', width: 80, align: 'center' },
-  { prop: 'batch_no', label: '批次号', width: 140 },
-  { prop: 'unit_cost', label: '单价(¥)', width: 90, align: 'right', group: 'snapshot' },
-  { prop: 'total_cost', label: '金额(¥)', width: 110, align: 'right', group: 'snapshot' },
-  { prop: 'opening_qty', label: '期初', width: 80, align: 'right', group: 'period' },
-  { prop: 'period_in_qty', label: '入库', width: 80, align: 'right', group: 'period' },
-  { prop: 'period_out_qty', label: '出库', width: 80, align: 'right', group: 'period' },
-  { prop: 'closing_qty', label: '期末数量', width: 90, align: 'right', group: 'period' },
-  { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', group: 'period' },
-  { prop: 'so_order_qty', label: '订单数', width: 70, align: 'right' },
-  { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right' },
+  { prop: 'warehouse', label: '仓库', width: 100, sortable: true },
+  { prop: 'material_name', label: '物料', minWidth: 45, sortable: true, measureKeys: ['material_name', 'product_name', 'material_code', 'product_code'] },
+  { prop: 'material_spec', label: '规格', minWidth: 80, sortable: true, measureKeys: ['material_spec', 'product_spec'] },
+  { prop: 'material_model', label: '型号', minWidth: 80, sortable: true, measureKeys: ['material_model', 'product_model'] },
+  { prop: 'material_id', label: '类型', width: 80, align: 'center', sortable: true },
+  { prop: 'batch_no', label: '批次号', width: 140, sortable: true },
+  { prop: 'unit_cost', label: '单价(¥)', width: 90, align: 'right', group: 'snapshot', sortable: true, fmt: 'money' },
+  { prop: 'total_cost', label: '金额(¥)', width: 110, align: 'right', group: 'snapshot', sortable: true, fmt: 'money' },
+  { prop: 'opening_qty', label: '期初', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
+  { prop: 'period_in_qty', label: '入库', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
+  { prop: 'period_out_qty', label: '出库', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
+  { prop: 'closing_qty', label: '期末数量', width: 90, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
+  { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', group: 'period', sortable: true, fmt: 'money' },
+  { prop: 'so_order_qty', label: '订单数', width: 70, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right', sortable: true, fmt: 'qty' },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
 const { fitTable } = useColumnAutoFit()
@@ -136,15 +136,15 @@ const { visibleColumns: visibleBalanceColumns, allColumns: allBalanceColumns, to
 
 const TRANS_STORAGE_KEY = 'mazu_inventory_trans_columns'
 const defaultTransColumns = [
-  { prop: 'trans_date', label: '日期', width: 100 },
-  { prop: 'trans_no', label: '库存流水号', width: 160 },
-  { prop: 'trans_type', label: '类型', width: 100 },
-  { prop: 'material_name', label: '物料', minWidth: 160 },
-  { prop: 'batch_no', label: '批次号', width: 140 },
-  { prop: 'quantity', label: '数量', width: 100, align: 'right' },
-  { prop: 'unit_cost', label: '单价(¥)', width: 100, align: 'right' },
-  { prop: 'total_amount', label: '金额(¥)', width: 120, align: 'right' },
-  { prop: 'warehouse', label: '仓库', width: 100 },
+  { prop: 'trans_date', label: '日期', width: 100, sortable: true },
+  { prop: 'trans_no', label: '库存流水号', width: 160, sortable: true },
+  { prop: 'trans_type', label: '类型', width: 100, sortable: true },
+  { prop: 'material_name', label: '物料', minWidth: 160, sortable: true, measureKeys: ['material_name', 'product_name', 'material_code', 'product_code'] },
+  { prop: 'batch_no', label: '批次号', width: 140, sortable: true },
+  { prop: 'quantity', label: '数量', width: 100, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'unit_cost', label: '单价(¥)', width: 100, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'total_amount', label: '金额(¥)', width: 120, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'warehouse', label: '仓库', width: 100, sortable: true },
   { prop: 'source_doc_type', label: '单据', width: 100 },
   { prop: 'source_doc_no', label: '单据号', width: 140 },
 ]

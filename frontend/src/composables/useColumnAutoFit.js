@@ -53,7 +53,18 @@ export function useColumnAutoFit() {
       cols.forEach(col => {
         let maxW = textWidth(col.label, true) + CELL_PAD + CARET + HANDLE
         rows.forEach(row => {
-          let v = row[col.prop]
+          let v = null
+          // 多字段回退：measureKeys 取所有非空值拼接测量（如 物料名 + 编码tag）
+          if (col.measureKeys) {
+            const parts = []
+            for (const k of col.measureKeys) {
+              const kv = row[k]
+              if (kv !== null && kv !== undefined && kv !== '') parts.push(String(kv))
+            }
+            v = parts.join(' ')
+          } else {
+            v = row[col.prop]
+          }
           let text = String(v ?? '')
           if (col.fmt === 'money') text = fmtMoney(v)
           else if (col.fmt === 'qty') text = String(v ?? '')
