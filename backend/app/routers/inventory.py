@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
 from app.models.auth import User
-from app.models.inventory import WarehouseInventory, StockTransaction
+from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder
 from app.models.foundation import Warehouse, Material, Product
+from app.models.sales import SalesOrder, SalesOrderItem
 from app.utils.auth import get_current_user
 
 router = APIRouter()
@@ -202,6 +203,28 @@ def get_inventory_balance(
         mat = db.query(Material).filter(Material.id == inv.material_id).first() if inv.material_id else None
         prod = db.query(Product).filter(Product.id == inv.product_id).first() if inv.product_id else None
 
+        # 关联销售订单（成品入库 → 销售明细 → 销售订单）
+        so_order_no, so_order_qty, so_received_qty = "", 0, 0
+        unit_cost = inv.unit_cost
+        source_label = inv.source_type or ""
+        if inv.source_doc_id:
+            stock_in = db.query(StockInOrder).filter(StockInOrder.id == inv.source_doc_id).first()
+            if stock_in:
+                source_label = "成品入库 " + (stock_in.stock_in_no or "")
+                if stock_in.sales_item_id:
+                    so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == stock_in.sales_item_id).first()
+                    if so_item:
+                        so_order = db.query(SalesOrder).filter(SalesOrder.id == stock_in.sales_order_id).first()
+                        so_order_no = so_order.order_no if so_order else ""
+                        so_order_qty = so_item.quantity or 0
+                        unit_cost = so_item.unit_price or 0
+                        # 该明细行累计已入库数量
+                        so_received_qty = (
+                            db.query(func.sum(StockInOrder.received_qty))
+                            .filter(StockInOrder.sales_item_id == stock_in.sales_item_id, StockInOrder.status.in_(["已入库", "部分入库"]))
+                            .scalar() or 0
+                        )
+
         result.append({
             "id": inv.id,
             "warehouse": wh.name if wh else "",
@@ -217,10 +240,13 @@ def get_inventory_balance(
             "product_model": prod.model if prod else "",
             "batch_no": inv.batch_no,
             "quantity": inv.quantity,
-            "unit_cost": round(inv.unit_cost, 2),
-            "total_cost": round(inv.total_cost, 2),
+            "unit_cost": round(unit_cost, 2),
+            "total_cost": round(unit_cost * (inv.quantity or 0), 2),
             "in_date": str(inv.in_date),
-            "source_type": inv.source_type or "",
+            "source_type": source_label,
+            "so_order_no": so_order_no,
+            "so_order_qty": so_order_qty,
+            "so_received_qty": so_received_qty,
             "is_frozen": inv.is_frozen,
         })
 

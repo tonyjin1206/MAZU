@@ -22,8 +22,14 @@
                 <el-option label="成品" value="product" />
               </el-select>
             </el-form-item>
-            <el-form-item label="物料名称">
-              <el-input v-model="balanceQuery.keyword" placeholder="名称/编码" clearable style="width: 160px" @keyup.enter="fetchBalance" />
+            <el-form-item label="编码">
+              <el-input v-model="balanceQuery.code" placeholder="物料编码" clearable style="width: 130px" @keyup.enter="fetchBalance" />
+            </el-form-item>
+            <el-form-item label="名称">
+              <el-input v-model="balanceQuery.keyword" placeholder="物料名称" clearable style="width: 140px" @keyup.enter="fetchBalance" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="fetchBalance">搜索</el-button>
             </el-form-item>
             <el-form-item label="时间范围">
               <el-date-picker v-model="balanceQuery.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 280px" @change="onDateRangeChange" />
@@ -74,17 +80,20 @@
                 <span style="color: #409eff; font-weight: bold">{{ $fm(row.closing_cost) }}</span>
               </template>
               <template v-else-if="col.prop === 'source_type'" #default="{ row }">
-                <el-tag v-if="row.source_type === 'purchase'" type="success" size="small">采购</el-tag>
-                <el-tag v-else-if="row.source_type === 'production'" type="primary" size="small">生产</el-tag>
+                <el-tag v-if="row.source_type && row.source_type.includes('成品入库')" type="success" size="small">{{ row.source_type }}</el-tag>
                 <el-tag v-else size="small">{{ row.source_type }}</el-tag>
               </template>
+              <template v-else-if="col.prop === 'so_order_qty' || col.prop === 'so_received_qty'" #default="{ row }">{{ $fq(row[col.prop]) }}</template>
             </el-table-column>
           </el-table>
           <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
         </el-card>
       </el-tab-pane>
 
-      <!-- ===== Tab 2: 库存流水 ===== -->
+      <!-- ===== Tab 2: 收发存 =====（点击后自动设置本月日期范围，共用余额表格的期间视图） -->
+      <el-tab-pane label="收发存" name="period" />
+
+      <!-- ===== Tab 3: 库存流水 ===== -->
       <el-tab-pane label="库存流水" name="transactions">
         <el-card>
           <template #header>
@@ -170,8 +179,8 @@ const defaultColumns = [
   { prop: 'material_name', label: '物料', minWidth: 45 },
   { prop: 'material_spec', label: '规格', minWidth: 80 },
   { prop: 'material_model', label: '型号', minWidth: 80 },
-  { prop: 'material_id', label: '类型', width: 100, align: 'center' },
-  { prop: 'batch_no', label: '批次号', width: 120 },
+  { prop: 'material_id', label: '类型', width: 80, align: 'center' },
+  { prop: 'batch_no', label: '批次号', width: 140 },
   { prop: 'quantity', label: '数量', width: 90, align: 'right', group: 'snapshot' },
   { prop: 'unit_cost', label: '单价(¥)', width: 90, align: 'right', group: 'snapshot' },
   { prop: 'total_cost', label: '金额(¥)', width: 110, align: 'right', group: 'snapshot' },
@@ -180,7 +189,10 @@ const defaultColumns = [
   { prop: 'period_out_qty', label: '出库', width: 80, align: 'right', group: 'period' },
   { prop: 'closing_qty', label: '期末数量', width: 90, align: 'right', group: 'period' },
   { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', group: 'period' },
-  { prop: 'source_type', label: '来源', width: 60 },
+  { prop: 'so_order_no', label: '销售订单号', width: 150 },
+  { prop: 'so_order_qty', label: '订单数', width: 70, align: 'right' },
+  { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right' },
+  { prop: 'source_type', label: '来源', width: 180 },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
 const { fitTable } = useColumnAutoFit()
@@ -215,7 +227,7 @@ const balanceLoading = ref(false)
 const balanceTotal = ref(0)
 const balancePage = ref(1)
 const balancePageSize = ref(100)
-const balanceQuery = reactive({ warehouse_id: null, type: '', keyword: '', dateRange: null })
+const balanceQuery = reactive({ warehouse_id: null, type: '', code: '', keyword: '', dateRange: null })
 const balancePeriod = ref(false) // 是否显示期间视图
 
 async function fetchBalance() {
@@ -226,6 +238,7 @@ async function fetchBalance() {
     if (balanceQuery.warehouse_id) params.warehouse_id = balanceQuery.warehouse_id
     if (balanceQuery.type) params.type = balanceQuery.type
     if (balanceQuery.keyword) params.keyword = balanceQuery.keyword
+    if (balanceQuery.code) params.code = balanceQuery.code
     if (balanceQuery.dateRange && balanceQuery.dateRange[0]) {
       params.start_date = balanceQuery.dateRange[0]
       params.end_date = balanceQuery.dateRange[1]
@@ -346,7 +359,16 @@ function viewTransactions(row) {
 }
 
 function onTabChange(tab) {
-  if (tab === 'transactions' && (transQuery.material_id || transQuery.product_id)) {
+  if (tab === 'period') {
+    // 收发存默认显示本月
+    if (!balanceQuery.dateRange) {
+      const now = new Date()
+      const first = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+      balanceQuery.dateRange = [first, now.toISOString().slice(0, 10)]
+    }
+    balancePeriod.value = true
+    fetchBalance()
+  } else if (tab === 'transactions' && (transQuery.material_id || transQuery.product_id)) {
     fetchTransactions()
   }
 }
