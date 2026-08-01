@@ -59,7 +59,6 @@
               <template v-else-if="col.prop === 'material_id'" #default="{ row }">
                 <el-tag :type="row.material_id ? 'warning' : 'primary'" size="small">{{ row.material_id ? '原料' : '成品' }}</el-tag>
               </template>
-              <template v-else-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
               <template v-else-if="col.prop === 'unit_cost'" #default="{ row }">{{ $fm(row.unit_cost) }}</template>
               <template v-else-if="col.prop === 'total_cost'" #default="{ row }">{{ $fm(row.total_cost) }}</template>
               <template v-else-if="col.prop === 'opening_qty'" #default="{ row }">
@@ -118,7 +117,6 @@ const defaultColumns = [
   { prop: 'material_model', label: '型号', minWidth: 80 },
   { prop: 'material_id', label: '类型', width: 80, align: 'center' },
   { prop: 'batch_no', label: '批次号', width: 140 },
-  { prop: 'quantity', label: '数量', width: 90, align: 'right', group: 'snapshot' },
   { prop: 'unit_cost', label: '单价(¥)', width: 90, align: 'right', group: 'snapshot' },
   { prop: 'total_cost', label: '金额(¥)', width: 110, align: 'right', group: 'snapshot' },
   { prop: 'opening_qty', label: '期初', width: 80, align: 'right', group: 'period' },
