@@ -367,16 +367,15 @@ def delete_outsourcer(item_id: int, db: Session = Depends(get_db), current_user:
 # ==================== 客户自定义创建（自动编码 CU+6位流水）====================
 
 def _next_code(db, model, prefix: str, field="code"):
-    """生成编码: 前缀 + 6位流水号"""
-    from sqlalchemy import func as sa_func
-    last = db.query(sa_func.max(getattr(model, field))).filter(
-        getattr(model, field).like(f"{prefix}%")
-    ).scalar()
-    if last:
-        num = int(last[len(prefix):]) + 1
-    else:
-        num = 1
-    return f"{prefix}{num:06d}"
+    """生成编码: 前缀 + 6位流水号（遍历取数字后缀最大者，跳过历史非数字编码）"""
+    col = getattr(model, field)
+    rows = db.query(col).filter(col.like(f"{prefix}%")).all()
+    max_num = 0
+    for (code,) in rows:
+        suffix = str(code)[len(prefix):]
+        if suffix.isdigit():
+            max_num = max(max_num, int(suffix))
+    return f"{prefix}{max_num + 1:06d}"
 
 
 @router.get("/customers/next-code", tags=["基础档案-客户"])
