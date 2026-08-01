@@ -231,6 +231,7 @@ const transTypeMap = {
   transfer_in: '调拨入库', transfer_out: '调拨出库',
   check_in: '盘点盘盈', check_out: '盘点盘亏',
   issue_cancel: '取消发料', receipt_cancel: '取消入库',
+  stock_in_return: '入库退回',
 }
 function transTypeLabel(type) { return transTypeMap[type] || type }
 

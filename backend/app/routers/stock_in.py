@@ -282,8 +282,29 @@ def return_stock_in(
         WarehouseInventory.quantity > 0
     ).first()
     if inv:
+        before_qty = inv.quantity
+        before_cost = inv.total_cost or 0
         inv.quantity -= return_qty
         inv.total_cost = inv.unit_cost * inv.quantity
+        # 生成负数入库流水（退回记录，可追溯）
+        trans = StockTransaction(
+            trans_type="stock_in_return",
+            warehouse_id=inv.warehouse_id,
+            product_id=inv.product_id,
+            batch_no=inv.batch_no,
+            quantity=-return_qty,
+            unit_cost=inv.unit_cost,
+            total_amount=-(return_qty * (inv.unit_cost or 0)),
+            before_qty=before_qty,
+            after_qty=inv.quantity,
+            before_cost=before_cost,
+            after_cost=inv.total_cost,
+            source_doc_type="成品入库退回",
+            source_doc_no=sin.stock_in_no,
+            trans_no=generate_doc_no(db, "ST"),
+            operator=current_user.display_name or current_user.username,
+        )
+        db.add(trans)
     db.commit()
     return {"message": f"已退回 {return_qty}，当前已入 {sin.received_qty}"}
 
