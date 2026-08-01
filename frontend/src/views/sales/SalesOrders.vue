@@ -29,6 +29,8 @@
       <template #header>
         <span>销售订单</span>
         <span style="margin-left: 10px; font-size: 12px; color: #909399">点击订单行，下方查看该订单明细</span>
+        <span style="flex: 1" />
+        <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
       </template>
       <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
@@ -40,10 +42,7 @@
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-for="c in allColumns" :key="c.prop">
-                    <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
-                  </el-dropdown-item>
-                  <el-dropdown-item divided @click.stop="openOrderOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                  <el-dropdown-item @click.stop="openOrderSettings" style="color: #409eff">列设置...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -99,10 +98,7 @@
               </span>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item v-for="c in allItemColumns" :key="c.prop">
-                    <el-checkbox :model-value="c.visible !== false" @change="toggleItemColumn(c)">{{ c.label }}</el-checkbox>
-                  </el-dropdown-item>
-                  <el-dropdown-item divided @click.stop="openItemOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                  <el-dropdown-item @click.stop="openItemSettings" style="color: #409eff">列设置...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -306,8 +302,8 @@
     </el-dialog>
     
     <!-- 列排序弹窗 -->
-    <ColumnOrderDialog v-model:visible="orderOrderVisible" :columns="orderOrderList" @opened="initOrderOrderDrag" @confirm="confirmOrderOrder" />
-    <ColumnOrderDialog v-model:visible="itemOrderVisible" :columns="itemOrderList" @opened="initItemOrderDrag" @confirm="confirmItemOrder" />
+    <ColumnSettingsDialog v-model:visible="orderSettingsVisible" :columns="orderSettingsList" @confirm="confirmOrderSettings" @reset="resetOrderSettings" />
+    <ColumnSettingsDialog v-model:visible="itemSettingsVisible" :columns="itemSettingsList" @confirm="confirmItemSettings" @reset="resetItemSettings" />
   </div>
 </template>
 
@@ -317,7 +313,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
-import ColumnOrderDialog from '../../components/ColumnOrderDialog.vue'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'
 
 const { fitTable } = useColumnAutoFit()
@@ -336,7 +332,7 @@ const defaultColumns = [
   { prop: 'trade_term', label: '贸易术语', width: 100, sortable: true },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
+const { columns, columnVersion, initColumnDrag, settingsVisible: orderSettingsVisible, settingsList: orderSettingsList, openColumnSettings: openOrderSettingsRaw, confirmSettings, resetSettings: resetOrderSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
 
 const ITEM_STORAGE_KEY = 'mazu_sales_order_item_columns'
 const defaultItemColumns = [
@@ -352,9 +348,30 @@ const defaultItemColumns = [
   { prop: 'received_qty', label: '已入库', width: 80, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'production_status', label: '状态', width: 100, align: 'center', sortable: true, fmt: 'tag' },
 ]
-const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, orderDialogVisible: itemOrderVisible, orderList: itemOrderList, openOrderDialog: openItemOrder, initOrderDrag: initItemOrderDrag, confirmOrder: confirmItemOrder } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
+const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, settingsVisible: itemSettingsVisible, settingsList: itemSettingsList, openColumnSettings: openItemSettingsRaw, confirmSettings: confirmItemSettingsFn, resetSettings: resetItemSettings } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 const { visibleColumns: visibleItemColumns, allColumns: allItemColumns, toggleColumn: toggleItemColumn, initColumnVisible: initItemVisible } = useColumnCustomize(itemColumns, ITEM_STORAGE_KEY)
+
+// ===== 列设置弹窗（注入当前显隐状态）=====
+function openOrderSettings() {
+  const visMap = {}
+  for (const c of allColumns.value) visMap[c.prop] = c.visible !== false
+  openOrderSettingsRaw(visMap)
+}
+function openItemSettings() {
+  const visMap = {}
+  for (const c of allItemColumns.value) visMap[c.prop] = c.visible !== false
+  openItemSettingsRaw(visMap)
+}
+// 确认后重同步显隐（localStorage 已由 confirmSettings 写入 _vis，这里重建 visibleColumns）
+function confirmOrderSettings() {
+  confirmSettings()
+  nextTick(() => { initColumnVisible(); initColumnDrag(); if (dataList.value.length) fitTable(orderTableRef.value, visibleColumns, dataList) })
+}
+function confirmItemSettings() {
+  confirmItemSettingsFn()
+  nextTick(() => { initItemVisible(); initItemColumnDrag(); if (orderDetailList.value.length) fitTable(itemTableRef.value, visibleItemColumns, orderDetailList) })
+}
 
 // ========== 销售订单查询 ==========
 const loading = ref(false)

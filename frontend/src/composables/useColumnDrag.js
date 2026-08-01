@@ -2,11 +2,11 @@ import { ref, nextTick, onBeforeUnmount } from 'vue'
 import Sortable from 'sortablejs'
 
 /**
- * 通用列拖拽 composable（含列排序弹窗）
+ * 通用列管理 composable（表头拖拽 + 列设置弹窗）
  * 
  * 用法：
- *   const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, 'my_storage_key')
- *   
+ *   const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, 'my_storage_key')
+ * 
  *   模板中：
  *   <el-table :key="columnVersion" ...>
  *     <el-table-column v-for="col in columns" :key="col.prop" ...>
@@ -18,9 +18,10 @@ import Sortable from 'sortablejs'
  *       </template>
  *     </el-table-column>
  *   </el-table>
- *   
- *   右键菜单底部加"列排序..."项 → openOrderDialog()
- *   弹窗中用 column-order-list class 的容器 + initOrderDrag()
+ * 
+ *   表格上方加"列设置"按钮 → openColumnSettings()
+ *   弹窗：<ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" @reset="resetSettings" />
+ *   右键菜单"列设置..."→ openColumnSettings()
  *   fetchData 后调用 nextTick(initColumnDrag)
  * 
  * @param {Array} defaultColumns  默认列定义 [{ prop, label, width?, minWidth?, sortable?, align?, ... }]
@@ -45,6 +46,19 @@ export function useColumnDrag(defaultColumns, storageKey, selector = '.el-table_
   let sortableInstance = null
   let dragRetryTimer = null
 
+  // fixed 列/gutter 在 thead 里占 index，但不在 columns 逻辑顺序里 → 拖拽 index 需要换算
+  function toLogicalIndex(thIndex) {
+    const thead = document.querySelector(selector)
+    if (!thead || !thead.children.length) return thIndex
+    let logical = 0
+    for (let i = 0; i < thIndex; i++) {
+      const cls = thead.children[i].classList
+      if (cls.contains('el-table-fixed-column--right') || cls.contains('gutter')) continue
+      logical++
+    }
+    return logical
+  }
+
   function initColumnDrag() {
     clearTimeout(dragRetryTimer)
     const thead = document.querySelector(selector)
@@ -54,17 +68,20 @@ export function useColumnDrag(defaultColumns, storageKey, selector = '.el-table_
     }
     destroyColumnDrag()
     sortableInstance = Sortable.create(thead, {
-      animation: 150,
+      animation: 200,
+      direction: 'horizontal',
       handle: '.col-drag-handle',
       forceFallback: true,
       ghostClass: 'sortable-ghost',
       dragClass: 'sortable-drag',
+      swapThreshold: 0.65,
       filter: (evt, target) => {
         const cls = target ? target.classList : null
         return cls && (cls.contains('el-table-fixed-column--right') || cls.contains('gutter'))
       },
       onEnd: (evt) => {
-        const { oldIndex, newIndex } = evt
+        const oldIndex = toLogicalIndex(evt.oldIndex)
+        const newIndex = toLogicalIndex(evt.newIndex)
         if (oldIndex === newIndex) return
         const cols = [...columns.value]
         const [moved] = cols.splice(oldIndex, 1)
@@ -85,42 +102,33 @@ export function useColumnDrag(defaultColumns, storageKey, selector = '.el-table_
 
   onBeforeUnmount(destroyColumnDrag)
 
-  // ===== 列排序弹窗 =====
-  const orderDialogVisible = ref(false)
-  const orderList = ref([])
-  let orderSortable = null
-
-  function openOrderDialog() {
-    orderList.value = columns.value.map(c => ({ ...c }))
-    orderDialogVisible.value = true
-    nextTick(() => initOrderDrag())
+  // ===== 列设置弹窗（显隐 checkbox + ↑↓ 移动 + 恢复默认）=====
+  const settingsVisible = ref(false)
+  const settingsList = ref([])
+  // 页面侧传入当前显隐状态（来自 useColumnCustomize），合并进列表
+  function openColumnSettings(visibleMap = {}) {
+    settingsList.value = columns.value.map(c => ({
+      ...c,
+      visible: visibleMap[c.prop] !== undefined ? visibleMap[c.prop] : c.visible !== false,
+    }))
+    settingsVisible.value = true
   }
 
-  function initOrderDrag() {
-    const el = document.querySelector('.column-order-list')
-    if (!el) return
-    if (orderSortable) orderSortable.destroy()
-    orderSortable = Sortable.create(el, {
-      animation: 150,
-      handle: '.col-order-handle',
-      ghostClass: 'sortable-ghost',
-      onEnd: (evt) => {
-        const { oldIndex, newIndex } = evt
-        if (oldIndex === newIndex) return
-        const cols = [...orderList.value]
-        const [moved] = cols.splice(oldIndex, 1)
-        cols.splice(newIndex, 0, moved)
-        orderList.value = cols
-      },
-    })
-  }
-
-  function confirmOrder() {
-    columns.value = orderList.value.map(c => ({ ...c }))
-    localStorage.setItem(storageKey, JSON.stringify(orderList.value.map(c => c.prop)))
+  function confirmSettings() {
+    const list = settingsList.value
+    columns.value = list.map(c => ({ ...c }))
+    localStorage.setItem(storageKey, JSON.stringify(list.map(c => c.prop)))
+    // 显隐状态写回（由页面侧接收并应用/存储）
+    const vis = {}
+    for (const c of list) vis[c.prop] = c.visible !== false
+    localStorage.setItem(storageKey + '_vis', JSON.stringify(vis))
     columnVersion.value++
-    orderDialogVisible.value = false
+    settingsVisible.value = false
   }
 
-  return { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder }
+  function resetSettings() {
+    settingsList.value = defaultColumns.map(c => ({ ...c, visible: true }))
+  }
+
+  return { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings }
 }
