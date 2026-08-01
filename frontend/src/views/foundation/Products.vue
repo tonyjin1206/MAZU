@@ -163,8 +163,8 @@ const defaultColumns = [
   { prop: 'spec', label: '规格', minWidth: 140, sortable: true },
   { prop: 'unit', label: '单位', width: 100, align: 'center', sortable: true },
   { prop: 'sale_price', label: '销售价', width: 100, align: 'right', sortable: true },
-  { prop: 'customer_count', label: '关联客户', width: 100, align: 'center' },
-  { prop: 'is_active', label: '状态', width: 80, align: 'center' },
+  { prop: 'customer_count', label: '关联客户', width: 100, align: 'center' , sortable: true },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center' , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()

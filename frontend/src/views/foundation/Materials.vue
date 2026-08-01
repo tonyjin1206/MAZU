@@ -178,7 +178,7 @@ const defaultColumns = [
   { prop: 'category', label: '大类', width: 100, align: 'center', sortable: true },
   { prop: 'category_sub', label: '小类', width: 100, align: 'center', sortable: true },
   { prop: 'purchase_price', label: '单价', width: 100, align: 'right', sortable: true },
-  { prop: 'is_active', label: '状态', width: 80, align: 'center' },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center' , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()

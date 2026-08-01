@@ -105,11 +105,11 @@ import { systemConfigApi } from '../../api/foundation'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_bot_columns'
 const defaultColumns = [
-  { prop: 'provider', label: '提供商', width: 100 },
-  { prop: 'model', label: '模型', width: 160 },
-  { prop: 'is_active', label: '状态', width: 70, align: 'center' },
-  { prop: 'temperature', label: '温度', width: 60 },
-  { prop: 'base_url', label: 'API地址', minWidth: 200 },
+  { prop: 'provider', label: '提供商', width: 100 , sortable: true },
+  { prop: 'model', label: '模型', width: 160 , sortable: true },
+  { prop: 'is_active', label: '状态', width: 70, align: 'center' , sortable: true },
+  { prop: 'temperature', label: '温度', width: 60 , sortable: true },
+  { prop: 'base_url', label: 'API地址', minWidth: 200 , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 

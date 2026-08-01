@@ -94,11 +94,11 @@ import { systemConfigApi, authApi } from '../../api/foundation'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_reminder_columns'
 const defaultColumns = [
-  { prop: 'user_name', label: '用户', width: 120 },
-  { prop: 'type', label: '提醒类型', width: 120 },
-  { prop: 'enabled', label: '启用', width: 70, align: 'center' },
-  { prop: 'push_time', label: '推送时间', width: 100 },
-  { prop: 'push_days', label: '推送日', width: 100 },
+  { prop: 'user_name', label: '用户', width: 120 , sortable: true },
+  { prop: 'type', label: '提醒类型', width: 120 , sortable: true },
+  { prop: 'enabled', label: '启用', width: 70, align: 'center' , sortable: true },
+  { prop: 'push_time', label: '推送时间', width: 100 , sortable: true },
+  { prop: 'push_days', label: '推送日', width: 100 , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 

@@ -196,13 +196,13 @@ import request from '../../api/request'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_taxrefund_decl_columns'
 const defaultColumns = [
-  { prop: 'period', label: '申报年月', width: 90 },
-  { prop: 'batch', label: '批次', width: 60, align: 'center' },
-  { prop: 'declaration_no', label: '申报单号', width: 180 },
-  { prop: 'status', label: '状态', width: 90 },
-  { prop: 'refundable_amount', label: '可退税额', width: 110, align: 'right' },
-  { prop: 'actual_refund_amount', label: '实际退税', width: 110, align: 'right' },
-  { prop: 'created_at', label: '创建时间', minWidth: 150 },
+  { prop: 'period', label: '申报年月', width: 90 , sortable: true },
+  { prop: 'batch', label: '批次', width: 60, align: 'center' , sortable: true },
+  { prop: 'declaration_no', label: '申报单号', width: 180 , sortable: true },
+  { prop: 'status', label: '状态', width: 90 , sortable: true },
+  { prop: 'refundable_amount', label: '可退税额', width: 110, align: 'right' , sortable: true },
+  { prop: 'actual_refund_amount', label: '实际退税', width: 110, align: 'right' , sortable: true },
+  { prop: 'created_at', label: '创建时间', minWidth: 150 , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 

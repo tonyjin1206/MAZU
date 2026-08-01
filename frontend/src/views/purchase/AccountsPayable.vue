@@ -107,24 +107,24 @@ import request from '../../api/request'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_ap_summary_columns'
 const defaultColumns = [
-  { prop: 'supplier_name', label: '供应商', minWidth: 180 },
-  { prop: 'count', label: '应付笔数', width: 80, align: 'center' },
-  { prop: 'total_amount', label: '应付金额', width: 130, align: 'right' },
-  { prop: 'total_paid', label: '已付金额', width: 130, align: 'right' },
-  { prop: 'balance', label: '余额', width: 130, align: 'right' },
+  { prop: 'supplier_name', label: '供应商', minWidth: 180 , sortable: true },
+  { prop: 'count', label: '应付笔数', width: 80, align: 'center' , sortable: true },
+  { prop: 'total_amount', label: '应付金额', width: 130, align: 'right' , sortable: true },
+  { prop: 'total_paid', label: '已付金额', width: 130, align: 'right' , sortable: true },
+  { prop: 'balance', label: '余额', width: 130, align: 'right' , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
 
 const PD_STORAGE_KEY = 'mazu_ap_detail_columns'
 const defaultPdColumns = [
-  { prop: 'supplier_name', label: '供应商', minWidth: 140 },
-  { prop: 'ap_date', label: '应付日期', width: 110 },
-  { prop: 'ap_no', label: '应付单号', width: 160 },
-  { prop: 'ap_amount', label: '应付金额', width: 120, align: 'right' },
-  { prop: 'pm_date', label: '付款日期', width: 110 },
-  { prop: 'payment_no', label: '付款单号', width: 160 },
-  { prop: 'paid_amount', label: '付款金额', width: 120, align: 'right' },
-  { prop: 'balance', label: '余额', width: 110, align: 'right' },
+  { prop: 'supplier_name', label: '供应商', minWidth: 140 , sortable: true },
+  { prop: 'ap_date', label: '应付日期', width: 110 , sortable: true },
+  { prop: 'ap_no', label: '应付单号', width: 160 , sortable: true },
+  { prop: 'ap_amount', label: '应付金额', width: 120, align: 'right' , sortable: true },
+  { prop: 'pm_date', label: '付款日期', width: 110 , sortable: true },
+  { prop: 'payment_no', label: '付款单号', width: 160 , sortable: true },
+  { prop: 'paid_amount', label: '付款金额', width: 120, align: 'right' , sortable: true },
+  { prop: 'balance', label: '余额', width: 110, align: 'right' , sortable: true },
 ]
 const { columns: pdColumns, columnVersion: pdColumnVersion, initColumnDrag: initPdColumnDrag } = useColumnDrag(defaultPdColumns, PD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
 

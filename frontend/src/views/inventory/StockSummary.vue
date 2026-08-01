@@ -33,23 +33,26 @@
         </el-form-item>
       </el-form>
       <el-table ref="tableRef" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="summaryMethod">
-        <el-table-column prop="warehouse" label="仓库" width="110" />
-        <el-table-column prop="material_name" label="物料" min-width="140">
+        <el-table-column prop="warehouse" label="仓库" width="110" sortable />
+        <el-table-column prop="material_name" label="物料名称" min-width="140" sortable>
           <template #default="{ row }"><span style="font-weight:500">{{ row.material_name || row.product_name }}</span></template>
         </el-table-column>
-        <el-table-column prop="material_spec" label="规格" width="80">
+        <el-table-column prop="material_code" label="物料编码" min-width="100" sortable>
+          <template #default="{ row }"><span style="color: #909399">{{ row.material_code || row.product_code }}</span></template>
+        </el-table-column>
+        <el-table-column prop="material_spec" label="规格" width="80" sortable>
           <template #default="{ row }">{{ row.material_spec || row.product_spec || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="material_id" label="类型" width="80" align="center">
+        <el-table-column prop="material_id" label="类型" width="80" align="center" sortable>
           <template #default="{ row }">
             <el-tag :type="row.material_id ? 'warning' : 'primary'" size="small">{{ row.material_id ? '原辅料' : '成品' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="opening_qty" label="期初" width="80" align="right" />
-        <el-table-column prop="period_in_qty" label="本期入库" width="100" align="right" />
-        <el-table-column prop="period_out_qty" label="本期出库" width="100" align="right" />
-        <el-table-column prop="closing_qty" label="期末数量" width="100" align="right" />
-        <el-table-column prop="closing_cost" label="期末金额" width="110" align="right">
+        <el-table-column prop="opening_qty" label="期初" width="80" align="right" sortable />
+        <el-table-column prop="period_in_qty" label="本期入库" width="100" align="right" sortable />
+        <el-table-column prop="period_out_qty" label="本期出库" width="100" align="right" sortable />
+        <el-table-column prop="closing_qty" label="期末数量" width="100" align="right" sortable />
+        <el-table-column prop="closing_cost" label="期末金额" width="110" align="right" sortable>
           <template #default="{ row }">{{ $fm(row.closing_cost) }}</template>
         </el-table-column>
       </el-table>

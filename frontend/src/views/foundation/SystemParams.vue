@@ -178,10 +178,10 @@ import request from '../../api/request'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_system_param_columns'
 const defaultColumns = [
-  { prop: 'sort_order', label: '排序', width: 70, align: 'center' },
-  { prop: 'param_label', label: '显示名称', minWidth: 160 },
-  { prop: 'param_key', label: '参数值', minWidth: 140 },
-  { prop: 'remark', label: '说明', minWidth: 180 },
+  { prop: 'sort_order', label: '排序', width: 70, align: 'center' , sortable: true },
+  { prop: 'param_label', label: '显示名称', minWidth: 160 , sortable: true },
+  { prop: 'param_key', label: '参数值', minWidth: 140 , sortable: true },
+  { prop: 'remark', label: '说明', minWidth: 180 , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 const { fitTable } = useColumnAutoFit()

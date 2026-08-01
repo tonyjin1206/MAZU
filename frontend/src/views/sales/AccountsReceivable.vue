@@ -120,24 +120,24 @@ import request from '../../api/request'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_ar_summary_columns'
 const defaultColumns = [
-  { prop: 'customer_name', label: '客户', minWidth: 180 },
-  { prop: 'count', label: '应收笔数', width: 80, align: 'center' },
-  { prop: 'total_amount', label: '应收金额', width: 130, align: 'right' },
-  { prop: 'total_collected', label: '已收金额', width: 130, align: 'right' },
-  { prop: 'balance', label: '余额', width: 130, align: 'right' },
+  { prop: 'customer_name', label: '客户', minWidth: 180 , sortable: true },
+  { prop: 'count', label: '应收笔数', width: 80, align: 'center' , sortable: true },
+  { prop: 'total_amount', label: '应收金额', width: 130, align: 'right' , sortable: true },
+  { prop: 'total_collected', label: '已收金额', width: 130, align: 'right' , sortable: true },
+  { prop: 'balance', label: '余额', width: 130, align: 'right' , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible: orderOrderVisible, orderList: orderOrderList, openOrderDialog: openOrderOrder, initOrderDrag: initOrderOrderDrag, confirmOrder: confirmOrderOrder } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
 
 const CD_STORAGE_KEY = 'mazu_ar_detail_columns'
 const defaultCdColumns = [
-  { prop: 'customer_name', label: '客户', minWidth: 140 },
-  { prop: 'ar_date', label: '应收日期', width: 110 },
-  { prop: 'ar_no', label: '应收单号', width: 160 },
-  { prop: 'ar_amount', label: '应收金额', width: 120, align: 'right' },
-  { prop: 'cr_date', label: '收款日期', width: 110 },
-  { prop: 'collection_no', label: '收款单号', width: 160 },
-  { prop: 'collected_amount', label: '收款金额', width: 120, align: 'right' },
-  { prop: 'balance', label: '余额', width: 110, align: 'right' },
+  { prop: 'customer_name', label: '客户', minWidth: 140 , sortable: true },
+  { prop: 'ar_date', label: '应收日期', width: 110 , sortable: true },
+  { prop: 'ar_no', label: '应收单号', width: 160 , sortable: true },
+  { prop: 'ar_amount', label: '应收金额', width: 120, align: 'right' , sortable: true },
+  { prop: 'cr_date', label: '收款日期', width: 110 , sortable: true },
+  { prop: 'collection_no', label: '收款单号', width: 160 , sortable: true },
+  { prop: 'collected_amount', label: '收款金额', width: 120, align: 'right' , sortable: true },
+  { prop: 'balance', label: '余额', width: 110, align: 'right' , sortable: true },
 ]
 const { columns: cdColumns, columnVersion: cdColumnVersion, initColumnDrag: initCdColumnDrag, orderDialogVisible: cdOrderVisible, orderList: cdOrderList, openOrderDialog: openCdOrder, initOrderDrag: initCdOrderDrag, confirmOrder: confirmCdOrder } = useColumnDrag(defaultCdColumns, CD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
 

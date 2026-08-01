@@ -89,11 +89,11 @@ import { systemConfigApi } from '../../api/foundation'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_wecom_columns'
 const defaultColumns = [
-  { prop: 'corp_id', label: '企业ID', width: 200 },
-  { prop: 'agent_id', label: 'AgentID', width: 80 },
-  { prop: 'token', label: 'Token', width: 150 },
-  { prop: 'is_active', label: '状态', width: 80, align: 'center' },
-  { prop: 'callback_url', label: '回调URL', minWidth: 200 },
+  { prop: 'corp_id', label: '企业ID', width: 200 , sortable: true },
+  { prop: 'agent_id', label: 'AgentID', width: 80 , sortable: true },
+  { prop: 'token', label: 'Token', width: 150 , sortable: true },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center' , sortable: true },
+  { prop: 'callback_url', label: '回调URL', minWidth: 200 , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 

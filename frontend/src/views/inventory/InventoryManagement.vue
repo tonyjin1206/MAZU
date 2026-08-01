@@ -51,8 +51,10 @@
                 </el-dropdown>
               </template>
               <template v-if="col.prop === 'material_name'" #default="{ row }">
-                <span style="font-weight: 500; color: #409eff; cursor: pointer">{{ row.material_name || row.product_name }}</span>
-                <el-tag size="small" type="info" style="margin-left: 4px">{{ row.material_code || row.product_code }}</el-tag>
+                <span style="font-weight: 500">{{ row.material_name || row.product_name }}</span>
+              </template>
+              <template v-else-if="col.prop === 'material_code'" #default="{ row }">
+                <span style="color: #909399">{{ row.material_code || row.product_code }}</span>
               </template>
               <template v-else-if="col.prop === 'material_spec'" #default="{ row }">{{ row.material_spec || row.product_spec || '-' }}</template>
               <template v-else-if="col.prop === 'material_model'" #default="{ row }">{{ row.material_model || row.product_model || '-' }}</template>
@@ -112,7 +114,8 @@ import request from '@/api/request'
 const STORAGE_KEY = 'mazu_inventory_balance_columns'
 const defaultColumns = [
   { prop: 'warehouse', label: '仓库', width: 100, sortable: true },
-  { prop: 'material_name', label: '物料', minWidth: 45, sortable: true, measureKeys: ['material_name', 'product_name', 'material_code', 'product_code'] },
+  { prop: 'material_name', label: '物料名称', minWidth: 45, sortable: true, measureKeys: ['material_name', 'product_name'] },
+  { prop: 'material_code', label: '物料编码', minWidth: 90, sortable: true, measureKeys: ['material_code', 'product_code'] },
   { prop: 'material_spec', label: '规格', minWidth: 80, sortable: true, measureKeys: ['material_spec', 'product_spec'] },
   { prop: 'material_model', label: '型号', minWidth: 80, sortable: true, measureKeys: ['material_model', 'product_model'] },
   { prop: 'material_id', label: '类型', width: 80, align: 'center', sortable: true },
@@ -139,14 +142,15 @@ const defaultTransColumns = [
   { prop: 'trans_date', label: '日期', width: 100, sortable: true },
   { prop: 'trans_no', label: '库存流水号', width: 160, sortable: true },
   { prop: 'trans_type', label: '类型', width: 100, sortable: true },
-  { prop: 'material_name', label: '物料', minWidth: 160, sortable: true, measureKeys: ['material_name', 'product_name', 'material_code', 'product_code'] },
+  { prop: 'material_name', label: '物料名称', minWidth: 160, sortable: true, measureKeys: ['material_name', 'product_name'] },
+  { prop: 'material_code', label: '物料编码', minWidth: 90, sortable: true, measureKeys: ['material_code', 'product_code'] },
   { prop: 'batch_no', label: '批次号', width: 140, sortable: true },
   { prop: 'quantity', label: '数量', width: 100, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'unit_cost', label: '单价(¥)', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'total_amount', label: '金额(¥)', width: 120, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'warehouse', label: '仓库', width: 100, sortable: true },
-  { prop: 'source_doc_type', label: '单据', width: 100 },
-  { prop: 'source_doc_no', label: '单据号', width: 140 },
+  { prop: 'source_doc_type', label: '单据', width: 100 , sortable: true },
+  { prop: 'source_doc_no', label: '单据号', width: 140 , sortable: true },
 ]
 const { columns: transColumns, columnVersion: transColumnVersion, initColumnDrag: initTransColumnDrag } = useColumnDrag(defaultTransColumns, TRANS_STORAGE_KEY, '.drag-table-trans .el-table__header-wrapper thead tr')
 const { visibleColumns: visibleTransColumns, allColumns: allTransColumns, toggleColumn: toggleTransColumn, initColumnVisible: initTransVisible } = useColumnCustomize(transColumns, TRANS_STORAGE_KEY)

@@ -115,12 +115,12 @@ import { authApi } from '../../api/foundation'
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_user_columns'
 const defaultColumns = [
-  { prop: 'username', label: '用户名', width: 140 },
-  { prop: 'display_name', label: '显示名', width: 140 },
-  { prop: 'email', label: '邮箱', minWidth: 180 },
-  { prop: 'role_name', label: '角色', width: 120 },
-  { prop: 'is_active', label: '状态', width: 80, align: 'center' },
-  { prop: 'created_at', label: '创建时间', width: 160 },
+  { prop: 'username', label: '用户名', width: 140 , sortable: true },
+  { prop: 'display_name', label: '显示名', width: 140 , sortable: true },
+  { prop: 'email', label: '邮箱', minWidth: 180 , sortable: true },
+  { prop: 'role_name', label: '角色', width: 120 , sortable: true },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center' , sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 160 , sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, orderDialogVisible, orderList, openOrderDialog, initOrderDrag, confirmOrder } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
