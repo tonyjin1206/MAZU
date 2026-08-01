@@ -456,6 +456,11 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
     ).first()
     if not item:
         raise HTTPException(404, "明细行不存在")
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "销售订单不存在")
+    if order.status != "已审":
+        raise HTTPException(400, "订单审核通过后才能转入库")
     if item.production_status not in (None, "", "未生产"):
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转入库")
     existing = db.query(StockInOrder).filter(
@@ -490,6 +495,11 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
     ).first()
     if not item:
         raise HTTPException(404, "明细行不存在")
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "销售订单不存在")
+    if order.status != "已审":
+        raise HTTPException(400, "订单审核通过后才能转外发")
     if item.production_status not in (None, "", "未生产"):
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转外发")
     existing = db.query(OutsourceOrder).filter(

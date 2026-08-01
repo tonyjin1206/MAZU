@@ -111,8 +111,8 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.production_status === '未生产' || !row.production_status" link type="primary" size="small" @click="handleStockIn(row)">转入库</el-button>
-            <el-button v-if="row.production_status === '未生产' || !row.production_status" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转入库</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
             <el-button v-if="row.production_status !== '已停售'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
           </template>
         </el-table-column>
@@ -120,7 +120,7 @@
     </el-card>
 
     <!-- 新建/编辑/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="900px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close>
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-row :gutter="16">
           <el-col :span="12">
