@@ -169,7 +169,7 @@ async function fetchList() {
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
+    const res = await request.get('/sales/orders', { params: { page: 1, page_size: 200, status: '已审' } })
     orderList.value = res.items || []
   } catch {}
 }
