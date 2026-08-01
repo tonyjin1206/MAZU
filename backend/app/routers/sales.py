@@ -237,6 +237,7 @@ def list_sales_orders(
          "customer_id": o.customer_id,
          "customer_name": o.customer.name_cn if o.customer else "",
          "item_count": len(o.items),
+         "pending_count": sum(1 for i in o.items if not i.production_status or i.production_status == "未生产"),
          "total_amount": o.total_amount or 0,
          "total_amount_local": o.total_amount_local or 0,
          "tax_amount": o.tax_amount or 0,

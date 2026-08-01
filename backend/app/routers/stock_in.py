@@ -295,6 +295,7 @@ def get_stock_in_records(
     current_user: User = Depends(get_current_user),
 ):
     """穿透查询：该入库单的所有收货记录（批次库存）"""
+    sin = db.query(StockInOrder).filter(StockInOrder.id == stock_in_id).first()
     records = db.query(WarehouseInventory).filter(
         WarehouseInventory.source_doc_id == stock_in_id,
         WarehouseInventory.source_type == "stock_in"
@@ -303,12 +304,18 @@ def get_stock_in_records(
     for inv in records:
         wh = db.query(Warehouse).filter(Warehouse.id == inv.warehouse_id).first()
         prod = db.query(Product).filter(Product.id == inv.product_id).first() if inv.product_id else None
+        # 批次号：优先显示销售明细的业务批次号（来源为销售时），否则显示库存批次号
+        batch_label = inv.batch_no
+        if sin and sin.sales_item_id:
+            so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == sin.sales_item_id).first()
+            if so_item and so_item.batch_no:
+                batch_label = so_item.batch_no
         items.append({
             "id": inv.id,
             "warehouse": wh.name if wh else "",
             "product_name": prod.name_cn if prod else "",
             "product_code": prod.code if prod else "",
-            "batch_no": inv.batch_no,
+            "batch_no": batch_label,
             "receipt_no": inv.receipt_no or "",
             "quantity": inv.quantity,
             "in_date": str(inv.in_date),

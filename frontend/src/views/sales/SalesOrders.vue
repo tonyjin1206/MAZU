@@ -63,6 +63,9 @@
             <el-tag v-else-if="row.status === '待审核'" type="info" size="small">待审核</el-tag>
             <el-tag v-else size="small">{{ row.status }}</el-tag>
           </template>
+          <template v-else-if="col.prop === 'pending_count'" #default="{ row }">
+            <el-tag :type="(row.pending_count || 0) > 0 ? 'warning' : 'success'" size="small">{{ (row.pending_count || 0) > 0 ? '待处理' : '已处理' }}</el-tag>
+          </template>
           <template v-else-if="col.prop === 'delivered_amount'" #default="{ row }">{{ $fm(row.delivered_amount) }}</template>
           <template v-else-if="col.prop === 'undelivered_amount'" #default="{ row }">
             <span :style="{ color: (row.undelivered_amount || 0) > 0 ? '#e6a23c' : '#909399' }">
@@ -345,6 +348,7 @@ const defaultColumns = [
   { prop: 'order_no', label: '订单号', minWidth: 140, sortable: true },
   { prop: 'customer_name', label: '客户', width: 170, sortable: true },
   { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true, fmt: 'qty' },
+  { prop: 'pending_count', label: '待处理', width: 90, align: 'center', sortable: true, fmt: 'tag' },
   { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'invoiced_amount', label: '已开票', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'uninvoiced_amount', label: '未开票', width: 100, align: 'right', sortable: true, fmt: 'money' },
