@@ -38,7 +38,7 @@ function fmtMoney(v) {
  */
 export function useColumnAutoFit() {
   function fitTable(el, columns, data, options = {}) {
-    const { padding = 10, minWidth = 70, fitToContainer = false } = options
+    const { padding = 12, minWidth = 80, fitToContainer = false } = options
     nextTick(() => {
       const root = el?.$el || el
       if (!root || !columns?.value?.length) return
@@ -46,10 +46,10 @@ export function useColumnAutoFit() {
       const container = root.querySelector('.el-table__header-wrapper') || root
       const containerW = container.clientWidth
       const cols = columns.value.filter(c => !c.fixed)
-      // 固定开销：单元格左右内边距 16 + 排序箭头 20 + 拖拽手柄 14 + 余量 padding
-      const CELL_PAD = 16
-      const CARET = 20
-      const HANDLE = 14
+      // 固定开销：单元格左右内边距 20 + 排序箭头 26 + 拖拽手柄 18 + 余量 padding
+      const CELL_PAD = 20
+      const CARET = 26
+      const HANDLE = 18
       cols.forEach(col => {
         let maxW = textWidth(col.label, true) + CELL_PAD + CARET + HANDLE
         rows.forEach(row => {

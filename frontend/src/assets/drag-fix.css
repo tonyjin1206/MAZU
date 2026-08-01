@@ -16,3 +16,12 @@
 /* Sortable 拖拽时的幽灵列样式 */
 .sortable-ghost { opacity: 0.4; }
 .sortable-drag { background: #ecf5ff; }
+
+/* 🔴 全 ERP 表头强制一行显示（列宽按内容自适应，配合 useColumnAutoFit） */
+.el-table th .cell {
+  white-space: nowrap;
+}
+/* 数据单元格也不换行（超长内容横向滚动查看，不用 tooltip 撑高） */
+.el-table td .cell {
+  white-space: nowrap;
+}
