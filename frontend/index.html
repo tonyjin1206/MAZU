@@ -8,20 +8,6 @@
   </head>
   <body>
     <div id="app"></div>
-    <script>
-      // 加载 SVG 图标 sprite（public/mts-icons.svg），供 <use href="#icon-xxx"> 引用
-      ;(function () {
-        fetch('/mts-icons.svg')
-          .then(function (r) { return r.text() })
-          .then(function (svg) {
-            var div = document.createElement('div')
-            div.style.display = 'none'
-            div.innerHTML = svg
-            document.body.appendChild(div.firstElementChild)
-          })
-          .catch(function () { /* 图标加载失败不影响功能 */ })
-      })()
-    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
