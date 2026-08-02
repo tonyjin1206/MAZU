@@ -404,7 +404,55 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 
 ---
 
+## 十二·五、合作分支现状与合并规划（2026-08-02 记录）
+
+> 状态：合作者（woiszxf）单独开发线路，未完工前**不做代码合并**。本文档记录分支现状、
+> 功能差距评估与合并建议，供后续版本更新与合并时参考。
+
+### 分支全景
+
+| 分支 | 更新时间 | 版本 | 状态 |
+|---|---|---|---|
+| `main` | 2026-08-01 | v2.5.0 | 主干 |
+| `app-optimization` | 2026-08-02 | **v2.5.1** | 当前开发线（AI 修复 + 测试库隔离） |
+| `Sales_Purchase` | 2026-08-02 | v2.1.0 | **合作者分支**（44 提交、65 文件、+6417 行，几乎全前端） |
+| `cost-calculation` | 2026-07-27 | — | 已合入 main，本地残留可删 |
+| `sale_order_update` | — | — | 远程已删（gone），本地残留可删 |
+
+拓扑：`d2724bf(v2.1.0)` → `main(v2.5.0)` → `app-optimization(v2.5.1)`；`Sales_Purchase` 从 v2.1.0 分出，独立走 44 提交。
+
+### Sales_Purchase 内容（前端改造为主）
+
+- **可复用资产**：`ColumnSettingsDialog.vue`（列设置弹窗）、`ColumnOrderDialog.vue`、`useColumnCustomize.js`（列显隐记忆）、`useColumnDrag.js`（表头拖拽，依赖 sortablejs）、`useColumnAutoFit.js`（列宽自适应）；后端 `SystemParam` 模型（fd_system_param 表）+ 5 个 /params/* 路由 + SystemParams.vue（参数设置模块）
+- **业务改造**：订单页主从联动布局（08f1249/bb270b7）、业务模型"无工厂双业务"（de59a16）、委外页面改造（7 提交）
+
+### 功能差距评估结论
+
+| 分类 | 功能 | 结论 |
+|---|---|---|
+| 🟢 已覆盖 | 自动编码(CU/SU/RM/PR)、列排序、列头筛选、合计栏、单据号/批次规范 | v2.5.1 已有，不移植 |
+| 🔴 值得移植 | **参数设置模块**（SystemParam 表+路由+SystemParams.vue，v2.5.1 完全缺失，下拉硬编码） | P0 |
+| 🔴 值得移植 | **列设置弹窗**（勾选显隐+顺序+恢复默认，v2.5.1 无） | P1（试点 2-3 页） |
+| 🟡 可选 | 列宽自适应（useColumnAutoFit） | P2 |
+| ⛔ 不移植 | 列拖拽（依赖 sortablejs+动态列，与 v2.5 静态列冲突）、委外页面（v2.4 已删）、无工厂双业务模型（与备货方式冲突） | — |
+
+### 合并建议（待合作者完工后执行）
+
+1. **不建议整体 merge**：Sales_Purchase 基线 v2.1.0 过旧，65 文件冲突 + 委外废弃代码复活 + 业务模型方向冲突
+2. **推荐方案**：功能移植（cherry-pick）——P0 参数设置模块 → P1 列设置弹窗试点 → P2 列宽自适应
+3. 移植时注意 v2.5 前端为**静态列**架构，列设置类功能需先列定义数组化
+
+---
+
 ## 十三、版本变更记录
+
+### v2.5.1 (2026-08-02)
+- **修复**: AI 助手工具执行器对齐 v2.5 业务 — ① 单据单号撞号（create_order 的 generate_doc_no 补 model 参数，PO/SO 不再与已有单据重复）② 收款单号 RC→CR、付款单号 PAY→PM 与系统规范对齐 ③ AI 发料走批次库存（扣库存+流水+工序状态，此前只插记录库存不变）④ AI 完工入库走成品批次（FG 批次号+成品仓+流水+状态更新）
+- **修复**: Agent 提示词与工具同步 — DB `sys_bot_config.system_prompt` + schemas `DEFAULT_SYSTEM_PROMPT` 补齐 13 工具清单与权限规则，移除已删除的 create_outsourcing 委外残留；BotChat 欢迎语去委外示例改查库存；chat/reset 请求体补空对象修复 422
+- **规范**: 测试库隔离（强制）— conftest.py 导入前设 ERP_DATA_DIR=临时目录，pytest 不再触碰开发库（历史踩坑：测试曾清空开发库致 AI 配置丢失）；README「测试数据规范」+ product-overview「14.4 数据存储与测试库隔离」新增规范章节
+- **测试**: test_bot_agent.py 新增 15 个 AI 执行器回归测试（单号前缀/收付款/发票/发料扣库存/完工入库/库存不足/错误供应商），全套后端 224 测试全绿
+- **UI**: AI 悬浮球对话框加宽 380→440px、加高 62vh→70vh、消息字体 12.5→11.5px
+- **基础设施**: 新增 scripts/sync_bot_prompt.py（DB 提示词同步最新版）；docs/ai-capability-test-report.md（AI 能力全量测试报告）
 
 ### v2.5.0 (2026-07-31)
 - **新功能**: 备货方式确认（生产订单 `production_type`: 自产/委外/外购）— MO 审核后先确认备货方式才能继续；外购型不进入生产工作台，仅推采购需求
