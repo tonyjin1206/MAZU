@@ -1,4 +1,12 @@
-"""MTS 后端 — 共享 fixtures
+"""
+MTS 后端 — 共享 fixtures
+
+⚠️ 测试库隔离（必须先于任何 app 导入执行）：
+config.py 通过 ERP_DATA_DIR 环境变量决定数据目录；不设置 = backend/data/（开发/生产库）。
+本文件在导入 app 前设置 ERP_DATA_DIR 指向独立临时目录，确保：
+  - pytest 的 setup_db 清空/重建的是【测试库】，绝不触碰开发库 backend/data/erp.db
+  - 开发库数据（含 AI 配置 sys_bot_config、手工录入档案）跑完测试保持完全不变
+  - 后端 uvicorn 开着时跑测试也不会再出现 ASGI 异常（表被清/锁冲突）
 
 测试数据规范（详见 README「测试数据规范」）：
 - 种子数据单一数据源 = app/main.py 的 _seed_rbac/_seed_currencies（与生产完全一致），
@@ -6,6 +14,14 @@
 - 基础档案统一由 tests/test_data.py 的 build_foundation 构建（foundation fixture），
   禁止各测试文件自建档案
 """
+
+import os
+import tempfile
+from pathlib import Path
+
+# ===== 测试库隔离：必须在 import app.* 之前设置 =====
+_TEST_DATA_DIR = Path(tempfile.mkdtemp(prefix="mts_test_data_"))
+os.environ["ERP_DATA_DIR"] = str(_TEST_DATA_DIR)
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,7 +51,10 @@ def client(app):
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_db():
-    """清空所有表数据，重建表 + RBAC 种子数据 + 默认管理员"""
+    """清空所有表数据，重建表 + RBAC 种子数据 + 默认管理员
+
+    注意：操作的是【测试库】（ERP_DATA_DIR 已隔离），不会影响开发库 backend/data/erp.db
+    """
     init_db()
     from sqlalchemy import text
     meta = Base.metadata

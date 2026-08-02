@@ -199,6 +199,176 @@ class TestExecutors:
         assert any(mo.order_no in r for mo in mos)
 
 
+# ==================== 创建类执行器（含单号生成回归） ====================
+
+class TestCreateExecutors:
+    """创建类工具执行器：单号前缀与系统规范一致（generate_doc_no 带 model），
+    防止再次出现 PO/SO 撞号（历史 Bug：AI 生成的 -001 与已有单据重复）。"""
+
+    def test_create_order_po_no_prefix(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_create_order
+        r = _execute_create_order({
+            "order_type": "purchase_order", "supplier_name": "BOT测试供应商",
+            "items": [{"material_name": "BOT测试材料", "quantity": 10, "unit_price": 10}],
+        }, db, _user(db, "admin"))
+        assert "✅" in r and "PO-" in r
+        import re
+        m = re.search(r"PO-\d{8}-\d{3}", r)
+        assert m, f"采购单号格式不对: {r}"
+        # 单号必须在 PurchaseOrder 表中唯一（防撞号）
+        from app.models.purchase import PurchaseOrder
+        assert db.query(PurchaseOrder).filter(PurchaseOrder.order_no == m.group(0)).count() == 1
+
+    def test_create_order_so_no_prefix(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_create_order
+        r = _execute_create_order({
+            "order_type": "sales_order", "customer_name": "BOT测试客户",
+            "items": [{"product_name": "BOT测试产品", "quantity": 5, "unit_price": 50}],
+        }, db, _user(db, "admin"))
+        assert "✅" in r and "SO-" in r
+        import re
+        m = re.search(r"SO-\d{8}-\d{3}", r)
+        assert m, f"销售单号格式不对: {r}"
+        from app.models.sales import SalesOrder
+        assert db.query(SalesOrder).filter(SalesOrder.order_no == m.group(0)).count() == 1
+
+    def test_create_order_bad_supplier(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_create_order
+        r = _execute_create_order({
+            "order_type": "purchase_order", "supplier_name": "不存在的供应商",
+            "items": [{"material_name": "BOT测试材料", "quantity": 1, "unit_price": 1}],
+        }, db, _user(db, "admin"))
+        assert "未找到供应商" in r
+
+    def test_create_collection_no_prefix(self, db, base_data):
+        from app.utils.ai_chat import _execute_create_collection
+        r = _execute_create_collection({
+            "customer_name": "BOT测试客户", "amount": 100,
+        }, db, _user(db, "admin"))
+        # 收款单号必须是 CR- 前缀（系统规范），不能用旧的 RC-
+        assert "✅" in r and "CR-" in r, f"收款单号前缀不对: {r}"
+        from app.models.sales import Collection
+        import re
+        m = re.search(r"CR-\d{8}-\d{3}", r)
+        assert m and db.query(Collection).filter(Collection.collection_no == m.group(0)).count() == 1
+
+    def test_create_payment_no_prefix(self, db, base_data):
+        from app.utils.ai_chat import _execute_create_payment
+        r = _execute_create_payment({
+            "supplier_name": "BOT测试供应商", "amount": 100,
+        }, db, _user(db, "admin"))
+        # 付款单号必须是 PM- 前缀（系统规范），不能用旧的 PAY-
+        assert "✅" in r and "PM-" in r, f"付款单号前缀不对: {r}"
+        from app.models.purchase import Payment
+        import re
+        m = re.search(r"PM-\d{8}-\d{3}", r)
+        assert m and db.query(Payment).filter(Payment.payment_no == m.group(0)).count() == 1
+
+    def test_create_purchase_invoice(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_create_purchase_invoice
+        po_no = _mk_po(client, admin_token, base_data, remark="BOT发票")
+        r = _execute_create_purchase_invoice({
+            "order_no": po_no, "invoice_no": f"PI-BOT-{uuid.uuid4().hex[:6]}", "amount": 50,
+        }, db, _user(db, "admin"))
+        assert "✅" in r
+
+    def test_create_sales_invoice(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_create_sales_invoice
+        so_no = _mk_so(client, admin_token, base_data)
+        r = _execute_create_sales_invoice({
+            "order_no": so_no, "invoice_no": f"SI-BOT-{uuid.uuid4().hex[:6]}", "amount": 100,
+        }, db, _user(db, "admin"))
+        assert "✅" in r
+
+    def test_create_collection_wrong_customer(self, db, base_data):
+        from app.utils.ai_chat import _execute_create_collection
+        r = _execute_create_collection({"customer_name": "不存在的客户", "amount": 1}, db, _user(db, "admin"))
+        assert "未找到客户" in r
+
+
+# ==================== 生产执行器（批次/库存回归） ====================
+
+class TestProductionExecutors:
+    """发料/完工入库执行器：必须走批次库存链路（扣库存 + 流水 + 状态机），
+    防止回到 v2.1 的"只插一条记录、库存不变"旧行为。"""
+
+    def _mk_mo_with_inventory(self, db, client, admin_token, base_data):
+        """建销售单→审核生成 MO→原料仓入批次库存→返回 (mo_no, batch_no, mat_id, prod_id)"""
+        from app.models.inventory import WarehouseInventory
+        from app.models.foundation import Warehouse
+        mat_id = base_data["mat"]
+        prod_id = base_data["prod"]
+        # 确保成品仓存在（BOT fixture 只建了原料仓；完工入库需要成品仓）
+        fg = db.query(Warehouse).filter(Warehouse.wh_type == "成品仓").first()
+        if not fg:
+            # 通过 API 建成品仓（走真实创建，字段完整）
+            resp = client.post(f"{BASE}/foundation/warehouses", json={
+                "code": f"FG-BOT-{uuid.uuid4().hex[:4]}", "name": "成品仓-BOT", "wh_type": "成品仓",
+                "address": "浙江省绍兴市柯桥区", "manager": "BOT测试员"},
+                headers={"Authorization": f"Bearer {admin_token}"})
+            assert resp.status_code == 200, f"成品仓创建失败: {resp.text[:200]}"
+        # 原料仓放库存（批次）——先清掉该物料旧批次，保证执行器 FIFO 必然选中本测试批次
+        db.query(WarehouseInventory).filter(WarehouseInventory.material_id == mat_id).delete()
+        batch_no = f"B-ISSUE-{uuid.uuid4().hex[:6]}"
+        db.add(WarehouseInventory(warehouse_id=base_data["wh"], material_id=mat_id,
+                                  batch_no=batch_no, quantity=200,
+                                  unit_cost=10, total_cost=2000, in_date=date.today()))
+        db.commit()
+        # 销售单审核生成 MO
+        so_no = _mk_so(client, admin_token, base_data)
+        from app.utils.ai_chat import _execute_approve_order
+        r = _execute_approve_order({"order_type": "sales_order", "order_no": so_no}, db, _user(db, "admin"))
+        import re
+        mo_no = re.search(r"MO-\d{8}-\d{3}", r).group(0)
+        return mo_no, batch_no, mat_id, prod_id
+
+    def test_issue_materials_deducts_inventory(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_issue_materials
+        from app.models.inventory import WarehouseInventory, StockTransaction
+        mo_no, batch_no, mat_id, _ = self._mk_mo_with_inventory(db, client, admin_token, base_data)
+        # 直接按唯一 batch_no 查（不按 quantity 匹配，避免多批次错位）
+        inv_row = db.query(WarehouseInventory).filter(
+            WarehouseInventory.material_id == mat_id, WarehouseInventory.batch_no == batch_no).first()
+        assert inv_row is not None, f"批次 {batch_no} 未找到"
+        before = inv_row.quantity
+        r = _execute_issue_materials({"production_order_no": mo_no, "material_name": "BOT测试材料", "quantity": 50},
+                                     db, _user(db, "admin"))
+        assert "✅" in r and "批次" in r, f"发料失败: {r}"
+        after = db.query(WarehouseInventory).filter(
+            WarehouseInventory.material_id == mat_id, WarehouseInventory.batch_no == batch_no).first().quantity
+        assert after == before - 50, f"库存未扣减: before={before} after={after}"
+        # 必须有库存流水
+        tx = db.query(StockTransaction).filter(StockTransaction.source_doc_type == "发料").order_by(StockTransaction.id.desc()).first()
+        assert tx is not None and tx.quantity == -50
+
+    def test_issue_materials_insufficient(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_issue_materials
+        mo_no, _, _, _ = self._mk_mo_with_inventory(db, client, admin_token, base_data)
+        r = _execute_issue_materials({"production_order_no": mo_no, "material_name": "BOT测试材料", "quantity": 99999},
+                                     db, _user(db, "admin"))
+        assert "库存不足" in r
+
+    def test_production_receipt_creates_fg_batch(self, db, base_data, client, admin_token):
+        from app.utils.ai_chat import _execute_production_receipt
+        from app.models.inventory import WarehouseInventory, StockTransaction
+        from app.models.production import ProductionReceipt, ProductionOrder
+        mo_no, _, _, prod_id = self._mk_mo_with_inventory(db, client, admin_token, base_data)
+        r = _execute_production_receipt({"production_order_no": mo_no, "quantity": 5}, db, _user(db, "admin"))
+        assert "✅" in r and "FG-" in r, f"入库失败: {r}"
+        import re
+        m = re.search(r"FG-\d{8}-\d{3}", r)
+        assert m
+        # 成品库存存在（批次）
+        inv = db.query(WarehouseInventory).filter(
+            WarehouseInventory.product_id == prod_id, WarehouseInventory.batch_no == m.group(0)).first()
+        assert inv is not None and inv.quantity == 5
+        # 流水 + 生产单状态更新
+        tx = db.query(StockTransaction).filter(StockTransaction.source_doc_type == "完工入库").order_by(StockTransaction.id.desc()).first()
+        assert tx is not None and tx.quantity == 5
+        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no == mo_no).first()
+        assert mo.status in ("部分入库", "已入库")
+
+
 # ==================== 审计日志 ====================
 
 class TestAuditLog:

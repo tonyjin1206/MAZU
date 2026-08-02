@@ -148,10 +148,10 @@ const caps = computed(() => {
   position: fixed;
   right: 20px;
   bottom: 84px;
-  width: 380px;
+  width: 440px;
   max-width: calc(100vw - 32px);
-  height: 62vh;
-  max-height: 560px;
+  height: 70vh;
+  max-height: 640px;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
@@ -221,7 +221,7 @@ const caps = computed(() => {
 .matsu-bubble {
   max-width: 78%;
   padding: 8px 12px;
-  font-size: 12.5px;
+  font-size: 11.5px;
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -295,7 +295,7 @@ const caps = computed(() => {
 :deep(.matsu-bubble.bot table) {
   border-collapse: collapse;
   width: 100%;
-  font-size: 11px;
+  font-size: 10.5px;
   margin: 6px 0;
 }
 :deep(.matsu-bubble.bot th) {

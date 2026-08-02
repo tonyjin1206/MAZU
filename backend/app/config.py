@@ -9,7 +9,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 class Settings(BaseSettings):
     APP_NAME: str = "Mazu Trade System"
-    APP_VERSION: str = "2.5.0"
+    APP_VERSION: str = "2.5.1"
     DEBUG: bool = True
 
     # 数据库

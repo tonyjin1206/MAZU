@@ -374,7 +374,7 @@ def _execute_create_order(args: dict, db: Session, user=None) -> str:
             sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
             if not sup: return f"未找到供应商「{args['supplier_name']}」"
 
-            no = generate_doc_no(db, "PO")
+            no = generate_doc_no(db, "PO", PurchaseOrder, "order_no")
             total_amt = 0
             po = PurchaseOrder(order_no=no, supplier_id=sup.id, order_date=_parse_date(args.get("order_date","")),
                                status="待审核", total_amount=0, tax_rate=13, remark="AI", created_by=operator)
@@ -400,7 +400,7 @@ def _execute_create_order(args: dict, db: Session, user=None) -> str:
             if not cust: cust = db.query(Customer).filter(Customer.name_en.like(f"%{args['customer_name']}%")).first()
             if not cust: return f"未找到客户「{args['customer_name']}」"
 
-            no = generate_doc_no(db, "SO")
+            no = generate_doc_no(db, "SO", SalesOrder, "order_no")
             total_amt = 0
             so = SalesOrder(order_no=no, customer_id=cust.id, order_date=_parse_date(args.get("order_date","")),
                             status="待审核", total_amount=0, currency_id=1, exchange_rate=1, remark="AI", created_by=operator)
@@ -431,7 +431,7 @@ def _execute_create_collection(args: dict, db: Session, user=None) -> str:
     try:
         cust = db.query(Customer).filter(Customer.name_cn.like(f"%{args['customer_name']}%")).first()
         if not cust: return f"未找到客户「{args['customer_name']}」"
-        amt = float(args["amount"]); cno = generate_doc_no(db, "RC")
+        amt = float(args["amount"]); cno = generate_doc_no(db, "CR", Collection, "collection_no")
         c = Collection(collection_no=cno, customer_id=cust.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
                        collection_date=_parse_date(args.get("collection_date","")), operator=_operator_name(user))
         db.add(c); db.flush()
@@ -456,7 +456,7 @@ def _execute_create_payment(args: dict, db: Session, user=None) -> str:
     try:
         sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
         if not sup: return f"未找到供应商「{args['supplier_name']}」"
-        amt = float(args["amount"]); pno = generate_doc_no(db, "PAY")
+        amt = float(args["amount"]); pno = generate_doc_no(db, "PM", Payment, "payment_no")
         p = Payment(payment_no=pno, supplier_id=sup.id, amount=amt, amount_fc=amt, currency_id=1, exchange_rate=1,
                     payment_date=_parse_date(args.get("payment_date","")), operator=_operator_name(user))
         db.add(p); db.flush()
@@ -501,30 +501,100 @@ def _execute_create_sales_invoice(args: dict, db: Session, user=None) -> str:
 
 def _execute_issue_materials(args: dict, db: Session, user=None) -> str:
     from app.models.foundation import Material
-    from app.models.production import ProductionOrder, MaterialIssueItem
+    from app.models.production import ProductionOrder, MaterialIssueItem, ProductionProcess
+    from app.models.inventory import WarehouseInventory, StockTransaction
+    from app.utils.batch_no import generate_doc_no
     try:
         mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
         if not mo: return f"未找到生产订单「{args['production_order_no']}」"
         mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
         if not mat: return f"未找到物料「{args['material_name']}」"
-        db.add(MaterialIssueItem(issue_no=f"IS-{date.today()}", production_id=mo.id, material_id=mat.id,
-                                 quantity=float(args["quantity"]), issue_date=date.today(), operator=_operator_name(user)))
+        qty = float(args["quantity"])
+
+        # 找物料库存批次（优先数量充足的最早批次）
+        batch = (db.query(WarehouseInventory)
+                 .filter(WarehouseInventory.material_id == mat.id, WarehouseInventory.quantity >= qty)
+                 .order_by(WarehouseInventory.in_date).first())
+        if not batch:
+            total = db.query(WarehouseInventory).filter(WarehouseInventory.material_id == mat.id).all()
+            avail = sum(i.quantity or 0 for i in total)
+            return f"❌ 物料「{mat.name}」库存不足（可用 {avail:g}{mat.unit}），无法发料 {qty:g}{mat.unit}"
+
+        # 扣库存
+        old_qty = batch.quantity
+        batch.quantity -= qty
+        batch.total_cost = round(batch.quantity * (batch.unit_cost or 0), 2)
+
+        # 找待发料工序（无工序关联则仅记录发料）
+        proc = (db.query(ProductionProcess)
+                .filter(ProductionProcess.production_id == mo.id, ProductionProcess.status == "待发料")
+                .first())
+        issue_no = generate_doc_no(db, "MI", MaterialIssueItem, "issue_no")
+        db.add(MaterialIssueItem(issue_no=issue_no, production_id=mo.id,
+                                 process_id=proc.id if proc else None,
+                                 material_id=mat.id, batch_no=batch.batch_no, quantity=qty,
+                                 unit_price=batch.unit_cost or 0, issue_date=date.today(),
+                                 warehouse_id=batch.warehouse_id, operator=_operator_name(user)))
+        db.flush()
+        # 库存流水
+        db.add(StockTransaction(
+            trans_type="material_issue_out", warehouse_id=batch.warehouse_id,
+            material_id=mat.id, batch_no=batch.batch_no, quantity=-qty,
+            unit_cost=batch.unit_cost or 0, total_amount=round(-qty * (batch.unit_cost or 0), 2),
+            before_qty=old_qty, after_qty=batch.quantity,
+            source_doc_type="发料", source_doc_no=issue_no,
+            trans_no=generate_doc_no(db, "ST"), operator=_operator_name(user)))
+        # 更新工序状态
+        if proc and proc.status == "待发料":
+            proc.status = "已发料"
         db.commit()
-        return f"✅ 已发料：{mat.name} × {args['quantity']}"
+        return f"✅ 已发料：{mat.name} × {qty:g}{mat.unit}（批次 {batch.batch_no}）"
     except Exception as e: db.rollback(); return f"❌ 发料失败：{e}"
 
 
 def _execute_production_receipt(args: dict, db: Session, user=None) -> str:
     from app.models.production import ProductionOrder, ProductionReceipt
-    from app.utils.batch_no import generate_doc_no
+    from app.models.inventory import WarehouseInventory, StockTransaction
+    from app.models.foundation import Warehouse
+    from app.utils.batch_no import generate_doc_no, generate_batch_no
     try:
         mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
         if not mo: return f"未找到生产订单「{args['production_order_no']}」"
-        rc = generate_doc_no(db, "FG")
+        qty = float(args["quantity"])
+
+        # 成品仓（未指定则默认成品仓）
+        wh = None
+        if args.get("warehouse_name"):
+            wh = db.query(Warehouse).filter(Warehouse.name.like(f"%{args['warehouse_name']}%")).first()
+            if not wh: return f"未找到仓库「{args['warehouse_name']}」"
+        if not wh:
+            wh = db.query(Warehouse).filter(Warehouse.wh_type == "成品仓").first()
+        if not wh:
+            return "❌ 未找到成品仓，请先维护仓库档案"
+
+        rc = generate_doc_no(db, "FG", ProductionReceipt, "receipt_no")
+        batch_no = generate_batch_no(db, prefix="FG")
+        unit_cost = 0
         db.add(ProductionReceipt(receipt_no=rc, production_id=mo.id, product_id=mo.product_id,
-                                  quantity=float(args["quantity"]), receipt_date=_parse_date(args.get("receipt_date","")), operator=_operator_name(user)))
+                                 batch_no=batch_no, quantity=qty, warehouse_id=wh.id,
+                                 material_cost=0, process_cost=0, unit_cost=unit_cost,
+                                 receipt_date=_parse_date(args.get("receipt_date","")), operator=_operator_name(user)))
+        db.flush()
+        # 成品库存 + 流水
+        db.add(WarehouseInventory(warehouse_id=wh.id, product_id=mo.product_id, batch_no=batch_no,
+                                  quantity=qty, unit_cost=unit_cost, total_cost=0,
+                                  in_date=_parse_date(args.get("receipt_date","")) or date.today(),
+                                  source_type="production"))
+        db.add(StockTransaction(trans_type="production_in", warehouse_id=wh.id,
+                                product_id=mo.product_id, batch_no=batch_no, quantity=qty,
+                                unit_cost=unit_cost, total_amount=0, before_qty=0, after_qty=qty,
+                                source_doc_type="完工入库", source_doc_no=rc,
+                                trans_no=generate_doc_no(db, "ST"), operator=_operator_name(user)))
+        # 更新生产订单状态
+        mo.received_qty = (mo.received_qty or 0) + qty
+        mo.status = "已入库" if (mo.received_qty or 0) >= mo.quantity else "部分入库"
         db.commit()
-        return f"✅ 入库单 {rc}（{args['quantity']}个）"
+        return f"✅ 入库单 {rc}（{qty:g}个，批次 {batch_no}）"
     except Exception as e: db.rollback(); return f"❌ 入库失败：{e}"
 
 

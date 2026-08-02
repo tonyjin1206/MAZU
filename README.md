@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS)
 
-> **v2.5.0** — Mazu Trade System — A Lightweight Trade Management Platform  
+> **v2.5.1** — Mazu Trade System — A Lightweight Trade Management Platform  
 > 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化  
 > **支持 AI 智能助手对话式操作**
 
@@ -161,5 +161,22 @@ cd e2e && ERP_DEV=1 python -m pytest -q
 5. 单元式测试（如库存 v2 的 6 个场景）允许独立小数据集（保证隔离），
    但必须复用 `test_data.py` 的真实数据风格与完整字段，禁止自造垃圾 code。
 
-**测试库注意**：pytest 复用 `backend/data/erp.db`（同一数据库），每次运行前自动清空业务表并重建种子。
-跑完测试后如需干净开发库，执行 `python scripts/reset_local_db.py`（白名单保留系统表）。
+**测试库隔离（强制规范）**：
+
+| | 开发/生产库 | 测试库 |
+|---|---|---|
+| 位置 | `backend/data/erp.db`（config.py 默认） | `ERP_DATA_DIR` 指向的独立临时目录 |
+| 数据 | 手工录入 + seed 脚本的真实业务数据 | `test_data.py` 构建的纺织测试档案 |
+| 维护 | 手动维护，`scripts/reset_local_db.py` 显式重置 | 每次 pytest 自动清空重建 + 种子 |
+| 被谁操作 | 后端服务 / 手工 / 迁移脚本 | 仅 pytest（conftest.py 的 setup_db） |
+
+1. **测试绝不触碰开发库**：`backend/tests/conftest.py` 在导入 app 前设置
+   `ERP_DATA_DIR=<临时目录>`（config.py 通过该环境变量决定数据目录），
+   pytest 的 setup_db 清空/重建的只是测试库。跑完测试开发库数据（含 AI 配置
+   `sys_bot_config`、手工档案）必须保持完全不变——验证方法：跑测试前后
+   对比 `backend/data/erp.db` 的 mtime 与数据量。
+2. **禁止在测试里绕过隔离**：不得直接改 `backend/data/erp.db`，不得手动
+   指定 `ERP_DATA_DIR` 指向开发目录，不得用 `scripts/reset_local_db.py`
+   当测试前置（那是开发库工具）。
+3. **AI 配置属于开发库数据**：DeepSeek API Key 存在 `sys_bot_config`，
+   一旦测试误清开发库，AI 助手会报「AI 未配置」——隔离规范就是为了防这个。

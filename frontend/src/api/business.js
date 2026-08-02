@@ -196,6 +196,6 @@ export const inventoryApi = {
 // AI 对话
 export const chatApi = {
   message: (data) => request.post('/chat/message', data),
-  reset: () => request.post('/chat/reset'),
+  reset: () => request.post('/chat/reset', {}),
 }
 
