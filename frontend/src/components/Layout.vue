@@ -63,6 +63,7 @@
         <!-- 4. 采购管理 -->
         <el-sub-menu index="purchase">
           <template #title>采购管理</template>
+          <el-menu-item index="/purchase/from-sales">销售订单转采购</el-menu-item>
           <el-menu-item index="/purchase/orders">采购订单</el-menu-item>
           <el-menu-item index="/purchase/receipts">采购入库</el-menu-item>
           <el-menu-item index="/purchase/invoices">采购发票</el-menu-item>
@@ -137,6 +138,7 @@ const pageTitle = computed(() => {
     '/foundation/suppliers': '供应商管理',
     '/foundation/hs-codes': 'HS编码/退税率管理',
     '/foundation/processes': '工序管理',
+    '/purchase/from-sales': '销售订单转采购',
     '/purchase/orders': '采购订单',
     '/purchase/receipts': '采购入库',
     '/purchase/invoices': '采购发票',

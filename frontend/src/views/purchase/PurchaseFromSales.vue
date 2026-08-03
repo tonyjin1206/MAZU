@@ -1,0 +1,269 @@
+<template>
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+    <!-- ========== 搜索区 ========== -->
+    <el-card style="margin-bottom: 8px; flex: none">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <el-input v-model="searchForm.keyword" placeholder="输入销售订单号/客户搜索，回车查询" clearable style="width: 280px" @keyup.enter="resetSearch" @clear="resetSearch" />
+          <el-button type="primary" @click="fetchData">查询</el-button>
+          <el-button @click="resetSearch">重置</el-button>
+        </div>
+      </template>
+      <div style="font-size: 12px; color: #606266">
+        已审核的销售订单转采购：点击「采购」按 BOM 展开物料清单，每个物料可指定不同供应商，系统自动按供应商拆成多张采购订单。
+      </div>
+    </el-card>
+
+    <!-- ========== 销售订单列表 ========== -->
+    <el-card style="flex: 1; overflow: hidden; display: flex; flex-direction: column">
+      <div style="flex: 1; overflow: auto">
+        <el-table v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row class="drag-table-so">
+          <el-table-column prop="order_no" label="销售订单号" min-width="150" sortable />
+          <el-table-column prop="customer_name" label="客户" min-width="130" show-overflow-tooltip sortable />
+          <el-table-column prop="order_date" label="日期" width="110" sortable />
+          <el-table-column prop="item_count" label="明细" width="70" align="center" sortable />
+          <el-table-column prop="total_amount" label="金额" width="110" align="right" sortable>
+            <template #default="{ row }">{{ fmtMoney(row.total_amount) }}</template>
+          </el-table-column>
+          <el-table-column prop="status" label="订单状态" width="100" align="center" sortable>
+            <template #default="{ row }">
+              <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="采购状态" width="110" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
+            <template #default="{ row }">
+              <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">已采购完成</el-tag>
+              <el-tag v-else-if="row.purchase_status === 'partial'" type="warning" size="small">部分采购</el-tag>
+              <el-tag v-else type="info" size="small">未采购</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" align="center" fixed="right">
+            <template #default="{ row }">
+              <el-button type="primary" size="small" @click="openPurchase(row)">采购</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" />
+      </div>
+    </el-card>
+
+    <!-- ========== 采购弹窗（选供应商/数量/单价，自动拆单） ========== -->
+    <el-dialog v-model="purchaseVisible" :title="`销售订单转采购：${currentOrderNo || ''}`" width="1280px" destroy-on-close>
+      <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
+        客户：{{ currentCustomer }} ｜ 每个物料行选择供应商后，系统按供应商自动拆成多张采购订单，一次生成。单价默认带出参考采购价，可改。
+      </div>
+      <el-table :data="purchaseRows" height="420" border size="small">
+        <el-table-column type="index" label="#" width="45" align="center" />
+        <el-table-column label="物料编码" width="120">
+          <template #default="{ row }">{{ row.code }}</template>
+        </el-table-column>
+        <el-table-column label="物料名称" min-width="140">
+          <template #default="{ row }">{{ row.name }}</template>
+        </el-table-column>
+        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip />
+        <el-table-column prop="unit" label="单位" width="60" align="center" />
+        <el-table-column label="需求数量" width="95" align="right">
+          <template #default="{ row }">{{ fmtQty(row.need_qty) }}</template>
+        </el-table-column>
+        <el-table-column label="已采购" width="80" align="right">
+          <template #default="{ row }">{{ fmtQty(row.purchased_qty) }}</template>
+        </el-table-column>
+        <el-table-column label="本次采购" width="130">
+          <template #default="{ row }">
+            <el-input-number v-model="row.quantity" :min="0" :max="Math.max(0, row.need_qty - row.purchased_qty)" :precision="2" size="small" controls-position="right" style="width: 100%" />
+          </template>
+        </el-table-column>
+        <el-table-column label="供应商" min-width="170">
+          <template #default="{ row }">
+            <el-button size="small" style="width: 100%" @click="openSupplierPicker(row)">
+              {{ row.supplier_name || '选择供应商' }}
+            </el-button>
+          </template>
+        </el-table-column>
+        <el-table-column label="单价" width="130">
+          <template #default="{ row }">
+            <el-input-number v-model="row.unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 100%" />
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="100" align="right">
+          <template #default="{ row }">{{ fmtMoney((row.quantity || 0) * (row.unit_price || 0)) }}</template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center">
+        <div style="font-size: 12px; color: #909399">
+          本次将拆成 <b style="color: #409eff">{{ supplierGroupCount }}</b> 张采购订单（按供应商分组）
+        </div>
+        <el-button type="primary" :loading="submitting" @click="submitPurchase">生成采购订单</el-button>
+      </div>
+    </el-dialog>
+
+    <!-- ========== 供应商选择弹窗 ========== -->
+    <el-dialog v-model="supplierPickerVisible" title="选择供应商" width="760px" destroy-on-close>
+      <div style="display: flex; gap: 8px; margin-bottom: 10px">
+        <el-input v-model="supplierSearch" placeholder="输入编码/名称搜索，回车查询" clearable @keyup.enter="searchSuppliers" @clear="searchSuppliers" />
+        <el-button type="primary" @click="searchSuppliers">搜索</el-button>
+      </div>
+      <el-table :data="pickerSupplierList" height="420" border size="small" highlight-current-row @row-click="pickSupplier">
+        <el-table-column prop="code" label="编码" width="120" />
+        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="country" label="国家/地区" width="110" />
+        <el-table-column prop="contact_person" label="联系人" width="100" />
+        <el-table-column prop="phone" label="电话" width="120" show-overflow-tooltip />
+      </el-table>
+      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+        <el-pagination v-model:current-page="supplierPage" v-model:page-size="supplierPageSize" :total="supplierTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchSuppliers" />
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, reactive, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import request from '../../api/request'
+
+// ========== 销售订单列表 ==========
+const loading = ref(false)
+const dataList = ref([])
+const total = ref(0)
+const queryParams = reactive({ page: 1, page_size: 100 })
+const searchForm = reactive({ keyword: '' })
+
+async function fetchData() {
+  loading.value = true
+  try {
+    const params = { page: queryParams.page, page_size: queryParams.page_size }
+    if (searchForm.keyword) params.keyword = searchForm.keyword
+    const res = await request.get('/purchase/sales-to-purchase', { params })
+    dataList.value = res.items || []
+    total.value = res.total || 0
+  } catch { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
+}
+
+function resetSearch() {
+  searchForm.keyword = ''
+  queryParams.page = 1
+  fetchData()
+}
+
+function fmtMoney(v) {
+  return '¥' + Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+function fmtQty(v) {
+  return Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+}
+function statusRank(s) {
+  return s === 'completed' ? 2 : s === 'partial' ? 1 : 0
+}
+function statusTagType(s) {
+  const map = { 待审核: 'info', 已审: 'success', 生产中: 'warning', 部分发货: '', 已发货: 'success', 已完成: 'success', 已关闭: 'info' }
+  return map[s] || ''
+}
+
+// ========== 采购弹窗 ==========
+const purchaseVisible = ref(false)
+const currentOrderId = ref(null)
+const currentOrderNo = ref('')
+const currentCustomer = ref('')
+const purchaseRows = ref([])
+const submitting = ref(false)
+
+async function openPurchase(row) {
+  try {
+    const res = await request.get(`/purchase/sales-to-purchase/${row.id}`)
+    currentOrderId.value = row.id
+    currentOrderNo.value = res.order_no || ''
+    currentCustomer.value = res.customer_name || ''
+    purchaseRows.value = (res.rows || []).map(r => ({
+      ...r,
+      quantity: Math.max(0, (r.need_qty || 0) - (r.purchased_qty || 0)),
+      unit_price: r.ref_price || 0,
+      supplier_id: r.default_supplier_id || null,
+      supplier_name: '',
+    }))
+    // 默认供应商名称回填
+    for (const r of purchaseRows.value) {
+      if (r.supplier_id) {
+        const s = pickerSupplierList.value.find(x => x.id === r.supplier_id)
+        if (s) r.supplier_name = s.name
+      }
+    }
+    purchaseVisible.value = true
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '加载销售订单明细失败') }
+}
+
+const supplierGroupCount = computed(() => {
+  const sids = new Set(purchaseRows.value.filter(r => r.supplier_id && r.quantity > 0).map(r => r.supplier_id))
+  return sids.size
+})
+
+async function submitPurchase() {
+  const validRows = purchaseRows.value.filter(r => r.supplier_id && (r.quantity || 0) > 0)
+  if (!validRows.length) { ElMessage.warning('请至少选择供应商并填写采购数量'); return }
+  const missing = purchaseRows.value.filter(r => (r.quantity || 0) > 0 && !r.supplier_id)
+  if (missing.length) { ElMessage.warning(`「${missing[0].name}」选择了数量但未选供应商`); return }
+  submitting.value = true
+  try {
+    const payload = {
+      sales_order_id: currentOrderId.value,
+      rows: validRows.map(r => ({
+        sales_item_id: r.sales_item_id,
+        material_id: r.material_id,
+        product_id: r.product_id,
+        supplier_id: r.supplier_id,
+        quantity: r.quantity,
+        unit_price: r.unit_price || 0,
+        tax_rate: 13,
+        need_qty: r.need_qty,
+        name: r.name,
+      })),
+    }
+    const res = await request.post('/purchase/orders/from-sales', payload)
+    ElMessage.success(res.message || '采购订单已生成')
+    purchaseVisible.value = false
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '生成采购订单失败') } finally { submitting.value = false }
+}
+
+// ========== 供应商选择弹窗 ==========
+const supplierPickerVisible = ref(false)
+const supplierSearch = ref('')
+const pickerSupplierList = ref([])
+const supplierTotal = ref(0)
+const supplierPage = ref(1)
+const supplierPageSize = ref(100)
+const supplierTargetRow = ref(null)
+
+async function searchSuppliers() {
+  try {
+    const params = { page: supplierPage.value, page_size: supplierPageSize.value }
+    if (supplierSearch.value) params.keyword = supplierSearch.value
+    const res = await request.get('/foundation/suppliers', { params })
+    pickerSupplierList.value = res.items || []
+    supplierTotal.value = res.total || 0
+  } catch {}
+}
+
+function openSupplierPicker(row) {
+  supplierTargetRow.value = row
+  supplierSearch.value = ''
+  supplierPage.value = 1
+  searchSuppliers()
+  supplierPickerVisible.value = true
+}
+
+function pickSupplier(s) {
+  if (supplierTargetRow.value) {
+    supplierTargetRow.value.supplier_id = s.id
+    supplierTargetRow.value.supplier_name = s.name
+  }
+  supplierPickerVisible.value = false
+}
+
+onMounted(() => {
+  fetchData()
+  searchSuppliers()
+})
+</script>

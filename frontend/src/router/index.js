@@ -20,6 +20,7 @@ const routes = [
       { path: 'foundation/params', name: 'SystemParams', component: () => import('../views/foundation/SystemParams.vue') },
 
       // 采购管理
+      { path: 'purchase/from-sales', name: 'PurchaseFromSales', component: () => import('../views/purchase/PurchaseFromSales.vue') },
       { path: 'purchase/orders', name: 'PurchaseOrders', component: () => import('../views/purchase/PurchaseOrders.vue') },
       { path: 'purchase/receipts', name: 'PurchaseReceipts', component: () => import('../views/purchase/PurchaseReceipts.vue') },
       { path: 'purchase/invoices', name: 'PurchaseInvoices', component: () => import('../views/purchase/PurchaseInvoices.vue') },
