@@ -138,7 +138,7 @@
     </el-card>
 
     <!-- 新建/编辑/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1400px" destroy-on-close>
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-form-item label="供应商" prop="supplier_id">
           <el-input v-if="viewMode" :model-value="supplierDisplayName" readonly placeholder="-" />
@@ -154,7 +154,6 @@
           <div style="width: 100%">
             <div style="display: flex; align-items: center; margin-bottom: 4px">
               <el-button v-if="!viewMode" size="small" @click="addItem">+ 添加物料</el-button>
-              <el-button v-if="!viewMode" size="small" type="primary" plain @click="openSalesOrderPicker">按销售订单采购</el-button>
               <span v-if="orderForm.items.some(i => i.sales_order_no)" style="font-size: 12px; color: #67c23a; margin-left: 8px">已关联销售订单，收货后成本自动归集</span>
             </div>
             <el-table :data="orderForm.items" border size="small" style="width: 100%; margin-top: 4px">
@@ -291,27 +290,6 @@
       </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination v-model:current-page="materialPage" v-model:page-size="materialPageSize" :total="materialTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchPicker" />
-      </div>
-    </el-dialog>
-    <!-- 销售订单选择弹窗（按单采购） -->
-    <el-dialog v-model="salesOrderPickerVisible" title="选择销售订单（按单采购）" width="820px" destroy-on-close>
-      <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
-        选中一张已审核的销售订单，其产品明细会自动带进采购明细（数量、单价可改）。支持一张采购单关联多张销售订单。
-      </div>
-      <div style="display: flex; gap: 8px; margin-bottom: 10px">
-        <el-input v-model="salesOrderSearch" placeholder="输入订单号/客户搜索，回车查询" clearable @keyup.enter="searchSalesOrders" @clear="searchSalesOrders" />
-        <el-button type="primary" @click="searchSalesOrders">搜索</el-button>
-      </div>
-      <el-table :data="salesOrderList" height="380" border size="small" highlight-current-row @row-click="pickSalesOrder">
-        <el-table-column prop="order_no" label="订单号" width="140" />
-        <el-table-column prop="customer_name" label="客户" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="order_date" label="日期" width="110" />
-        <el-table-column prop="item_count" label="明细" width="70" align="center" />
-        <el-table-column prop="total_amount" label="金额" width="110" align="right" />
-        <el-table-column prop="status" label="状态" width="80" align="center" />
-      </el-table>
-      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
-        <el-pagination v-model:current-page="salesOrderPage" v-model:page-size="salesOrderPageSize" :total="salesOrderTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchSalesOrders" />
       </div>
     </el-dialog>
     <!-- 转成品库入库弹窗（选择关联待入库单 / 备货新建） -->
@@ -683,73 +661,6 @@ async function loadSuppliers() {
     const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
     supplierList.value = res.items || []
   } catch {}
-}
-
-// ========== 按销售订单采购（关联销售单，成本归集） ==========
-const salesOrderPickerVisible = ref(false)
-const salesOrderSearch = ref('')
-const salesOrderList = ref([])
-const salesOrderTotal = ref(0)
-const salesOrderPage = ref(1)
-const salesOrderPageSize = ref(100)
-
-async function searchSalesOrders() {
-  try {
-    const params = { page: salesOrderPage.value, page_size: salesOrderPageSize.value, status: '已审' }
-    if (salesOrderSearch.value) params.keyword = salesOrderSearch.value
-    const res = await request.get('/sales/orders', { params })
-    salesOrderList.value = res.items || []
-    salesOrderTotal.value = res.total || 0
-  } catch {}
-}
-
-function openSalesOrderPicker() {
-  salesOrderSearch.value = ''
-  salesOrderPage.value = 1
-  searchSalesOrders()
-  salesOrderPickerVisible.value = true
-}
-
-async function pickSalesOrder(order) {
-  try {
-    const res = await request.get(`/sales/orders/${order.id}`)
-    const items = res.items || []
-    if (!items.length) { ElMessage.warning('该销售订单没有明细，无法带出'); return }
-    let added = 0
-    for (const si of items) {
-      // 同一销售明细行已带出过则跳过
-      if (orderForm.items.some(i => i.sales_item_id === si.id)) continue
-      orderForm.items.push({
-        material_id: null,
-        product_id: si.product_id,
-        material_code: si.product_code || '',
-        material_name: si.product_name || '',
-        unit: '', quantity: si.quantity || 0,
-        unit_price: 0,
-        tax_rate: orderForm.tax_rate || 13,
-        total_amount: 0, tax_amount: 0, total_amount_excl_tax: 0,
-        sales_item_id: si.id,
-        sales_order_no: order.order_no || '',
-      })
-      // 带出参考成本作为默认采购价（可改）
-      try {
-        const p = await request.get(`/foundation/products/${si.product_id}`)
-        if (p && p.estimated_cost) {
-          const row = orderForm.items[orderForm.items.length - 1]
-          row.unit_price = p.estimated_cost || 0
-          calcItem(row)
-        }
-      } catch {}
-      added++
-    }
-    if (added) {
-      ElMessage.success(`已带出 ${added} 行产品明细（来自 ${order.order_no}）`)
-      calcTotals()
-    } else {
-      ElMessage.warning('这些产品明细已带出过，无需重复')
-    }
-    salesOrderPickerVisible.value = false
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '加载销售订单明细失败') }
 }
 
 // ========== 采购明细去向：转成品库入库 / 转原料库入库 ==========

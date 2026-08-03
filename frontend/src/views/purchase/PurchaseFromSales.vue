@@ -26,8 +26,8 @@
             <template #default="{ row }">{{ fmtMoney(row.total_amount) }}</template>
           </el-table-column>
           <el-table-column prop="status" label="订单状态" width="100" align="center" sortable>
-            <template #default="{ row }">
-              <el-tag :type="statusTagType(row.status)" size="small">{{ row.status }}</el-tag>
+            <template #default>
+              <el-tag type="success" size="small">已审核</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="采购状态" width="110" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
@@ -156,10 +156,6 @@ function fmtQty(v) {
 }
 function statusRank(s) {
   return s === 'completed' ? 2 : s === 'partial' ? 1 : 0
-}
-function statusTagType(s) {
-  const map = { 待审核: 'info', 已审: 'success', 生产中: 'warning', 部分发货: '', 已发货: 'success', 已完成: 'success', 已关闭: 'info' }
-  return map[s] || ''
 }
 
 // ========== 采购弹窗 ==========
