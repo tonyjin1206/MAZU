@@ -138,7 +138,7 @@
     </el-card>
 
     <!-- 新建/编辑/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="900px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close>
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-form-item label="供应商" prop="supplier_id">
           <el-input v-if="viewMode" :model-value="supplierDisplayName" readonly placeholder="-" />
@@ -158,11 +158,16 @@
               <span v-if="orderForm.items.some(i => i.sales_order_no)" style="font-size: 12px; color: #67c23a; margin-left: 8px">已关联销售订单，收货后成本自动归集</span>
             </div>
             <el-table :data="orderForm.items" border size="small" style="width: 100%; margin-top: 4px">
-              <el-table-column label="物料" width="220">
+              <el-table-column label="物料编码" width="110">
                 <template #default="{ row }">
-                  <template v-if="viewMode">{{ row.material_code }} {{ row.material_name }}</template>
+                  <span v-if="row.material_code" style="color: #909399; font-size: 12px">{{ row.material_code }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="物料名称" min-width="180">
+                <template #default="{ row }">
+                  <template v-if="viewMode">{{ row.material_name }}</template>
                   <template v-else>
-                    <el-input v-if="row.material_name" :model-value="`${row.material_code || ''} ${row.material_name}`" readonly size="small" @click="openMaterialPicker(row)">
+                    <el-input v-if="row.material_name" :model-value="row.material_name" readonly size="small" @click="openMaterialPicker(row)">
                       <template #append>
                         <el-button size="small" @click.stop="openMaterialPicker(row)">换</el-button>
                       </template>

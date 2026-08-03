@@ -202,11 +202,16 @@
           <div style="width: 100%">
             <el-button v-if="!viewMode" size="small" @click="addItem">+ 添加产品</el-button>
             <el-table :data="orderForm.items" border size="small" style="width: 100%; margin-top: 4px">
-              <el-table-column label="产品" width="220">
+              <el-table-column label="产品编码" width="110">
                 <template #default="{ row }">
-                  <template v-if="viewMode">{{ row.product_code }} {{ row.product_name }}</template>
+                  <span v-if="row.product_code" style="color: #909399; font-size: 12px">{{ row.product_code }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="产品名称" min-width="180">
+                <template #default="{ row }">
+                  <template v-if="viewMode">{{ row.product_name }}</template>
                   <template v-else>
-                    <el-input v-if="row.product_name" :model-value="`${row.product_code || ''} ${row.product_name}`" readonly size="small" @click="openProductPicker(row)">
+                    <el-input v-if="row.product_name" :model-value="row.product_name" readonly size="small" @click="openProductPicker(row)">
                       <template #append>
                         <el-button size="small" @click.stop="openProductPicker(row)">换</el-button>
                       </template>
