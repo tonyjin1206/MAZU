@@ -38,6 +38,7 @@
 | `test_textile_flow.py` | 纺织全流程（销售→生产→采购→发货→退货→报关→退税） |
 | `test_inventory_v2.py` | 收发存 v2（盘点/红冲/退货/发料拆类型） |
 | `test_bot_agent.py` | AI 助手工具执行器 |
+| `test_config_secret_guard.py` | 系统配置密钥守卫（BotConfig.api_key / WecomConfig.secret 防双重加密） |
 | `test_sales_return_red.py` | 销售退货全链路（v2.5.2：红字发票/退款/核销转移/负数申报） |
 
 新增测试规范（详见 README「测试数据规范」）：共用 `build_foundation`、数据走 API 不灌 SQL、
