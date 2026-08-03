@@ -83,6 +83,7 @@ class SalesOrderItem(Base):
     hs_code_id = Column(Integer, ForeignKey("fd_hs_code.id"), comment="HS编码")
     batch_no = Column(String(64), unique=True, comment="明细批次号: SO-YYYYMMDD-NNN-N")
     delivered_qty = Column(Float, default=0, comment="已发货数量")
+    delivery_confirmed = Column(Integer, default=0, comment="发货确认完成(人工): 0未确认/1已确认")
     production_status = Column(String(16), default="未生产", comment="生产状态: 未生产/生产中/已生产")
     remark = Column(Text)
 
@@ -107,6 +108,8 @@ class SalesDelivery(Base):
     amount = Column(Float, default=0, comment="含税金额(外币)")
     delivery_date = Column(Date, nullable=False, default=date.today, comment="发货日期")
     status = Column(String(16), default="已发货", comment="状态: 已发货/已报关")
+    is_return = Column(Integer, default=0, comment="是否退货单: 0正常发货/1退货")
+    return_of_delivery_id = Column(Integer, ForeignKey("so_delivery.id"), comment="原发货单ID(退货时)")
     remark = Column(Text)
     operator = Column(String(32))
     created_at = Column(DateTime, default=func.now())

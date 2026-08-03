@@ -55,7 +55,6 @@
             <el-button v-if="row.status === '待确认'" link type="primary" @click="openEdit(row)">维护</el-button>
             <el-button v-if="row.status === '待确认'" link type="success" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待确认'" link type="danger" @click="handleDelete(row)">删除</el-button>
-            <el-button v-if="row.status === '已审核'" link type="primary" @click="handleFinish(row)">确认完工</el-button>
             <el-button link @click="openDetail(row)">详情</el-button>
           </template>
         </el-table-column>
@@ -83,7 +82,7 @@
         <el-form-item label="备注">
           <el-input v-model="editForm.remark" type="textarea" :rows="2" />
         </el-form-item>
-        <div style="color: #909399; font-size: 12px">审核后生成加工费应付账款；确认完工后在「库存管理 → 成品入库」生成待入库单收货。</div>
+        <div style="color: #909399; font-size: 12px">审核后生成加工费应付账款，并自动生成待入库单；收货请到「库存管理 → 成品入库」办理。</div>
       </el-form>
       <template #footer>
         <el-button @click="editVisible = false">取消</el-button>
@@ -230,15 +229,6 @@ async function handleApprove(row) {
     ElMessage.success(res.message || '已审核')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
-}
-
-async function handleFinish(row) {
-  await ElMessageBox.confirm(`确认委外订单 ${row.outsource_no} 已完工？将生成待入库单（成品入库模块收货）。`, '提示', { type: 'info' })
-  try {
-    const res = await request.post(`/outsource/orders/${row.id}/finish`)
-    ElMessage.success(res.message || '已确认完工')
-    fetchData()
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
 }
 
 async function handleDelete(row) {

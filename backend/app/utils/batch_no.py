@@ -66,6 +66,11 @@ def generate_doc_no(db: Session, prefix: str, model: Type[Any] = None,
 
     field = getattr(model, field_name)
 
+    # 🔴 峰子修复 2026-08-03: 先flush，让同一事务内刚add的记录对max查询可见
+    # 否则循环里连续生成流水号（销售发货/采购入库/成品入库等）会得到重复编号
+    # → UNIQUE constraint failed: inv_transaction.trans_no
+    db.flush()
+
     # 查询当天最大的单据编号
     max_no = (
         db.query(func.max(field))
@@ -74,9 +79,10 @@ def generate_doc_no(db: Session, prefix: str, model: Type[Any] = None,
     )
 
     if max_no:
-        # 提取序号部分并 +1
-        parts = max_no.rsplit("-", 1)
-        seq = int(parts[1]) + 1
+        # 短格式单据号 = 前缀-6位日期+2位序号（无分隔符，如 SD-26080301）
+        # 不能 rsplit("-")（无横杠会把整串当序号），取前缀+日期之后的数字部分
+        core = max_no[len(prefix) + 1 + len(date_str):]
+        seq = (int(core) + 1) if core.isdigit() else 2
     else:
         seq = 1
 

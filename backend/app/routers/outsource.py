@@ -159,26 +159,7 @@ def approve_order(
         status="未付款",
     )
     db.add(ap)
-    db.commit()
-    return {"message": f"委外订单已审核，已生成应付账款 {ap_no}", "amount": os.amount}
-
-
-@router.post("/orders/{order_id}/finish", tags=["委外管理"])
-def finish_order(
-    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
-):
-    """确认完工 → 生成成品入库待入库单（收货走成品入库模块）"""
-    os = db.query(OutsourceOrder).filter(OutsourceOrder.id == order_id).first()
-    if not os:
-        raise HTTPException(404, "委外订单不存在")
-    if os.status != "已审核":
-        raise HTTPException(400, f"当前状态「{os.status}」不能确认完工")
-    existing = db.query(StockInOrder).filter(
-        StockInOrder.outsource_order_id == os.id,
-        StockInOrder.status.in_(["待入库", "部分入库"]),
-    ).first()
-    if existing:
-        raise HTTPException(400, "已有待入库单，请先在成品入库模块收货")
+    # 生成待入库单（收货走成品入库模块，与销售订单转入库同逻辑）
     sin = StockInOrder(
         source_type="outsource",
         sales_order_id=os.sales_order_id,
@@ -190,9 +171,8 @@ def finish_order(
         created_by=current_user.display_name or current_user.username,
     )
     db.add(sin)
-    os.status = "已完工"
     db.commit()
-    return {"message": "已确认完工，收货请到「库存管理 → 成品入库」办理"}
+    return {"message": f"委外订单已审核：已生成应付账款 {ap_no}，待入库单已生成，收货请到「库存管理 → 成品入库」", "amount": os.amount}
 
 
 @router.delete("/orders/{order_id}", tags=["委外管理"])

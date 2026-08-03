@@ -421,30 +421,53 @@ def get_transactions(
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 
-@router.get("/trace/{batch_no}", tags=["库存管理"])
 @router.get("/available-batches", tags=["库存管理"])
 def get_available_batches(
     product_id: int = Query(..., description="产品ID"),
     warehouse_id: int | None = Query(None, description="仓库ID"),
+    order_id: int | None = Query(None, description="当前发货订单ID，用于计算批次锁定"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """查询可用批次（按产品+仓库）"""
+    """查询可用批次（按产品+仓库），返回每个批次的锁定/可发数量：
+    - 批次归属订单未确认发货完成时，(订单量-已发) 锁定给该订单；当前订单自己的批次不锁定
+    - 归属订单确认完成后锁定解除
+    - 无归属（备货 FG- 批次）不锁定"""
     query = db.query(WarehouseInventory).filter(
         WarehouseInventory.product_id == product_id,
-        WarehouseInventory.quantity > 0,
     )
     if warehouse_id:
         query = query.filter(WarehouseInventory.warehouse_id == warehouse_id)
     items = query.all()
-    return {"items": [
-        {"id": inv.id, "batch_no": inv.batch_no, "quantity": inv.quantity,
-         "unit_cost": round(inv.unit_cost, 2),
-         "warehouse_id": inv.warehouse_id, "warehouse_name": inv.warehouse.name if inv.warehouse else ""}
-        for inv in items
-    ]}
+
+    # 按批次号汇总（同一批次多条记录合并）
+    batch_map = {}
+    for inv in items:
+        key = inv.batch_no
+        if key not in batch_map:
+            batch_map[key] = {"id": inv.id, "batch_no": key, "quantity": 0.0,
+                              "unit_cost": round(inv.unit_cost or 0, 2),
+                              "warehouse_id": inv.warehouse_id,
+                              "warehouse_name": inv.warehouse.name if inv.warehouse else ""}
+        batch_map[key]["quantity"] = round(batch_map[key]["quantity"] + (inv.quantity or 0), 2)
+
+    result = []
+    for key, b in batch_map.items():
+        owner = db.query(SalesOrderItem).filter(SalesOrderItem.batch_no == key).first()
+        locked = 0
+        owner_order_no = ""
+        if owner:
+            owner_order_no = owner.order.order_no if owner.order else ""
+            if owner.order_id != order_id and not owner.delivery_confirmed:
+                locked = max(0, round((owner.quantity or 0) - (owner.delivered_qty or 0), 2))
+        b["locked_qty"] = locked
+        b["available"] = max(0, round(b["quantity"] - locked, 2))
+        b["owner_order_no"] = owner_order_no
+        result.append(b)
+    return {"items": result}
 
 
+@router.get("/trace/{batch_no}", tags=["库存管理"])
 def trace_batch(
     batch_no: str,
     db: Session = Depends(get_db),

@@ -22,7 +22,7 @@ from app.models.sales import (
     SalesInvoice,
     AccountsReceivable, Collection, CollectionAllocation,
 )
-from app.models.inventory import WarehouseInventory, StockTransaction
+from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder
 from app.utils.auth import get_current_user
 from app.utils.batch_no import generate_doc_no
 
@@ -291,6 +291,7 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
              "total_amount_excl_tax": item.total_amount_excl_tax,
              "batch_no": item.batch_no or "",
              "delivered_qty": item.delivered_qty or 0,
+             "delivery_confirmed": item.delivery_confirmed or 0,
              "received_qty": sum(
                  (s.received_qty or 0) for s in db.query(StockInOrder).filter(
                      StockInOrder.sales_item_id == item.id,
@@ -529,7 +530,12 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
 
 @router.post("/deliveries", tags=["销售管理"])
 def create_delivery(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """销售发货 — 指定批次出库、扣库存、更新订单明细已发数量"""
+    """销售发货 — 指定批次出库、扣库存、更新订单明细已发数量。
+    可发量规则（峰子拍板）：
+    - 发货数量不按订单量限制，只看批次可发量（物理库存 - 其他订单锁定）
+    - 批次归属订单未确认完成时，(订单量-已发) 部分锁定给该订单，超收部分可发其他订单
+    - 归属订单确认完成后锁定解除，剩余库存全部开放
+    - 已确认完成的产品行不能再发货"""
     order = db.query(SalesOrder).filter(SalesOrder.id == data["order_id"]).first()
     if not order:
         raise HTTPException(404, "销售订单不存在")
@@ -545,35 +551,48 @@ def create_delivery(data: dict, db: Session = Depends(get_db), current_user: Use
     if not order_item:
         raise HTTPException(400, "订单明细行不存在")
 
-    # 检查未发货数量
-    qty_to_ship = data["quantity"]
-    remaining = order_item.quantity - (order_item.delivered_qty or 0)
-    if qty_to_ship > remaining:
-        raise HTTPException(400, f"发货数量{qty_to_ship}超过未发数量{remaining}")
+    # 已确认完成的行不能再发货
+    if order_item.delivery_confirmed:
+        raise HTTPException(400, "该产品已确认发货完成，不能再发货（如需补发请先撤销确认）")
 
-    from app.utils.batch_no import generate_doc_no
+    qty_to_ship = float(data["quantity"])
+    if qty_to_ship <= 0:
+        raise HTTPException(400, "发货数量必须大于0")
+    product_id = order_item.product_id
+    batch_no = data["batch_no"]
+
+    # 批次库存（同一批次可能有多条库存记录，按净数量合计）
+    invs = db.query(WarehouseInventory).filter(
+        WarehouseInventory.batch_no == batch_no,
+        WarehouseInventory.product_id == product_id,
+    ).all()
+    stock = round(sum((i.quantity or 0) for i in invs), 2)
+    if stock <= 0:
+        raise HTTPException(400, f"批次 {batch_no} 库存不足")
+
+    # 锁定计算：批次归属其他订单且该行未确认完成时，(订单量-已发) 锁定
+    owner = db.query(SalesOrderItem).filter(SalesOrderItem.batch_no == batch_no).first()
+    locked = 0
+    if owner and owner.order_id != order.id and not owner.delivery_confirmed:
+        locked = max(0, round((owner.quantity or 0) - (owner.delivered_qty or 0), 2))
+    available = max(0, round(stock - locked, 2))
+    if qty_to_ship > available:
+        tip = f"（其中{locked}已锁定给订单 {owner.order.order_no}）" if locked else ""
+        raise HTTPException(400, f"发货数量{qty_to_ship}超过该批次可发数量{available}{tip}")
+
     from app.models.sales import SalesDelivery
     delivery_no = generate_doc_no(db, "SD", SalesDelivery, "delivery_no")
-
-    # 检查批次库存是否足够
-    product_id = order_item.product_id
-    inventory = db.query(WarehouseInventory).filter(
-        WarehouseInventory.batch_no == data["batch_no"],
-        WarehouseInventory.product_id == product_id,
-    ).first()
-    if not inventory or inventory.quantity < qty_to_ship:
-        raise HTTPException(400, f"批次 {data['batch_no']} 库存不足")
 
     delivery = SalesDelivery(
         delivery_no=delivery_no,
         order_id=order.id,
         order_item_id=order_item.id,
         product_id=product_id,
-        warehouse_id=data.get("warehouse_id") or inventory.warehouse_id,
-        batch_no=data["batch_no"],
+        warehouse_id=data.get("warehouse_id") or (invs[0].warehouse_id if invs else None),
+        batch_no=batch_no,
         quantity=qty_to_ship,
         unit_price=order_item.unit_price,
-        amount=round(qty_to_ship * order_item.unit_price, 2),
+        amount=round(qty_to_ship * (order_item.unit_price or 0), 2),
         delivery_date=_parse_date(data.get("delivery_date")) or date.today(),
         operator=current_user.display_name or current_user.username,
         remark=data.get("remark", ""),
@@ -581,66 +600,308 @@ def create_delivery(data: dict, db: Session = Depends(get_db), current_user: Use
     db.add(delivery)
     db.flush()
 
-    # 扣库存
-    old_qty = inventory.quantity
-    issue_qty = qty_to_ship
-    inv_unit_cost = inventory.unit_cost
-    inventory.quantity -= issue_qty
-    inventory.total_cost = round(inventory.quantity * inv_unit_cost, 2)
+    # 扣库存：按记录顺序（先进先出）循环扣减，每条记录生成一条流水
+    remaining = qty_to_ship
+    for inv in sorted(invs, key=lambda x: x.id):
+        if remaining <= 0:
+            break
+        take = min(inv.quantity or 0, remaining)
+        if take <= 0:
+            continue
+        old_qty = inv.quantity
+        inv_unit_cost = inv.unit_cost or 0
+        inv.quantity = round(old_qty - take, 2)
+        inv.total_cost = round(inv.quantity * inv_unit_cost, 2)
+        trans = StockTransaction(
+            trans_type="sale_out",
+            warehouse_id=inv.warehouse_id,
+            product_id=product_id,
+            batch_no=batch_no,
+            quantity=-take,
+            unit_cost=inv_unit_cost,
+            total_amount=round(-take * inv_unit_cost, 2),
+            before_qty=old_qty,
+            after_qty=inv.quantity,
+            before_cost=round(old_qty * inv_unit_cost, 2),
+            after_cost=round(inv.quantity * inv_unit_cost, 2),
+            source_doc_type="销售发货",
+            source_doc_no=delivery_no,
+            trans_no=generate_doc_no(db, "ST"),
+            operator=current_user.display_name or current_user.username,
+        )
+        db.add(trans)
+        remaining = round(remaining - take, 2)
 
-    # 库存流水（含成本）
+    # 更新订单明细已发数量
+    order_item.delivered_qty = round((order_item.delivered_qty or 0) + qty_to_ship, 2)
+
+    # 订单状态以人工确认为准：全部明细确认完成=已发货；有发货/确认记录=部分发货
+    _update_order_delivery_status(order)
+
+    db.commit()
+    return {"id": delivery.id, "delivery_no": delivery_no, "message": "发货成功，库存已扣减"}
+
+
+def _update_order_delivery_status(order):
+    """按明细行人工确认状态更新订单发货状态（已发货=全部行确认完成）"""
+    items = order.items
+    if not items:
+        return
+    if all((i.delivery_confirmed or 0) == 1 for i in items):
+        order.status = "已发货"
+    elif any((i.delivery_confirmed or 0) == 1 or (i.delivered_qty or 0) > 0 for i in items):
+        order.status = "部分发货"
+
+
+@router.post("/orders/{order_id}/items/{item_id}/delivery-confirm", tags=["销售管理"])
+def confirm_order_item_delivery(
+    order_id: int, item_id: int, data: dict,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """确认/撤销 明细行发货完成（按产品行）。
+    确认后：该行不能再发货，批次锁定解除（剩余库存开放给其他订单）。
+    撤销后：恢复锁定，可继续发货。"""
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id,
+        SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "订单明细行不存在")
+
+    confirmed = bool(data.get("confirmed", True))
+    if confirmed:
+        if item.delivery_confirmed:
+            raise HTTPException(400, "该产品行已确认过发货完成")
+        item.delivery_confirmed = 1
+    else:
+        if not item.delivery_confirmed:
+            raise HTTPException(400, "该产品行未确认过发货完成")
+        item.delivery_confirmed = 0
+
+    order = item.order
+    _update_order_delivery_status(order)
+    db.commit()
+    return {
+        "message": "已确认发货完成" if confirmed else "已撤销确认",
+        "delivery_confirmed": item.delivery_confirmed,
+        "order_status": order.status,
+    }
+
+
+@router.get("/deliveries", tags=["销售管理"])
+def list_deliveries(
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    order_item_id: int | None = Query(None, description="按订单明细行过滤（发货记录下表用）"),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    q = db.query(SalesDelivery)
+    if order_item_id:
+        q = q.filter(SalesDelivery.order_item_id == order_item_id)
+    items = q.order_by(SalesDelivery.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    return {"total": q.count(), "page": page, "page_size": page_size, "items": [
+        {"id": d.id, "delivery_no": d.delivery_no,
+         "order_no": d.order.order_no if d.order else "",
+         "order_item_id": d.order_item_id,
+         "product_id": d.product_id,
+         "product_name": d.order_item.product.name_cn if d.order_item and d.order_item.product else "",
+         "batch_no": d.batch_no, "quantity": d.quantity,
+         "unit_price": d.unit_price or 0,
+         "amount": d.amount or 0,
+         "is_return": d.is_return or 0,
+         "return_of_delivery_id": d.return_of_delivery_id,
+         "delivery_date": str(d.delivery_date), "status": d.status,
+         "remark": d.remark or "",
+         "created_at": str(d.created_at)[:19] if d.created_at else "",
+        } for d in items
+    ]}
+
+
+# ==================== 发货工作台（峰子 2026-08-03 拍板：上=产品发货记录，下=发货单明细） ====================
+
+@router.get("/delivery-workbench", tags=["销售管理"])
+def delivery_workbench(
+    page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
+    keyword: str = "", status: str = "",
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """发货工作台上表：所有已审核销售订单的明细行（一行一产品）。
+    字段：订单量/已入库/已发货/未发货/实物库存(该产品全部库存)/可用库存(实物-所有未完成订单锁定)/确认状态"""
+    from app.models.inventory import StockInOrder as _SIO
+
+    q = db.query(SalesOrderItem, SalesOrder, Product, Customer).join(
+        SalesOrder, SalesOrderItem.order_id == SalesOrder.id,
+    ).join(Product, SalesOrderItem.product_id == Product.id).join(
+        Customer, SalesOrder.customer_id == Customer.id,
+    ).filter(SalesOrder.status != "待审核")
+    if status:
+        q = q.filter(SalesOrder.status == status)
+    if keyword:
+        like = f"%{keyword}%"
+        q = q.filter(sa_func.or_(
+            SalesOrder.order_no.like(like),
+            SalesOrderItem.batch_no.like(like),
+            Product.name_cn.like(like),
+            Product.code.like(like),
+            Customer.name_cn.like(like),
+        ))
+    total = q.count()
+    rows = q.order_by(SalesOrder.id.desc(), SalesOrderItem.id).offset((page-1)*page_size).limit(page_size).all()
+
+    result = []
+    for item, order, prod, cust in rows:
+        # 已入库：该明细行累计收货
+        received = sum(
+            (s.received_qty or 0) for s in db.query(_SIO).filter(
+                _SIO.sales_item_id == item.id, _SIO.status != "已退回").all()
+        )
+        # 实物库存：该产品所有批次库存净合计（含负数记录，峰子口径=实际在库）
+        phys = db.query(sa_func.coalesce(sa_func.sum(WarehouseInventory.quantity), 0)).filter(
+            WarehouseInventory.product_id == item.product_id,
+        ).scalar() or 0
+        # 可用库存 = 实物库存 - 该产品所有未确认完成明细行的锁定量之和
+        locked_rows = db.query(SalesOrderItem).filter(
+            SalesOrderItem.product_id == item.product_id,
+            SalesOrderItem.delivery_confirmed == 0,
+        ).all()
+        locked = sum(max(0, (r.quantity or 0) - (r.delivered_qty or 0)) for r in locked_rows)
+        available = max(0, round(float(phys) - locked, 2))
+        result.append({
+            "item_id": item.id,
+            "order_id": order.id,
+            "order_no": order.order_no,
+            "customer_name": cust.name_cn if cust else "",
+            "product_id": item.product_id,
+            "product_name": prod.name_cn if prod else "",
+            "product_code": prod.code if prod else "",
+            "batch_no": item.batch_no or "",
+            "quantity": item.quantity,
+            "received_qty": round(received, 2),
+            "delivered_qty": item.delivered_qty or 0,
+            "undelivered_qty": round((item.quantity or 0) - (item.delivered_qty or 0), 2),
+            "physical_stock": round(float(phys), 2),
+            "available_stock": available,
+            "delivery_confirmed": item.delivery_confirmed or 0,
+            "order_status": order.status,
+        })
+    return {"total": total, "page": page, "page_size": page_size, "items": result}
+
+
+@router.post("/deliveries/return", tags=["销售管理"])
+def create_delivery_return(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """销售退货（峰子 2026-08-03 拍板）：
+    - 退到原批次，生成退货发货单（is_return=1）
+    - 退货数量≤已发数量，多次退货合计≤已发数量
+    - 库存加回、已发数量扣减、自动撤销发货完成确认（涉及补货时可继续发货）"""
+    item = db.query(SalesOrderItem).filter(SalesOrderItem.id == data.get("order_item_id")).first()
+    if not item:
+        raise HTTPException(400, "订单明细行不存在")
+
+    qty = float(data["quantity"])
+    if qty <= 0:
+        raise HTTPException(400, "退货数量必须大于0")
+    batch_no = data["batch_no"]
+
+    # 该批次必须是该行正常发货过的批次（退到原批次）
+    shipped = db.query(SalesDelivery).filter(
+        SalesDelivery.order_item_id == item.id,
+        SalesDelivery.batch_no == batch_no,
+        SalesDelivery.is_return == 0,
+    ).order_by(SalesDelivery.id).all()
+    if not shipped:
+        raise HTTPException(400, f"批次 {batch_no} 没有该产品的正常发货记录")
+
+    # 多次退货合计 ≤ 已发数量
+    returned = db.query(sa_func.coalesce(sa_func.sum(SalesDelivery.quantity), 0)).filter(
+        SalesDelivery.order_item_id == item.id,
+        SalesDelivery.is_return == 1,
+    ).scalar() or 0
+    if qty + (returned or 0) > (item.delivered_qty or 0):
+        raise HTTPException(400, f"退货数量{qty}超限：该产品已发{(item.delivered_qty or 0)}，已退{(returned or 0)}，最多再退{round((item.delivered_qty or 0) - (returned or 0), 2)}")
+
+    # 生成退货发货单（红字单：is_return=1）
+    delivery_no = generate_doc_no(db, "SD", SalesDelivery, "delivery_no")
+    src = shipped[0]
+    ret = SalesDelivery(
+        delivery_no=delivery_no,
+        order_id=item.order_id,
+        order_item_id=item.id,
+        product_id=item.product_id,
+        warehouse_id=src.warehouse_id,
+        batch_no=batch_no,
+        quantity=qty,
+        unit_price=item.unit_price,
+        amount=round(qty * (item.unit_price or 0), 2),
+        delivery_date=_parse_date(data.get("delivery_date")) or date.today(),
+        operator=current_user.display_name or current_user.username,
+        remark=data.get("remark", ""),
+        status="已退货",
+        is_return=1,
+        return_of_delivery_id=src.id,
+    )
+    db.add(ret)
+    db.flush()
+
+    # 库存加回原批次（优先加到正数记录，全发空则新建一条）
+    inv = db.query(WarehouseInventory).filter(
+        WarehouseInventory.batch_no == batch_no,
+        WarehouseInventory.product_id == item.product_id,
+        WarehouseInventory.quantity > 0,
+    ).order_by(WarehouseInventory.id).first()
+    if inv:
+        old_qty = inv.quantity
+        unit_cost = inv.unit_cost or 0
+        wh_id = inv.warehouse_id
+        inv.quantity = round(old_qty + qty, 2)
+        inv.total_cost = round(inv.quantity * unit_cost, 2)
+        after_qty = inv.quantity
+    else:
+        from datetime import date as _date
+        old_qty = 0
+        unit_cost = 0
+        wh_id = src.warehouse_id
+        inv = WarehouseInventory(
+            warehouse_id=wh_id,
+            product_id=item.product_id,
+            batch_no=batch_no,
+            quantity=qty,
+            unit_cost=0,
+            total_cost=0,
+            in_date=_date.today(),
+            source_type="sale_return",
+            source_doc_id=ret.id,
+            receipt_no=delivery_no,
+        )
+        db.add(inv)
+        db.flush()
+        after_qty = qty
+
+    # 库存流水（正数入库）
     trans = StockTransaction(
-        trans_type="sale_out",
-        warehouse_id=inventory.warehouse_id,
-        product_id=product_id,
-        batch_no=data["batch_no"],
-        quantity=-issue_qty,
-        unit_cost=inv_unit_cost,
-        total_amount=round(-issue_qty * inv_unit_cost, 2),
+        trans_type="sale_return",
+        warehouse_id=wh_id,
+        product_id=item.product_id,
+        batch_no=batch_no,
+        quantity=qty,
+        unit_cost=unit_cost,
+        total_amount=round(qty * unit_cost, 2),
         before_qty=old_qty,
-        after_qty=inventory.quantity,
-        before_cost=round(old_qty * inv_unit_cost, 2),
-        after_cost=round(inventory.quantity * inv_unit_cost, 2),
-        source_doc_type="销售发货",
+        after_qty=after_qty,
+        before_cost=round(old_qty * unit_cost, 2),
+        after_cost=round(after_qty * unit_cost, 2),
+        source_doc_type="销售退货",
         source_doc_no=delivery_no,
         trans_no=generate_doc_no(db, "ST"),
         operator=current_user.display_name or current_user.username,
     )
     db.add(trans)
 
-    # 更新订单明细已发数量
-    order_item.delivered_qty = (order_item.delivered_qty or 0) + qty_to_ship
-
-    # 判断订单整体发货状态
-    all_fully_shipped = all((item.delivered_qty or 0) >= item.quantity for item in order.items)
-    any_shipped = any((item.delivered_qty or 0) > 0 for item in order.items)
-    if all_fully_shipped:
-        order.status = "已发货"
-    elif any_shipped:
-        order.status = "部分发货"
-
+    # 已发数量扣减 + 自动撤销确认（补货时可直接继续发货）
+    item.delivered_qty = round((item.delivered_qty or 0) - qty, 2)
+    if item.delivery_confirmed:
+        item.delivery_confirmed = 0
+    _update_order_delivery_status(item.order)
     db.commit()
-    return {"id": delivery.id, "delivery_no": delivery_no, "message": "发货成功，库存已扣减"}
-
-
-@router.get("/deliveries", tags=["销售管理"])
-def list_deliveries(
-    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
-):
-    items = db.query(SalesDelivery).order_by(SalesDelivery.id.desc()).offset((page-1)*page_size).limit(page_size).all()
-    return {"total": db.query(SalesDelivery).count(), "page": page, "page_size": page_size, "items": [
-        {"id": d.id, "delivery_no": d.delivery_no,
-         "order_no": d.order.order_no if d.order else "",
-         "product_id": d.order.items[0].product_id if d.order and d.order.items else None,
-         "product_name": d.order.items[0].product.name_cn if d.order and d.order.items and d.order.items[0].product else "",
-         "batch_no": d.batch_no, "quantity": d.quantity,
-         "unit_price": d.order.items[0].unit_price if d.order and d.order.items else 0,
-         "amount": d.quantity * (d.order.items[0].unit_price or 0) if d.order and d.order.items else 0,
-         "delivery_date": str(d.delivery_date), "status": d.status,
-         "created_at": str(d.created_at)[:19] if d.created_at else "",
-        } for d in items
-    ]}
+    return {"id": ret.id, "delivery_no": delivery_no, "message": "退货成功，库存已加回"}
 
 
 # ==================== 报关单 ====================
