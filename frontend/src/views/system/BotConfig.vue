@@ -49,7 +49,7 @@
           </el-col>
         </el-row>
         <el-form-item label="API Key" prop="api_key">
-          <el-input v-model="form.api_key" type="password" show-password />
+          <el-input v-model="form.api_key" type="password" show-password :placeholder="isEdit ? '留空则不修改' : '请输入 API Key'" />
         </el-form-item>
         <el-form-item label="API 地址" prop="base_url">
           <el-input v-model="form.base_url" placeholder="留空使用官方地址" />
@@ -71,7 +71,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemConfigApi } from '../../api/foundation'
 
@@ -90,11 +90,12 @@ const form = reactive({
   temperature: 0.1, max_tokens: 1024, system_prompt: '',
   is_active: 1,
 })
-const rules = {
+const rules = computed(() => ({
   provider: [{ required: true, message: '必选', trigger: 'change' }],
-  api_key: [{ required: true, message: '必填', trigger: 'blur' }],
+  // 编辑模式留空 = 不修改（避免回传密文被二次加密）
+  api_key: isEdit.value ? [] : [{ required: true, message: '必填', trigger: 'blur' }],
   model: [{ required: true, message: '必填', trigger: 'blur' }],
-}
+}))
 
 async function fetchData() {
   loading.value = true
@@ -119,7 +120,7 @@ function openCreate() {
 function openEdit(row) {
   isEdit.value = true; editId.value = row.id
   Object.assign(form, {
-    provider: row.provider, api_key: row.api_key, base_url: row.base_url || '',
+    provider: row.provider, api_key: '', base_url: row.base_url || '',
     model: row.model, temperature: row.temperature, system_prompt: row.system_prompt || '',
   })
   dialogVisible.value = true
@@ -136,7 +137,10 @@ async function handleSave() {
   saving.value = true
   try {
     if (isEdit.value) {
-      await systemConfigApi.bot.update(editId.value, { ...form })
+      const payload = { ...form }
+      // 留空 = 不修改，不提交该字段（后端守卫兜底）
+      if (!payload.api_key) delete payload.api_key
+      await systemConfigApi.bot.update(editId.value, payload)
       ElMessage.success('已更新')
     } else {
       await systemConfigApi.bot.create({ ...form })

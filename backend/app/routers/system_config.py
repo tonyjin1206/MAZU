@@ -11,7 +11,7 @@ from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
     ReminderConfig, ReminderLog,
 )
-from app.utils.crypto import encrypt, decrypt
+from app.utils.crypto import encrypt, decrypt, is_ciphertext
 from app.schemas.system_config import (
     WecomConfigCreate, WecomConfigUpdate, WecomConfigOut,
     BotConfigCreate, BotConfigUpdate, BotConfigOut,
@@ -59,9 +59,14 @@ def update_wecom(
     if not config:
         raise HTTPException(404, "配置不存在")
     update_data = data.model_dump(exclude_unset=True)
+    # secret 守卫：空值 / 脱敏回传 / 原密文回传 → 保留原值，避免双重加密
+    secret_raw = update_data.get("secret")
+    if secret_raw is None or not secret_raw or "****" in secret_raw \
+            or is_ciphertext(secret_raw) or secret_raw == config.secret:
+        update_data.pop("secret", None)
     for k, v in update_data.items():
         setattr(config, k, v)
-    if "secret" in update_data and update_data["secret"]:
+    if "secret" in update_data:
         config.secret = encrypt(update_data["secret"])
     db.commit()
     db.refresh(config)
@@ -139,9 +144,14 @@ def update_bot(
     if not config:
         raise HTTPException(404, "配置不存在")
     update_data = data.model_dump(exclude_unset=True)
+    # api_key 守卫：空值 / 脱敏回传 / 原密文回传 → 保留原值，避免双重加密
+    api_key_raw = update_data.get("api_key")
+    if api_key_raw is None or not api_key_raw or "****" in api_key_raw \
+            or is_ciphertext(api_key_raw) or api_key_raw == config.api_key:
+        update_data.pop("api_key", None)
     for k, v in update_data.items():
         setattr(config, k, v)
-    if "api_key" in update_data and update_data["api_key"]:
+    if "api_key" in update_data:
         config.api_key = encrypt(update_data["api_key"])
     db.commit()
     db.refresh(config)
