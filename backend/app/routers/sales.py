@@ -1339,6 +1339,14 @@ def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_
     if not inv:
         raise HTTPException(404, "发票不存在")
     
+    # 已收款的发票禁止改金额（先退收款单，保证应收一致）
+    ar0 = db.query(AccountsReceivable).filter(
+        AccountsReceivable.source_type == "sales_invoice",
+        AccountsReceivable.source_id == invoice_id,
+    ).first()
+    if ar0 and (ar0.collected_amount or 0) > 0 and any(k in data for k in ["amount", "tax_amount", "total_amount"]):
+        raise HTTPException(400, f"该发票对应应收单已收款 ¥{ar0.collected_amount}，不能修改金额；请先删除收款单")
+
     old_total = inv.total_amount or inv.amount or 0
     for field in ["invoice_no", "amount", "tax_rate", "tax_amount", "total_amount", "invoice_date", "remark"]:
         if field in data:
@@ -1375,6 +1383,8 @@ def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current
         AccountsReceivable.source_id == invoice_id,
     ).first()
     if ar:
+        if (ar.collected_amount or 0) > 0:
+            raise HTTPException(400, f"该发票对应应收单已收款 ¥{ar.collected_amount}，请先删除收款单再删除发票")
         db.delete(ar)
 
     db.delete(inv)
@@ -1664,6 +1674,7 @@ def update_order_item(
     """
     from app.models.inventory import StockInOrder
     from app.models.production import OutsourceOrder
+    from app.models.purchase import PurchaseOrderItem, PurchaseOrder as PoOrder
     item = db.query(SalesOrderItem).filter(
         SalesOrderItem.id == item_id, SalesOrderItem.order_id == order_id,
     ).first()
@@ -1671,6 +1682,14 @@ def update_order_item(
         raise HTTPException(404, "明细行不存在")
     if item.production_status == "已停售":
         raise HTTPException(400, "该明细行已停售，不能变更")
+
+    # 有活跃采购单引用（销售订单转采购生成）→ 必须先退回采购单
+    active_po = db.query(PurchaseOrderItem).join(PoOrder, PoOrder.id == PurchaseOrderItem.order_id).filter(
+        PurchaseOrderItem.sales_item_id == item_id,
+        PoOrder.status != "已关闭",
+    ).first()
+    if active_po:
+        raise HTTPException(400, f"该明细行已关联采购订单（{active_po.order.order_no}），请先退回采购订单再变更")
 
     # 已入库数量（成品入库累计收货，不含已退回）
     stock_ins = db.query(StockInOrder).filter(

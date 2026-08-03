@@ -219,6 +219,9 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
         raise HTTPException(404, "订单不存在")
     if order.status != "待审核":
         raise HTTPException(400, "仅待审核状态的订单允许修改")
+    # 转采购生成的订单禁止直接编辑（保证销售单联动一致，只能退回）
+    if any(item.sales_item_id for item in order.items):
+        raise HTTPException(400, "该采购订单由「销售订单转采购」生成，不能直接编辑；请退回该订单后重新转采购")
     for field in ["supplier_id", "order_date", "payment_terms", "tax_rate", "remark"]:
         if field in data and data[field] is not None:
             if field == "order_date":
@@ -1056,6 +1059,13 @@ def update_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), c
     inv = db.query(PurchaseInvoice).filter(PurchaseInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(404, "发票不存在")
+    # 已付款的发票禁止改金额（先退付款单，保证应付一致）
+    ap0 = db.query(AccountsPayable).filter(
+        AccountsPayable.source_type == "purchase_invoice",
+        AccountsPayable.source_id == invoice_id,
+    ).first()
+    if ap0 and (ap0.paid_amount or 0) > 0 and any(k in data for k in ["amount", "tax_amount", "tax_rate"]):
+        raise HTTPException(400, f"该发票对应应付单已付款 ¥{ap0.paid_amount}，不能修改金额；请先删除付款单")
     for field in ["invoice_no", "amount", "tax_amount", "tax_rate", "invoice_date", "remark"]:
         if field in data:
             val = data[field]
@@ -1079,11 +1089,17 @@ def delete_invoice(invoice_id: int, db: Session = Depends(get_db), current_user:
             TaxRefundInputInvoice.purchase_invoice_id == invoice_id).delete()
     except:
         pass
-    # 级联删除应付
+    # 级联删除应付（先检查是否已付款）
     try:
-        db.query(AccountsPayable).filter(
+        ap = db.query(AccountsPayable).filter(
             AccountsPayable.source_type == "purchase_invoice",
-            AccountsPayable.source_id == invoice_id).delete()
+            AccountsPayable.source_id == invoice_id).first()
+        if ap:
+            if (ap.paid_amount or 0) > 0:
+                raise HTTPException(400, f"该发票对应应付单已付款 ¥{ap.paid_amount}，请先删除付款单再删除发票")
+            db.delete(ap)
+    except HTTPException:
+        raise
     except:
         pass
     db.delete(inv)
