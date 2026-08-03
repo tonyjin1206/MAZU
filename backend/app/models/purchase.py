@@ -43,6 +43,7 @@ class PurchaseOrderItem(Base):
     order_id = Column(Integer, ForeignKey("po_order.id"), nullable=False)
     material_id = Column(Integer, ForeignKey("fd_material.id"), comment="材料（原料采购时使用）")
     product_id = Column(Integer, ForeignKey("fd_product.id"), comment="产品（贸易品采购时使用）")
+    sales_item_id = Column(Integer, ForeignKey("so_order_item.id"), comment="关联销售订单明细行（按单采购/成本归集）")
     quantity = Column(Float, nullable=False, comment="数量")
     unit_price = Column(Float, default=0, comment="单价(外币)")
     unit_price_local = Column(Float, default=0, comment="单价(本币)")
@@ -55,6 +56,7 @@ class PurchaseOrderItem(Base):
 
     material = relationship("Material")
     product = relationship("Product")
+    sales_item = relationship("SalesOrderItem")
 
 
 class PurchaseReceipt(Base):

@@ -60,6 +60,7 @@ class PurchaseOrderItemCreate(BaseModel):
     order_id: int | None = None
     material_id: int | None = None
     product_id: int | None = None
+    sales_item_id: int | None = None
     quantity: float
     unit_price: float = 0
     unit_price_local: float = 0

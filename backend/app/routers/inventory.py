@@ -222,7 +222,9 @@ def get_inventory_balance(
                     so_order = db.query(SalesOrder).filter(SalesOrder.id == stock_in.sales_order_id).first()
                     so_order_no = so_order.order_no if so_order else ""
                     so_order_qty = so_item.quantity or 0
-                    unit_cost = so_item.unit_price or 0
+                    # 成本优先取库存真实成本（采购价/认领批次进价），无采购成本的旧数据才兜底销售单价
+                    if not unit_cost:
+                        unit_cost = so_item.unit_price or 0
                     # 该明细行累计已入库数量
                     so_received_qty = (
                         db.query(func.sum(StockInOrder.received_qty))

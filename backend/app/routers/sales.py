@@ -297,7 +297,8 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
                      StockInOrder.sales_item_id == item.id,
                      StockInOrder.status != "已退回",
                  ).all()),
-             "production_status": item.production_status or "未生产"}
+             "production_status": item.production_status or "未生产",
+             "claimed_from_batch": item.claimed_from_batch or ""}
             for item in order.items
         ],
     }
@@ -524,6 +525,205 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
     item.production_status = "已通知外发"
     db.commit()
     return {"message": f"已生成委外订单 {os_order.outsource_no}", "outsource_no": os_order.outsource_no}
+
+
+# ==================== 备货批次认领（场景2：货先进来，后期挂销售单） ====================
+
+@router.post("/orders/{order_id}/items/{item_id}/claim-batch", tags=["销售管理"])
+def claim_batch(order_id: int, item_id: int, data: dict,
+                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """销售明细「认领库存」— 把库里的备货批次（FG-xxx 无归属）改名挂到本销售行，成本随之归集
+
+    data: {batch_no: str, quantity: float}
+    认领后库存批次号变为本销售明细批次号（SO-xxx-01），发货/追溯/锁定全部按批次自动生效。
+    支持部分认领（批次自动拆分），也支持多次认领不同批次。
+    """
+    from app.utils.batch_no import generate_doc_no
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id, SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "明细行不存在")
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "销售订单不存在")
+    if order.status != "已审":
+        raise HTTPException(400, "订单审核通过后才能认领库存")
+    if item.production_status not in (None, "", "未生产", "部分入库"):
+        raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能认领库存")
+    if not item.batch_no:
+        raise HTTPException(400, "该明细行没有批次号，无法认领")
+
+    batch_no = (data.get("batch_no") or "").strip()
+    quantity = float(data.get("quantity") or 0)
+    if not batch_no:
+        raise HTTPException(400, "请选择要认领的库存批次")
+    if quantity <= 0:
+        raise HTTPException(400, "认领数量必须大于 0")
+
+    # 该批次必须是备货批次（无销售明细归属）
+    owned = db.query(SalesOrderItem).filter(SalesOrderItem.batch_no == batch_no).first()
+    if owned:
+        raise HTTPException(400, f"批次 {batch_no} 已归属订单「{owned.order.order_no}」，不能认领")
+
+    invs = db.query(WarehouseInventory).filter(
+        WarehouseInventory.product_id == item.product_id,
+        WarehouseInventory.batch_no == batch_no,
+        WarehouseInventory.quantity > 0,
+    ).order_by(WarehouseInventory.id.asc()).all()
+    if not invs:
+        raise HTTPException(400, f"产品「{item.product.name_cn if item.product else ''}」没有可认领的库存批次 {batch_no}")
+    total = round(sum((i.quantity or 0) for i in invs), 2)
+    if quantity > total:
+        raise HTTPException(400, f"认领数量 {quantity} 超过该批次库存 {total}")
+
+    # 逐行拆分/改名（FIFO 按 id 顺序）
+    remaining = quantity
+    total_cost_move = 0.0
+    for inv in invs:
+        if remaining <= 0:
+            break
+        q = round(inv.quantity or 0, 2)
+        if q <= remaining:
+            # 整行改挂到销售批次
+            inv.batch_no = item.batch_no
+            inv.claimed_from_batch = batch_no
+            total_cost_move += round((inv.total_cost or 0), 2)
+            remaining = round(remaining - q, 2)
+        else:
+            # 拆行：原批次留 (q - remaining)，剩余部分建新行挂销售批次
+            move_qty = remaining
+            move_cost = round((inv.unit_cost or 0) * move_qty, 2)
+            new_inv = WarehouseInventory(
+                warehouse_id=inv.warehouse_id,
+                product_id=inv.product_id,
+                batch_no=item.batch_no,
+                quantity=move_qty,
+                unit_cost=inv.unit_cost,
+                total_cost=move_cost,
+                in_date=inv.in_date,
+                source_type=inv.source_type,
+                source_doc_id=inv.source_doc_id,
+                receipt_no=None,
+                claimed_from_batch=batch_no,
+            )
+            db.add(new_inv)
+            inv.quantity = round(q - move_qty, 2)
+            inv.total_cost = round((inv.total_cost or 0) - move_cost, 2)
+            total_cost_move += move_cost
+            remaining = 0
+
+    # 生成流水：原批次出 / 销售批次入（数量同向记录，方向靠 batch_no 区分）
+    unit_cost = invs[0].unit_cost or 0
+    db.add(StockTransaction(
+        trans_type="batch_claim", warehouse_id=invs[0].warehouse_id,
+        product_id=item.product_id, batch_no=batch_no,
+        quantity=-quantity, unit_cost=unit_cost,
+        total_amount=round(-quantity * unit_cost, 2),
+        before_qty=total, after_qty=round(total - quantity, 2),
+        before_cost=round(total * unit_cost, 2), after_cost=round((total - quantity) * unit_cost, 2),
+        source_doc_type="批次认领", source_doc_no=order.order_no,
+        trans_no=generate_doc_no(db, "ST"),
+        operator=current_user.display_name or current_user.username,
+    ))
+    db.add(StockTransaction(
+        trans_type="batch_claim", warehouse_id=invs[0].warehouse_id,
+        product_id=item.product_id, batch_no=item.batch_no,
+        quantity=quantity, unit_cost=unit_cost,
+        total_amount=round(quantity * unit_cost, 2),
+        before_qty=0, after_qty=quantity,
+        before_cost=0, after_cost=round(quantity * unit_cost, 2),
+        source_doc_type="批次认领", source_doc_no=order.order_no,
+        trans_no=generate_doc_no(db, "ST"),
+        operator=current_user.display_name or current_user.username,
+    ))
+
+    # 明细状态：认领数量 >= 订单数量 → 已入库；不足 → 部分入库（可继续认领/转入库）
+    claimed_total = quantity
+    item.claimed_from_batch = batch_no
+    if claimed_total >= (item.quantity or 0):
+        item.production_status = "已入库"
+    elif item.production_status != "已入库":
+        item.production_status = "部分入库"
+    db.commit()
+    return {"message": f"已认领批次 {batch_no} 共 {quantity}，货已挂到本销售单，可在发货工作台发货"}
+
+
+@router.post("/orders/{order_id}/items/{item_id}/unclaim-batch", tags=["销售管理"])
+def unclaim_batch(order_id: int, item_id: int,
+                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """销售明细「解绑认领」— 未发货的认领库存退回原备货批次"""
+    from app.utils.batch_no import generate_doc_no
+    item = db.query(SalesOrderItem).filter(
+        SalesOrderItem.id == item_id, SalesOrderItem.order_id == order_id,
+    ).first()
+    if not item:
+        raise HTTPException(404, "明细行不存在")
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
+    if not order:
+        raise HTTPException(404, "销售订单不存在")
+    if not item.claimed_from_batch:
+        raise HTTPException(400, "该明细行未认领库存，无需解绑")
+    if (item.delivered_qty or 0) > 0:
+        raise HTTPException(400, "该明细行已发货，不能解绑")
+
+    # 找到本销售批次下所有认领来的库存行，退回各自原批次
+    invs = db.query(WarehouseInventory).filter(
+        WarehouseInventory.batch_no == item.batch_no,
+        WarehouseInventory.claimed_from_batch.isnot(None),
+        WarehouseInventory.claimed_from_batch != "",
+        WarehouseInventory.quantity > 0,
+    ).order_by(WarehouseInventory.id.asc()).all()
+    if not invs:
+        raise HTTPException(400, "未找到可退回的认领库存（可能已全部发出）")
+
+    total_back = 0.0
+    for inv in invs:
+        orig = inv.claimed_from_batch
+        q = round(inv.quantity or 0, 2)
+        # 找原批次同仓行（合并）或新建
+        target = db.query(WarehouseInventory).filter(
+            WarehouseInventory.warehouse_id == inv.warehouse_id,
+            WarehouseInventory.product_id == inv.product_id,
+            WarehouseInventory.batch_no == orig,
+        ).first()
+        if target:
+            target.quantity = round((target.quantity or 0) + q, 2)
+            target.total_cost = round((target.total_cost or 0) + (inv.total_cost or 0), 2)
+            db.delete(inv)
+        else:
+            inv.batch_no = orig
+            inv.claimed_from_batch = None
+        total_back += q
+
+    unit_cost = invs[0].unit_cost or 0
+    db.add(StockTransaction(
+        trans_type="batch_claim", warehouse_id=invs[0].warehouse_id,
+        product_id=item.product_id, batch_no=item.batch_no,
+        quantity=-total_back, unit_cost=unit_cost,
+        total_amount=round(-total_back * unit_cost, 2),
+        before_qty=total_back, after_qty=0,
+        before_cost=round(total_back * unit_cost, 2), after_cost=0,
+        source_doc_type="批次解绑", source_doc_no=order.order_no,
+        trans_no=generate_doc_no(db, "ST"),
+        operator=current_user.display_name or current_user.username,
+    ))
+    db.add(StockTransaction(
+        trans_type="batch_claim", warehouse_id=invs[0].warehouse_id,
+        product_id=item.product_id, batch_no=item.claimed_from_batch,
+        quantity=total_back, unit_cost=unit_cost,
+        total_amount=round(total_back * unit_cost, 2),
+        before_qty=0, after_qty=total_back,
+        before_cost=0, after_cost=round(total_back * unit_cost, 2),
+        source_doc_type="批次解绑", source_doc_no=order.order_no,
+        trans_no=generate_doc_no(db, "ST"),
+        operator=current_user.display_name or current_user.username,
+    ))
+
+    item.claimed_from_batch = None
+    item.production_status = "未生产"
+    db.commit()
+    return {"message": f"已解绑，{total_back} 退回原批次"}
 
 
 # ==================== 销售发货（批次出库） ====================

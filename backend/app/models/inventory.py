@@ -24,6 +24,7 @@ class WarehouseInventory(Base):
     source_type = Column(String(32), comment="来源: purchase/production/transfer/check")
     source_doc_id = Column(Integer, comment="来源单据ID")
     receipt_no = Column(String(64), unique=True, comment="入库单号: 每次入库唯一")
+    claimed_from_batch = Column(String(64), comment="认领自原批次号（备货批次被销售单认领时记录，解绑退回用）")
     is_frozen = Column(Integer, default=0, comment="1=冻结 0=正常")
     remark = Column(Text)
     created_at = Column(DateTime, default=func.now())

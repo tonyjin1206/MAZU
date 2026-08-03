@@ -176,6 +176,9 @@ def get_order(order_id: int, db: Session = Depends(get_db), current_user: User =
                 "product_name": item.product.name_cn if item.product else "",
                 "unit": item.material.unit if item.material else (item.product.unit if item.product else ""),
                 "receive_type": item.receive_type or "",
+                "sales_item_id": item.sales_item_id,
+                "sales_order_no": item.sales_item.order.order_no if item.sales_item else "",
+                "sales_batch_no": item.sales_item.batch_no if item.sales_item else "",
                 "quantity": item.quantity, "unit_price": item.unit_price,
                 "total_amount": item.total_amount, "received_qty": item.received_qty or 0,
                 "tax_rate": item.tax_rate or 0, "total_amount_excl_tax": item.total_amount_excl_tax or 0,
@@ -235,6 +238,7 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
                 raise HTTPException(400, "采购明细必须选择材料或产品")
             new_item = PurchaseOrderItem(
                 order_id=order.id, material_id=mid or None, product_id=pid or None,
+                sales_item_id=item_data.get("sales_item_id") or None,
                 quantity=qty, unit_price=unit_price_fc,
                 total_amount=line_total,
                 tax_rate=order.tax_rate or 13,
@@ -288,6 +292,7 @@ def create_order(
             order_id=order.id,
             material_id=item_data.material_id,
             product_id=item_data.product_id,
+            sales_item_id=item_data.sales_item_id,
             quantity=item_data.quantity,
             unit_price=unit_price_fc,
             unit_price_local=unit_price_fc * (data.exchange_rate or 1),
@@ -363,6 +368,13 @@ def to_stock_in(order_id: int, item_id: int, data: dict,
         status="待入库",
         created_by=current_user.display_name or current_user.username,
     )
+    # 关联了销售明细的采购：待入库单带上销售信息，收货批次直接用销售批次号（SO-xxx-01），成本归集到销售单
+    if item.sales_item_id:
+        from app.models.sales import SalesOrderItem
+        sales_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == item.sales_item_id).first()
+        if sales_item:
+            sin.sales_order_id = sales_item.order_id
+            sin.sales_item_id = sales_item.id
     db.add(sin)
     item.receive_type = "成品库"
     db.commit()
