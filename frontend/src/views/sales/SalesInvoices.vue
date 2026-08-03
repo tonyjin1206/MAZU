@@ -394,8 +394,8 @@ async function submitForm() {
     dialogVisible.value = false
     fetchList()
     fetchOrders()
-  } catch {
-    ElMessage.error('保存失败')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
     submitting.value = false
   }

@@ -163,7 +163,7 @@ async function handleSave() {
     ElMessage.success(dialogMode.value === 'create' ? '新增成功' : '更新成功')
     dialogVisible.value = false
     fetchBom()
-  } catch (e) { ElMessage.error('保存失败') } finally { dialogLoading.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { dialogLoading.value = false }
 }
 
 async function handleDelete(row) {
@@ -172,7 +172,7 @@ async function handleDelete(row) {
     await foundationApi.deleteBomItem(row.id)
     ElMessage.success('删除成功')
     fetchBom()
-  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e?.response?.data?.detail || '删除失败') }
 }
 
 onMounted(() => { fetchProducts(); fetchMaterials(); fetchProcesses() })

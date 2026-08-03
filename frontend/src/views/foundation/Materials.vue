@@ -212,7 +212,7 @@ async function handleSave() {
     dialogVisible.value = false
     fetchData()
   } catch (e) {
-    ElMessage.error('保存失败')
+    ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
     dialogLoading.value = false
   }
@@ -225,7 +225,7 @@ async function handleDelete(row) {
     ElMessage.success('删除成功')
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(e?.response?.data?.detail || '删除失败')
   }
 }
 

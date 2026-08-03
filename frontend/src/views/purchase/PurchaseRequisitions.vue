@@ -150,7 +150,7 @@ async function confirmToPurchase() {
   if (!poForm.quantity || poForm.quantity <= 0) { ElMessage.warning('数量必须大于0'); return }
   submitting.value = true
   try {
-    const res = await purchaseApi.requisitions.toPurchase(current.value.id, current.value.id)
+    const res = await purchaseApi.requisitions.toPurchase(current.value.id, { ...poForm })
     ElMessage.success(`已生成 ${res.purchase_order_no}`)
     poDialogVisible.value = false
     fetchData()

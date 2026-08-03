@@ -285,6 +285,8 @@ async function onOrderChange(orderId) {
   const batchNo = 'BATCH-' + Date.now()
   receiptForm.items = orderItems.map((item) => ({
     material_id: item.material_id,
+    product_id: item.product_id,
+    order_item_id: item.id,
     material_name: item.material_name,
     material_code: item.material_code || '',
     spec: item.spec || '',
@@ -353,6 +355,8 @@ async function handleSubmit() {
         .filter((i) => i.receivedQty > 0)
         .map((i) => ({
           material_id: i.material_id,
+          product_id: i.product_id,
+          order_item_id: i.order_item_id,
           material_name: i.material_name,
           spec: i.spec,
           unit: i.unit,
