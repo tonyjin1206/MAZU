@@ -266,7 +266,7 @@
 
     <!-- 材料/产品选择弹窗 -->
     <el-dialog v-model="materialPickerVisible" :title="pickerTab === 'material' ? '选择材料' : '选择产品'" width="780px" destroy-on-close>
-      <el-tabs v-model="pickerTab" style="margin-bottom: 4px">
+      <el-tabs v-model="pickerTab" style="margin-bottom: 4px" @tab-change="onPickerTabChange">
         <el-tab-pane label="原辅材料" name="material" />
         <el-tab-pane label="产品" name="product" />
       </el-tabs>
@@ -607,6 +607,11 @@ const materialTotal = ref(0)
 const materialPage = ref(1)
 const materialPageSize = ref(100)
 const materialPickerTarget = ref(null)
+
+function onPickerTabChange() {
+  materialPage.value = 1
+  searchPicker()
+}
 
 async function searchPicker() {
   if (pickerTab.value === 'material') {
