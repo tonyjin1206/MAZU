@@ -32,14 +32,14 @@
           </el-table-column>
           <el-table-column label="采购状态" width="110" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
             <template #default="{ row }">
-              <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">已采购完成</el-tag>
+              <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">采购完成</el-tag>
               <el-tag v-else-if="row.purchase_status === 'partial'" type="warning" size="small">部分采购</el-tag>
               <el-tag v-else type="info" size="small">未采购</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="90" align="center" fixed="right">
             <template #default="{ row }">
-              <el-button type="primary" size="small" @click="openPurchase(row)">采购</el-button>
+              <el-button v-if="row.purchase_status !== 'completed'" type="primary" size="small" @click="openPurchase(row)">采购</el-button>
             </template>
           </el-table-column>
         </el-table>

@@ -72,10 +72,11 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === '待审核'" link type="success" @click="handleApprove(row)">审核</el-button>
-            <el-button v-if="row.status === '待审核'" link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button v-if="row.status === '待审核' && !row.from_sales" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="row.status === '已审核'" link type="warning" @click="handleUnapprove(row)">取消审核</el-button>
             <el-button v-if="row.status === '已审核' || row.status === '部分入库'" link type="primary" @click="handleInStore(row)">入库</el-button>
-            <el-button v-if="row.status === '待审核'" link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.status === '待审核' && row.from_sales" link type="danger" @click="handleDelete(row)">退回</el-button>
+            <el-button v-if="row.status === '待审核' && !row.from_sales" link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -864,8 +865,12 @@ async function handleUnapprove(row) {
 function handleInStore(row) { router.push({ path: '/purchase/receipts', query: { oid: row.id } }) }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(`确定删除订单 ${row.order_no}？`, '提示', { type: 'warning' })
-  try { await purchaseApi.orders.delete(row.id); ElMessage.success('删除成功'); fetchData() } catch (e) {}
+  if (row.from_sales) {
+    await ElMessageBox.confirm(`确定退回订单 ${row.order_no}？退回后该销售订单的采购状态将自动更新，可重新转采购。`, '退回确认', { type: 'warning' })
+  } else {
+    await ElMessageBox.confirm(`确定删除订单 ${row.order_no}？`, '提示', { type: 'warning' })
+  }
+  try { await purchaseApi.orders.delete(row.id); ElMessage.success(row.from_sales ? '已退回' : '删除成功'); fetchData() } catch (e) {}
 }
 
 onMounted(() => { initColumnVisible(); initItemVisible(); fetchData(); loadSuppliers(); loadMaterials() })

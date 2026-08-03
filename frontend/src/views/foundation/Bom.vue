@@ -28,6 +28,7 @@
         <el-table-column prop="material_code" label="材料编码" width="120" />
         <el-table-column prop="material_name" label="材料名称" min-width="140" />
         <el-table-column prop="material_spec" label="规格" min-width="120" />
+        <el-table-column prop="material_unit" label="单位" width="70" align="center" />
         <el-table-column label="用量" width="80" align="center"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
         <el-table-column prop="loss_rate" label="损耗率(%)" width="100" align="center" />
         <el-table-column prop="process_name" label="工序" width="120" />

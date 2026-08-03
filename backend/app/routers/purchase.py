@@ -104,6 +104,8 @@ def list_orders(
 
     result = []
     for o in items:
+        # 是否转采购生成（明细关联销售单）
+        from_sales = any(item.sales_item_id for item in o.items)
         # 已入库金额
         received_amount = sum(
             (item.received_qty or 0) * (item.unit_price_local or item.unit_price or 0)
@@ -126,6 +128,7 @@ def list_orders(
             "uninvoiced_amount": round((o.total_amount or 0) - inv_agg.get(o.id, 0), 2),
             "paid_amount": round(pay_agg.get(o.id, 0), 2),
             "unpaid_amount": round(inv_agg.get(o.id, 0) - pay_agg.get(o.id, 0), 2),
+            "from_sales": from_sales,
         })
 
         # 动态计算状态（覆盖数据库状态）
@@ -316,10 +319,25 @@ def create_order(
 
 # ==================== 销售订单转采购（按供应商拆单） ====================
 
+def _so_row_requirements(db: Session, si):
+    """销售明细行的采购需求清单（按 BOM 展开，无 BOM 则产品本身）
+    返回: [{'material_id'|'product_id', 'need_qty'}]"""
+    from app.models.foundation import BomItem
+    bom_items = db.query(BomItem).filter(
+        BomItem.product_id == si.product_id, BomItem.is_active == 1).all()
+    if bom_items:
+        return [
+            {
+                "material_id": b.material_id, "product_id": None,
+                "need_qty": round((si.quantity or 0) * (b.quantity or 1) * (1 + (b.loss_rate or 0) / 100), 2),
+            } for b in bom_items
+        ]
+    return [{"material_id": None, "product_id": si.product_id, "need_qty": si.quantity or 0}]
+
+
 def _so_purchase_status(db: Session, order):
     """计算销售单采购状态: completed(绿)/partial(橙)/none(灰)
-    行完成判定: 该销售明细行关联的非关闭采购明细全部入库完成(received_qty>=quantity)"""
-    from app.models.sales import SalesOrderItem
+    判定口径: 已采购数量(非关闭采购单) >= BOM 比例需求量 => 该行采购完成"""
     from app.models.purchase import PurchaseOrderItem
     row_statuses = []
     for si in order.items:
@@ -329,9 +347,25 @@ def _so_purchase_status(db: Session, order):
             PurchaseOrderItem.sales_item_id == si.id,
             PurchaseOrder.status != "已关闭",
         ).all()
-        if not pois:
+        reqs = _so_row_requirements(db, si)
+        if not reqs:
+            continue
+        row_done = True
+        row_any = False
+        for req in reqs:
+            if req["material_id"]:
+                purchased = sum((p.quantity or 0) for p in pois if p.material_id == req["material_id"])
+            else:
+                purchased = sum((p.quantity or 0) for p in pois if p.product_id == req["product_id"])
+            if purchased <= 0:
+                row_done = False
+            elif purchased < req["need_qty"]:
+                row_done = False
+            if purchased > 0:
+                row_any = True
+        if not row_any:
             row_statuses.append("none")
-        elif all(po.received_qty >= po.quantity for po in pois):
+        elif row_done:
             row_statuses.append("done")
         else:
             row_statuses.append("partial")
@@ -397,32 +431,30 @@ def get_sales_to_purchase(order_id: int, db: Session = Depends(get_db), current_
             PurchaseOrderItem.sales_item_id == si.id,
             PurchaseOrder.status != "已关闭",
         ).all()
-        # BOM 展开
-        bom_items = db.query(BomItem).filter(
-            BomItem.product_id == si.product_id, BomItem.is_active == 1).all()
-        if bom_items:
-            for b in bom_items:
-                mat = b.material
-                need_qty = round((si.quantity or 0) * (b.quantity or 1) * (1 + (b.loss_rate or 0) / 100), 2)
+        # 按 BOM 展开需求（无 BOM 则产品本身）
+        for req in _so_row_requirements(db, si):
+            if req["material_id"]:
+                mat = db.query(Material).filter(Material.id == req["material_id"]).first()
                 purchased = sum((p.quantity or 0) for p in pois if p.material_id == mat.id)
                 rows.append({
                     "sales_item_id": si.id, "material_id": mat.id, "product_id": None,
-                    "code": mat.code, "name": mat.name, "spec": mat.spec or "", "unit": mat.unit,
-                    "need_qty": need_qty, "purchased_qty": round(purchased, 2),
-                    "ref_price": mat.purchase_price or 0,
-                    "default_supplier_id": mat.default_supplier_id or None,
+                    "code": mat.code if mat else "", "name": mat.name if mat else "",
+                    "spec": mat.spec or "" if mat else "", "unit": mat.unit if mat else "",
+                    "need_qty": req["need_qty"], "purchased_qty": round(purchased, 2),
+                    "ref_price": mat.purchase_price or 0 if mat else 0,
+                    "default_supplier_id": mat.default_supplier_id or None if mat else None,
                 })
-        else:
-            prod = si.product
-            purchased = sum((p.quantity or 0) for p in pois if p.product_id == si.product_id)
-            rows.append({
-                "sales_item_id": si.id, "material_id": None, "product_id": si.product_id,
-                "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
-                "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
-                "need_qty": si.quantity or 0, "purchased_qty": round(purchased, 2),
-                "ref_price": (prod.estimated_cost or 0) if prod else 0,
-                "default_supplier_id": None,
-            })
+            else:
+                prod = si.product
+                purchased = sum((p.quantity or 0) for p in pois if p.product_id == si.product_id)
+                rows.append({
+                    "sales_item_id": si.id, "material_id": None, "product_id": si.product_id,
+                    "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
+                    "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
+                    "need_qty": req["need_qty"], "purchased_qty": round(purchased, 2),
+                    "ref_price": (prod.estimated_cost or 0) if prod else 0,
+                    "default_supplier_id": None,
+                })
     return {
         "id": order.id, "order_no": order.order_no,
         "customer_name": order.customer.name_cn if order.customer else "",
@@ -451,7 +483,7 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
     if order.status not in ("已审", "生产中", "部分发货"):
         raise HTTPException(400, f"该销售单状态「{order.status}」，不能转采购")
 
-    # 校验行 + 检查剩余量
+    # 校验行 + 检查剩余量（硬校验：需求量以 BOM 比例为准，不接受前端传入的 need_qty）
     for r in rows:
         if not r.get("supplier_id"):
             raise HTTPException(400, "有明细行未选择供应商")
@@ -459,7 +491,15 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
             raise HTTPException(400, "采购数量必须大于0")
         if not r.get("material_id") and not r.get("product_id"):
             raise HTTPException(400, "明细行缺少物料/产品")
-        # 剩余可采购量 = 需求 - 已采购
+        # 找到对应销售明细行，按 BOM 计算真实需求量
+        si = next((i for i in order.items if i.id == r["sales_item_id"]), None)
+        if not si:
+            raise HTTPException(400, "销售明细行不存在")
+        req = next((x for x in _so_row_requirements(db, si)
+                    if (x["material_id"] == r.get("material_id") and x["product_id"] == r.get("product_id"))), None)
+        if not req:
+            raise HTTPException(400, "该物料不在 BOM 比例内，不允许采购（请先维护 BOM）")
+        # 剩余可采购量 = BOM 需求量 - 已采购
         pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
             PurchaseOrderItem.sales_item_id == r["sales_item_id"],
             PurchaseOrder.status != "已关闭",
@@ -468,8 +508,8 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
             purchased = sum(p.quantity or 0 for p in pois if p.material_id == r["material_id"])
         else:
             purchased = sum(p.quantity or 0 for p in pois if p.product_id == r["product_id"])
-        if float(r["quantity"]) + purchased > float(r.get("need_qty", 1e18)):
-            raise HTTPException(400, f"{r.get('name','')} 采购数量超过剩余需求")
+        if float(r["quantity"]) + purchased > req["need_qty"]:
+            raise HTTPException(400, f"{r.get('name','')} 采购数量超过 BOM 比例需求量（剩余 {round(req['need_qty'] - purchased, 2)}）")
 
     # 按供应商分组
     groups = {}
