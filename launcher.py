@@ -9,6 +9,7 @@ MTS 跨平台启动器
     python launcher.py start    # 仅启动服务
     python launcher.py install  # 仅安装依赖
     python launcher.py reset-db # 重置数据库（清空所有数据）
+    python launcher.py init-db  # 重置 + 录入完整演示数据（纺织全流程 + 退货红冲演示）
     python launcher.py --help   # 帮助
 """
 
@@ -269,6 +270,51 @@ def reset_db():
         print(f"  数据库不存在，无需重置")
 
 
+def init_db_data():
+    """重置数据库 + 启动后端 + 录入完整演示数据（init_all.py）"""
+    # 后端占用检查（避免对运行中的服务删库）
+    import socket
+    s = socket.socket()
+    try:
+        s.connect(("127.0.0.1", 8788))
+        print(f"  {red('❌ 后端正在运行（8788），请先停止服务再执行 init-db')}")
+        s.close()
+        return
+    except OSError:
+        pass
+    finally:
+        s.close()
+
+    reset_db()
+    env = {**os.environ}
+    env.pop("PYTHONPATH", None)
+    env["ERP_DEV"] = "1"
+    print(f"  {cyan('启动后端并等待就绪...')}")
+    subprocess.Popen(
+        [str(venv_python()), "run.py"], cwd=str(BACKEND), env=env,
+        stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, start_new_session=True,
+    )
+    import urllib.request
+    ready = False
+    for _ in range(90):
+        try:
+            urllib.request.urlopen("http://localhost:8788/docs", timeout=2)
+            ready = True
+            break
+        except Exception:
+            time.sleep(1)
+    if not ready:
+        print(f"  {red('❌ 后端 90 秒内未就绪，请手动启动后执行 python scripts/init_all.py')}")
+        return
+    print(f"  {green('✅ 后端就绪 (http://localhost:8788)')}")
+    print(f"  {cyan('录入完整演示数据（纺织全流程 + 退货红冲演示）...')}")
+    r = cmd_run([str(venv_python()), str(ROOT / "scripts" / "init_all.py")])
+    if r.returncode == 0:
+        print(f"  {green('✅ 初始化完成，后端保持运行中 → http://localhost:8788')}")
+    else:
+        print(f"  {red('❌ init_all.py 执行失败（详见上方输出）')}")
+
+
 def cleanup(processes):
     """停止所有子进程"""
     for name, proc in processes:
@@ -296,7 +342,8 @@ def print_help():
     python launcher.py             安装 + 启动
     python launcher.py start       仅启动服务
     python launcher.py install     仅安装依赖
-    python launcher.py reset-db    重置数据库
+    python launcher.py reset-db    重置数据库（清空全部数据，仅保留系统配置）
+    python launcher.py init-db     重置数据库 + 录入完整演示数据（纺织全流程+退货红冲演示，后端保持运行）
     python launcher.py --help      帮助
 """)
 
@@ -311,6 +358,8 @@ def main():
         install()
     elif sys.argv[1] in ("reset-db", "reset_db"):
         reset_db()
+    elif sys.argv[1] in ("init-db", "init_db"):
+        init_db_data()
     else:
         print_help()
 

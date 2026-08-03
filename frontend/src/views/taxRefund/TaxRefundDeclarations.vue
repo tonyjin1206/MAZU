@@ -77,10 +77,14 @@
           <el-descriptions-item label="批次">{{ currentDecl.batch }}</el-descriptions-item>
           <el-descriptions-item label="申报单号">{{ currentDecl.declaration_no }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{ currentDecl.status }}</el-descriptions-item>
+          <el-descriptions-item label="出口FOB金额">
+            <span :style="{ color: currentDecl.export_amount_fob < 0 ? '#f56c6c' : '' }">{{ $fm(currentDecl.export_amount_fob) }}</span>
+          </el-descriptions-item>
         </el-descriptions>
 
         <div style="margin-bottom: 10px">
           <el-button v-if="!viewMode" size="small" type="primary" @click="openInvoiceSelector">+ 添加进项发票</el-button>
+          <el-button v-if="!viewMode" size="small" type="danger" @click="openReturnSelector">＋ 添加退货冲减（负数申报）</el-button>
         </div>
 
         <el-table :data="draftRows" border stripe size="small" style="width: 100%">
@@ -118,10 +122,18 @@
               <span v-else>{{ $fq(row.quantity) }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="计税金额" width="100" align="right"><template #default="{ row }">{{ $fm(row.taxable_amount) }}</template></el-table-column>
+          <el-table-column label="计税金额" width="100" align="right">
+            <template #default="{ row }">
+              <span :style="{ color: (row.taxable_amount || 0) < 0 ? '#f56c6c' : '' }">{{ $fm(row.taxable_amount) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="征税率%" width="70" align="center"><template #default="{ row }">{{ row.tax_rate }}</template></el-table-column>
           <el-table-column label="退税率%" width="70" align="center"><template #default="{ row }">{{ row.refund_rate }}</template></el-table-column>
-          <el-table-column label="可退税额" width="100" align="right"><template #default="{ row }">{{ $fm(row.refundable_amount) }}</template></el-table-column>
+          <el-table-column label="可退税额" width="100" align="right">
+            <template #default="{ row }">
+              <span :style="{ color: (row.refundable_amount || 0) < 0 ? '#f56c6c' : '' }">{{ $fm(row.refundable_amount) }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="60" fixed="right">
           <template #default="{ row, $index }">
             <el-button v-if="!viewMode && !row._pendingDelete" link type="danger" size="small" @click="markDeleteRow($index)">删除</el-button>
@@ -155,6 +167,27 @@
       <template #footer>
         <el-button @click="selectInvoiceDialog = false">取消</el-button>
         <el-button type="primary" :disabled="!selectedInvoice" @click="confirmSelectInvoice">确认选择</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 选择退货冲减弹窗（已报税退货 → 负数申报） -->
+    <el-dialog v-model="returnSelDialog" title="选择退货冲减（已报税退货 → 负数申报）" width="820px" destroy-on-close>
+      <el-alert type="warning" :closable="false" style="margin-bottom: 10px"
+        title="已报税发货单发生退货后，需在次月申报表做负数申报冲减出口额（负退税结转下期，不产生退税）。" />
+      <el-table v-if="returnCandidates.length" :data="returnCandidates" stripe border size="small" highlight-current-row @current-change="onReturnSelect">
+        <el-table-column prop="return_no" label="退货单号" width="150" />
+        <el-table-column prop="customs_no" label="报关单号" width="160" />
+        <el-table-column prop="return_date" label="退货日期" width="100" />
+        <el-table-column prop="product_name" label="商品" min-width="120" />
+        <el-table-column label="数量" width="90" align="right"><template #default="{ row }"><span style="color: #f56c6c">{{ $fq(row.quantity) }}</span></template></el-table-column>
+        <el-table-column label="计税金额" width="110" align="right"><template #default="{ row }"><span style="color: #f56c6c">{{ $fm(row.taxable_amount) }}</span></template></el-table-column>
+        <el-table-column label="退税率%" width="80" align="center"><template #default="{ row }">{{ row.refund_rate }}</template></el-table-column>
+        <el-table-column label="可退税额" width="110" align="right"><template #default="{ row }"><span style="color: #f56c6c">{{ $fm(row.refundable_amount) }}</span></template></el-table-column>
+      </el-table>
+      <el-empty v-else description="暂无已报税退货单（退货后会在次月申报自动带出）" :image-size="60" />
+      <template #footer>
+        <el-button @click="returnSelDialog = false">取消</el-button>
+        <el-button type="danger" :disabled="!selectedReturn" :loading="saving" @click="confirmSelectReturn">确认冲减</el-button>
       </template>
     </el-dialog>
 
@@ -198,6 +231,11 @@ const refundAmount = ref(0)
 const refundTarget = ref(null)
 const saving = ref(false)
 const viewMode = ref(false)
+
+// 退货冲减（负数申报）
+const returnSelDialog = ref(false)
+const returnCandidates = ref([])
+const selectedReturn = ref(null)
 
 const createForm = reactive({ period: '', batch: 1 })
 
@@ -356,6 +394,40 @@ async function confirmSelectInvoice() {
     _seq: String(draftRows.value.length + 1).padStart(8, '0'),
     _assoc_no: currentDecl.value?.period + String(currentDecl.value?.batch || 1).padStart(3, '0') + (draftRows.value.length + 1),
   })
+}
+
+// ===== 退货冲减（负数申报） =====
+async function openReturnSelector() {
+  selectedReturn.value = null
+  try {
+    const res = await taxRefundApi.declarations.returnCandidates(currentDeclId.value)
+    returnCandidates.value = res.items || []
+    returnSelDialog.value = true
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '加载退货冲减候选失败')
+  }
+}
+
+function onReturnSelect(row) {
+  if (row) selectedReturn.value = row
+}
+
+async function confirmSelectReturn() {
+  const rd = selectedReturn.value
+  if (!rd) return
+  await ElMessageBox.confirm(
+    `确认冲减退货单 ${rd.return_no}？将生成负数明细行（冲减出口额 ${$fm(Math.abs(rd.taxable_amount))}），申报表出口金额自动重算。`,
+    '退货冲减确认', { type: 'warning', confirmButtonText: '确认冲减', cancelButtonText: '再想想' }
+  )
+  saving.value = true
+  try {
+    const res = await taxRefundApi.declarations.returnAdjustments(currentDeclId.value, {
+      delivery_id: rd.delivery_id,
+    })
+    ElMessage.success(res.message || '退货冲减已添加')
+    returnSelDialog.value = false
+    await loadDraft(currentDeclId.value)
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '添加失败') } finally { saving.value = false }
 }
 
 function markDeleteRow(index) {

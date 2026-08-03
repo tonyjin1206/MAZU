@@ -4,6 +4,48 @@
 
 ---
 
+## 〇、统一测试体系与运行入口（总纲）
+
+**所有测试统一并入 pytest 体系**（`backend/tests/`），**禁止为单个功能创建独立测试脚本**
+（`scripts/test_full_flow.py` / `scripts/test_robust.py` 等调已删委外接口的历史脚本已删除，v2.5.2 起）。
+新功能测试一律在 `backend/tests/` 下新增测试文件，复用共享构建器 `tests/test_data.py` 的
+`build_foundation`（统一基础档案）与 `conftest.py` 的 fixtures（测试库隔离自动生效）。
+
+### 统一入口：根目录 `./test.sh`（Windows 用 `test.bat`）
+
+自动清除 PYTHONPATH（防 Hermes 终端依赖污染）并激活项目 venv，**透传全部 pytest 参数**：
+
+| 用法 | 说明 |
+|---|---|
+| `./test.sh` | 全量后端测试（当前 230 个） |
+| `./test.sh -k "sales_return_red"` | 分段：按测试节点名（文件/类/方法名）过滤 |
+| `./test.sh -k "sales_return_red or inventory_v2"` | 分段：多组组合 |
+| `./test.sh tests/test_sales_return_red.py` | 分段：指定测试文件 |
+| `./test.sh tests/test_sales_return_red.py::TestSalesReturnRedReverse::test_scene1_no_invoice_return` | 分段：指定单个用例 |
+| `./test.sh -k 关键字 -x -q` | 附加 pytest 参数（失败即停 / 安静模式） |
+
+> 注：`-k` 匹配的是 pytest 节点名（英文），中文关键字匹配不到——分段按文件/类/方法名。
+
+### 当前测试文件清单（backend/tests/）
+
+| 文件 | 覆盖 |
+|---|---|
+| `test_foundation.py` | 基础档案 CRUD |
+| `test_rbac.py` | 权限控制 |
+| `test_boundary.py` | 边界数据（负数/超大/非法输入） |
+| `test_contract.py` | 前后端契约一致性 |
+| `test_state_machine.py` | 单据状态机（合法/非法流转矩阵） |
+| `test_textile_flow.py` | 纺织全流程（销售→生产→采购→发货→退货→报关→退税） |
+| `test_inventory_v2.py` | 收发存 v2（盘点/红冲/退货/发料拆类型） |
+| `test_bot_agent.py` | AI 助手工具执行器 |
+| `test_sales_return_red.py` | 销售退货全链路（v2.5.2：红字发票/退款/核销转移/负数申报） |
+
+新增测试规范（详见 README「测试数据规范」）：共用 `build_foundation`、数据走 API 不灌 SQL、
+测试库隔离（`ERP_DATA_DIR` 临时目录，绝不触碰开发库）、单元式场景允许独立小数据集（如
+`test_sales_return_red.py` 用独立测试仓库避免污染共享 FG 仓影响其他测试的盘点）。
+
+---
+
 ## 一、现状诊断（已发现的问题）
 
 ### 1.1 前后端契约缺口（已实锤 3 处）
@@ -21,7 +63,7 @@
 | 层 | 现状 | 缺口 |
 |---|---|---|
 | 后端 pytest | 5 文件（基础/数据/权限/纺织流程） | 无契约测试、无状态机测试、边界数据覆盖弱 |
-| 健壮性脚本 | scripts/test_robust.py（手工跑，模拟"合理"数据） | 不是 pytest，不进 CI；离谱数据覆盖不足 |
+| 健壮性脚本 | scripts/test_robust.py（手工跑，模拟"合理"数据）⚠️ 已废弃删除，由 test_boundary.py 替代 | 不是 pytest，不进 CI；离谱数据覆盖不足 |
 | 前端 | 无任何测试 | 无契约/组件测试 |
 | CI | 仅后端 pytest + flake8 | 前端、契约、E2E 均未接入 |
 | 设计逻辑 | 无测试 | 状态流转、按钮显隐全靠人工点 |

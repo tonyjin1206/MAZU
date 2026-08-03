@@ -103,9 +103,11 @@
     </el-dialog>
 
     <!-- 退货弹窗 -->
-    <el-dialog v-model="returnVisible" :title="`销售退货 ${returnDeliveryNo}`" width="460px">
+    <el-dialog v-model="returnVisible" :title="`销售退货 ${returnDeliveryNo}`" width="520px">
       <el-alert type="warning" :closable="false" style="margin-bottom: 10px"
         title="退货将把数量退回原批次（原发货成本），生成负向退货单并回退订单已发数量" />
+      <el-alert v-if="returnInvoiceHint" type="info" :closable="false" style="margin-bottom: 10px"
+        :title="returnInvoiceHint" />
       <el-form label-width="90px">
         <el-form-item label="发货数量">{{ $fq(returnOriginalQty) }}</el-form-item>
         <el-form-item label="退货数量" required>
@@ -273,13 +275,23 @@ const returnDeliveryNo = ref('')
 const returnOriginalQty = ref(0)
 const returnQty = ref(0)
 const returnRemark = ref('')
+const returnInvoiceHint = ref('')
 
-function openReturn(row) {
+async function openReturn(row) {
   returnDeliveryId.value = row.id
   returnDeliveryNo.value = row.delivery_no
   returnOriginalQty.value = Math.abs(row.quantity)
   returnQty.value = Math.abs(row.quantity)
   returnRemark.value = ''
+  returnInvoiceHint.value = ''
+  // 订单发票状态提示（退货涉及已开票部分 → 提示先全额红冲）
+  try {
+    const od = await salesApi.orders.get(row.order_id, row.order_id)
+    const invoiced = od.invoiced_amount || 0
+    if (invoiced > 0) {
+      returnInvoiceHint.value = `该订单已开票 ${$fm(invoiced)}：退货涉及已开票部分时，请到「销售发票」列表全额红冲对应发票并补开新票（未开票部分无需处理）。`
+    }
+  } catch { /* 忽略提示加载失败 */ }
   returnVisible.value = true
 }
 
@@ -294,7 +306,11 @@ async function handleReturn() {
     const res = await salesApi.deliveries.return(returnDeliveryId.value, {
       quantity: returnQty.value, remark: returnRemark.value,
     })
-    ElMessage.success(res.message || '退货成功')
+    let msg = res.message || '退货成功'
+    if (res.invoice_status && res.invoice_status.invoiced_amount > 0) {
+      msg += `（该订单已开票 ${$fm(res.invoice_status.invoiced_amount)}，已红冲 ${$fm(res.invoice_status.red_reversed_amount)}，涉及已开票部分请做全额红冲）`
+    }
+    ElMessage.success(msg, 6000)
     returnVisible.value = false
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退货失败') } finally { returnLoading.value = false }

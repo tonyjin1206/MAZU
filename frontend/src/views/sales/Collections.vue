@@ -22,10 +22,19 @@
     <!-- 列表 -->
     <el-card>
       <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="collection_no" label="收款单号" width="160" sortable />
+        <el-table-column prop="collection_no" label="单据号" width="160" sortable>
+          <template #default="{ row }">
+            <span>{{ row.collection_no }}</span>
+            <el-tag v-if="row.amount < 0" type="danger" size="small" style="margin-left: 4px">退款</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="customer_name" label="客户" min-width="150" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
         <el-table-column prop="collection_date" label="收款日期" width="120" sortable column-key="collection_date" :filters="dateFilters" :filter-method="filterDate" />
-        <el-table-column label="金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
+        <el-table-column label="金额" width="120" align="right" sortable>
+          <template #default="{ row }">
+            <span :style="{ color: row.amount < 0 ? '#f56c6c' : '' }">{{ $fm(row.amount) }}</span>
+          </template>
+        </el-table-column>
         <el-table-column label="核销金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.allocated_amount) }}</template></el-table-column>
         <el-table-column prop="payment_method" label="付款方式" width="100" sortable />
         <el-table-column prop="operator" label="操作人" width="90" sortable />
@@ -57,7 +66,9 @@
         <el-descriptions-item label="收款单号" span="2">{{ detail.collection_no }}</el-descriptions-item>
         <el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item>
         <el-descriptions-item label="收款日期">{{ detail.collection_date }}</el-descriptions-item>
-        <el-descriptions-item label="金额">{{ $fm(detail.amount) }}</el-descriptions-item>
+        <el-descriptions-item label="金额">
+          <span :style="{ color: detail.amount < 0 ? '#f56c6c' : '', fontWeight: 'bold' }">{{ $fm(detail.amount) }}</span>
+        </el-descriptions-item>
         <el-descriptions-item label="外币金额">{{ $fm(detail.amount_fc) }}</el-descriptions-item>
         <el-descriptions-item label="付款方式">{{ detail.payment_method }}</el-descriptions-item>
         <el-descriptions-item label="操作人">{{ detail.operator }}</el-descriptions-item>

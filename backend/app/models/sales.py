@@ -108,6 +108,7 @@ class SalesDelivery(Base):
     status = Column(String(16), default="已发货", comment="状态: 已发货/已报关/已退货")
     is_return = Column(Integer, default=0, comment="1=退货单(负向)")
     return_of_delivery_id = Column(Integer, comment="被退货的原发货单ID")
+    refund_declared = Column(Integer, default=0, comment="退货单标记: 1=关联报关单已报税，次月负数申报取数依据")
     remark = Column(Text)
     operator = Column(String(32))
     created_at = Column(DateTime, default=func.now())
@@ -159,12 +160,15 @@ class SalesInvoice(Base):
     tax_rate = Column(Float, default=13, comment="增值税率(%)")
     tax_amount = Column(Float, default=0, comment="税额")
     total_amount = Column(Float, default=0, comment="价税合计")
-    status = Column(String(16), default="已开票", comment="状态: 已开票/已作废")
+    status = Column(String(16), default="已开票", comment="状态: 已开票/已作废/已红冲")
+    is_red = Column(Integer, default=0, comment="1=红字发票(负向)")
+    red_of_invoice_id = Column(Integer, ForeignKey("so_invoice.id"), comment="红字发票指向被红冲的原发票")
     remark = Column(Text)
     created_at = Column(DateTime, default=func.now())
 
     order = relationship("SalesOrder")
     customer = relationship("Customer")
+    red_of_invoice = relationship("SalesInvoice", remote_side="SalesInvoice.id", foreign_keys=[red_of_invoice_id])
 
 
 class AccountsReceivable(Base):
@@ -183,8 +187,23 @@ class AccountsReceivable(Base):
     balance = Column(Float, default=0, comment="余额")
     due_date = Column(Date, comment="到期日")
     status = Column(String(16), default="未收款", comment="状态: 未收款/部分收款/已收款")
+    is_red = Column(Integer, default=0, comment="1=红字应收(负向)")
+    red_of_ar_id = Column(Integer, ForeignKey("ar_account.id"), comment="红字应收指向原应收")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class ArAdjustment(Base):
+    """应收间余额调整（核销转移）— 无收款单参与，独立于核销关系表"""
+    __tablename__ = "ar_adjustment"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    source_ar_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False, comment="源应收(红字应收,负余额)")
+    target_ar_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False, comment="目标应收(同客户,正余额)")
+    amount = Column(Float, default=0, comment="转移金额")
+    remark = Column(Text)
+    operator = Column(String(32))
+    created_at = Column(DateTime, default=func.now())
 
 
 class Collection(Base):

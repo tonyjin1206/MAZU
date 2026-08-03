@@ -30,9 +30,27 @@
         <el-table-column prop="invoice_no" label="发票号" width="160" sortable />
         <el-table-column prop="customer_name" label="客户" min-width="150" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
         <el-table-column prop="order_no" label="订单号" width="140" sortable />
-        <el-table-column label="不含税金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-        <el-table-column label="税额" width="100" align="right" sortable><template #default="{ row }">{{ $fm(row.tax_amount) }}</template></el-table-column>
-        <el-table-column label="价税合计" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
+        <el-table-column label="不含税金额" width="120" align="right" sortable>
+          <template #default="{ row }">
+            <span :style="{ color: row.is_red ? '#f56c6c' : '' }">{{ $fm(row.amount) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="税额" width="100" align="right" sortable>
+          <template #default="{ row }">
+            <span :style="{ color: row.is_red ? '#f56c6c' : '' }">{{ $fm(row.tax_amount) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="价税合计" width="120" align="right" sortable>
+          <template #default="{ row }">
+            <span :style="{ color: row.is_red ? '#f56c6c' : '' }">{{ $fm(row.total_amount) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="红冲发票号码" width="150" sortable>
+          <template #default="{ row }">
+            <span v-if="row.is_red && row.red_of_invoice_no" style="color: #f56c6c">{{ row.red_of_invoice_no }}</span>
+            <span v-else style="color: #909399">—</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="invoice_date" label="发票日期" width="120" sortable column-key="invoice_date" :filters="dateFilters" :filter-method="filterDate" />
         <el-table-column prop="status" label="状态" width="100" column-key="status" :filters="statusFilters" :filter-method="filterStatus">
           <template #default="{ row }">
@@ -40,10 +58,14 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip sortable />
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="130" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <template v-if="!row.is_red">
+              <el-button v-if="row.status !== '已红冲'" link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button v-if="row.status === '已开票'" link type="danger" @click="openRedReverse(row)">红冲</el-button>
+              <el-tag v-else size="small" type="info">已红冲</el-tag>
+            </template>
+            <el-tag v-else size="small" type="danger">红字</el-tag>
           </template>
         </el-table-column>
       </el-table>
@@ -103,6 +125,32 @@
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 红冲弹窗（全额红冲：票号手填，金额 = 原票全额负数只读） -->
+    <el-dialog v-model="redVisible" title="发票红冲" width="520px" destroy-on-close>
+      <el-alert type="warning" :closable="false" style="margin-bottom: 10px"
+        title="全额红冲：红字发票金额固定为原发票全额负数，不可修改。红冲后原发票标记「已红冲」，系统自动生成等额红字应收。" />
+      <el-form label-width="110px">
+        <el-form-item label="原发票号"><span>{{ redForm.orig_invoice_no }}</span></el-form-item>
+        <el-form-item label="原票价税合计"><span style="color: #e6a23c; font-weight: bold">{{ $fm(redForm.orig_total) }}</span></el-form-item>
+        <el-form-item label="红字票号" required>
+          <el-input v-model="redForm.invoice_no" placeholder="从开票系统抄录的红字发票号" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="红字金额">
+          <span style="color: #f56c6c; font-weight: bold">{{ $fm(-redForm.orig_total) }}</span>
+        </el-form-item>
+        <el-form-item label="红冲日期" required>
+          <el-date-picker v-model="redForm.invoice_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="redForm.remark" type="textarea" :rows="2" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="redVisible = false">取消</el-button>
+        <el-button type="danger" :loading="redLoading" :disabled="!redForm.invoice_no" @click="handleRedReverse">确认红冲</el-button>
       </template>
     </el-dialog>
   </div>
@@ -244,8 +292,9 @@ function onOrderChange() {
   const o = orderList.value.find(x => x.id === form.sales_order_id)
   if (o) {
     form.customer_id = o.customer_id || null
-    form.total_amount = o.total_amount || o.total_amount_local || 0
     selectedOrderUninvoiced.value = o.uninvoiced_amount || 0
+    // 默认带出 = 未开票金额（避免超限被后端拒绝；已部分开票时按剩余额度）
+    form.total_amount = Math.min(o.total_amount || 0, selectedOrderUninvoiced.value || 0)
     calcAmount()
   } else {
     selectedOrderUninvoiced.value = 0
@@ -268,7 +317,7 @@ function openCreate() {
   dialogVisible.value = true
 }
 
-function openEdit(row) {
+async function openEdit(row) {
   editMode.value = true
   Object.assign(form, {
     id: row.id, customer_id: row.customer_id, sales_order_id: row.order_id,
@@ -279,13 +328,55 @@ function openEdit(row) {
   dialogVisible.value = true
 }
 
-async function handleDelete(row) {
-  await ElMessageBox.confirm(`确定删除发票 ${row.invoice_no}？`, '提示', { type: 'warning' })
+// ===== 红冲 =====
+const redVisible = ref(false)
+const redLoading = ref(false)
+const redForm = reactive({
+  id: null, order_id: null, orig_invoice_no: '', orig_total: 0,
+  invoice_no: '', invoice_date: '', remark: '',
+})
+
+function openRedReverse(row) {
+  redForm.id = row.id
+  redForm.order_id = row.order_id
+  redForm.orig_invoice_no = row.invoice_no
+  redForm.orig_total = row.total_amount
+  redForm.invoice_no = ''
+  redForm.invoice_date = new Date().toISOString().slice(0, 10)
+  redForm.remark = ''
+  redVisible.value = true
+}
+
+async function handleRedReverse() {
+  if (!redForm.invoice_no) { ElMessage.warning('请输入红字发票号'); return }
+  await ElMessageBox.confirm(
+    `确认全额红冲发票 ${redForm.orig_invoice_no}？红字金额 ${$fm(-redForm.orig_total)}，原发票将标记「已红冲」并自动生成等额红字应收。`,
+    '红冲确认', { type: 'warning', confirmButtonText: '确认红冲', cancelButtonText: '再想想' }
+  )
+  redLoading.value = true
   try {
-    await salesApi.invoices.delete(row.id, row.id)
-    ElMessage.success('删除成功')
+    const taxRate = 13
+    const total = redForm.orig_total
+    await salesApi.invoices.create({
+      invoice_no: redForm.invoice_no,
+      order_id: redForm.order_id,
+      red_of_invoice_id: redForm.id,
+      invoice_date: redForm.invoice_date,
+      amount: Math.round(-total / (1 + taxRate / 100) * 100) / 100,
+      tax_amount: Math.round((-total - (-total / (1 + taxRate / 100))) * 100) / 100,
+      total_amount: -total,
+      tax_rate: taxRate,
+      remark: redForm.remark,
+    })
+    ElMessage.success('红冲成功，红字应收已生成')
+    redVisible.value = false
     fetchList()
-  } catch (e) {}
+    fetchOrders()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '红冲失败')
+  } finally {
+    redLoading.value = false
+  }
 }
 
 async function submitForm() {
@@ -311,7 +402,7 @@ async function submitForm() {
 }
 
 function statusType(status) {
-  const map = { '待开票': 'info', '已开票': 'success', '已作废': 'danger' }
+  const map = { '待开票': 'info', '已开票': 'success', '已作废': 'info', '已红冲': 'warning' }
   return map[status] || 'info'
 }
 </script>

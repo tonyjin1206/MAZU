@@ -63,12 +63,26 @@ python launcher.py start
 # 一键安装 + 启动
 python launcher.py
 
-# 重置数据库
+# 重置数据库（清空全部业务数据，保留系统配置；需先停服务）
 python launcher.py reset-db
+
+# 一键重置 + 录入完整演示数据（纺织全流程 + 退货红冲演示，后端自动启动并保持运行）
+python launcher.py init-db
 
 # 查看帮助
 python launcher.py --help
 ```
+
+> **数据重置与初始化（手动两步）**：
+> ```bash
+> # 1. 清库（保留 admin/权限/系统配置，需先停后端）
+> echo y | python scripts/reset_local_db.py backend/data/erp.db
+> # 2. 启动后端后录入完整数据（纺织档案 + 全业务流程单据 + 退货红冲演示）
+> python scripts/init_all.py
+> ```
+> `init_all.py` 数据源复用 `backend/tests/test_data.py` 的纺织真实数据（与 pytest 测试单一数据源），
+> 流程：基础档案 → 销售订单→生产（备货方式/BOM/派产）→采购→入库→领料→完工→成品入库
+> → 发货→开票→收款 → 报关→退税申报，末尾演示退货+发票全额红冲+退款。
 
 > ⏱ 首次安装约需 3-5 分钟（取决于网络速度）
 

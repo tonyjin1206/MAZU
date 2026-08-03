@@ -1,12 +1,38 @@
-"""一键初始化 + 全流程测试（匹配新版 API v3）"""
-import requests, sys
+"""一键初始化 + 全流程演示数据（v2.5.2 对齐）
 
-BASE = "http://localhost:8788/api"
-ok = 0; fail = 0
+用途：清库后录入一套完整可操作数据（基础档案 + 全业务流程单据 + 新功能演示）
+用法: python scripts/init_all.py [端口，默认 8788]
+前置: 后端已启动（建议先 python scripts/reset_local_db.py 清库，或直接删 backend/data/erp.db*）
+
+数据源: backend/tests/test_data.py 的 _realistic（纺织真实数据）——
+  与 pytest 测试共用同一份配置（单一数据源，杜绝双份档案漂移）。
+
+流程: 登录 → 基础档案(复用 build_foundation) → 销售订单→审核→生产
+  (确认备货方式/BOM展开/派产) → 采购→入库 → 生产领料→工序完工→成品入库
+  → 销售发货 → 发票→收款 → 报关 → 退税申报
+  → 演示: 销售退货(10) + 发票全额红冲 + 退款（查看红字流程）
+"""
+
+import sys
+from pathlib import Path
+
+import requests
+
+BACKEND = Path(__file__).resolve().parent.parent / "backend"
+sys.path.insert(0, str(BACKEND))
+
+PORT = sys.argv[1] if len(sys.argv) > 1 else 8788
+BASE = f"http://localhost:{PORT}/api"
+H = {}
+
+ok = 0
+fail = 0
+
 
 def api(method, path, data=None, params=None, quiet=False):
+    """业务流程专用 API 调用（BASE 含 /api，path 不带 /api 前缀）"""
     global ok, fail
-    r = requests.request(method, f"{BASE}{path}", headers=H, json=data, params=params)
+    r = requests.request(method, f"{BASE}{path}", headers=H, json=data, params=params, timeout=60)
     if r.status_code >= 400:
         fail += 1
         if not quiet:
@@ -15,217 +41,197 @@ def api(method, path, data=None, params=None, quiet=False):
     ok += 1
     return r.json() if r.status_code < 300 else None
 
-# ===== 登录 =====
-r = requests.post(f"{BASE}/auth/login", json={"username":"admin","password":"admin123"})
-if r.status_code != 200:
-    print("❌ 登录失败"); sys.exit(1)
-T = r.json()["access_token"]
-H = {"Content-Type": "application/json", "Authorization": f"Bearer {T}"}
-print(f"✅ 登录成功\n")
 
-# ===== 基础档案 =====
-print("═" * 50 + "\n  基础档案\n" + "═" * 50)
+def main():
+    global H
+    # ===== 登录 =====
+    r = requests.post(f"{BASE}/auth/login", json={"username": "admin", "password": "admin123"}, timeout=30)
+    if r.status_code != 200:
+        print("❌ 登录失败（后端是否启动？端口是否正确？）")
+        sys.exit(1)
+    T = r.json()["access_token"]
+    H = {"Content-Type": "application/json", "Authorization": f"Bearer {T}"}
+    print("✅ 登录成功\n")
 
-api("POST", "/foundation/currencies", {"code":"CNY","name":"人民币","symbol":"¥","is_base":1})
-api("POST", "/foundation/currencies", {"code":"USD","name":"美元","symbol":"$"})
-api("POST", "/foundation/trade-terms", {"code":"FOB","name":"FOB"})
-api("POST", "/foundation/warehouses", {"code":"RM","name":"原料仓","wh_type":"原料仓"})
-api("POST", "/foundation/warehouses", {"code":"FG","name":"成品仓","wh_type":"成品仓"})
-api("POST", "/foundation/suppliers", {"code":"S001","name":"深圳电子材料","supplier_type":"原材料","contact_person":"张三","phone":"0755-12345678","tax_id":"91440300123456789X","address":"深圳市南山区科技园"})
-api("POST", "/foundation/suppliers", {"code":"S002","name":"东莞精密加工","supplier_type":"委外","contact_person":"李四","phone":"0769-87654321","tax_id":"914419001234567890","address":"东莞市长安镇工业区"})
-api("POST", "/foundation/customers", {"code":"C001","name_cn":"美国贸易公司","country":"美国","contact_person":"John Smith","phone":"+1-212-555-1234","tax_id":"US12-3456789","address":"123 Broadway, New York, NY 10007"})
-api("POST", "/foundation/materials", {"code":"M001","name":"PCB电路板","spec":"FR-4 双面板 1.6mm","unit":"片","purchase_price":15})
-api("POST", "/foundation/materials", {"code":"M002","name":"电阻套装","spec":"1/4W 0805 100种","unit":"包","purchase_price":5})
-api("POST", "/foundation/materials", {"code":"M003","name":"塑料外壳","spec":"ABS 黑色 120×80×30","unit":"个","purchase_price":3})
-hs = api("POST", "/foundation/hs-codes", {"hs_code":"8471","name":"计算机","unit":"台","refund_rate":13,"tax_rate":13})
-proc_ent = api("POST", "/foundation/processes", {"code":"P001","name":"SMT贴片","unit_price":8})
-prod1 = api("POST", "/foundation/products", {"code":"PRD001","name_cn":"智能控制器","spec":"工业级 48MHz","unit":"台","sale_price":120,"hs_code_id":hs["id"]})
-prod2 = api("POST", "/foundation/products", {"code":"PRD002","name_cn":"传感器模块","spec":"I2C 温湿度","unit":"个","sale_price":80,"hs_code_id":hs["id"]})
-api("POST", "/foundation/bom", {"bom_name":"默认BOM","product_id":prod1["id"],"material_id":1,"quantity":2,"process_id":proc_ent["id"]})
-api("POST", "/foundation/bom", {"bom_name":"默认BOM","product_id":prod1["id"],"material_id":2,"quantity":10})
-api("POST", "/foundation/bom", {"bom_name":"默认BOM","product_id":prod1["id"],"material_id":3,"quantity":1})
-api("POST", "/foundation/bom", {"bom_name":"默认BOM","product_id":prod2["id"],"material_id":2,"quantity":5})
-print("✅ 基础档案创建完成")
+    # ===== 基础档案（复用统一构建器 tests/test_data.build_foundation） =====
+    print("═" * 50 + "\n  基础档案（纺织真实数据，来自 tests/test_data.py）\n" + "═" * 50)
 
-# ===== 销售订单 → 审核 → 生产 =====
-print("\n" + "═" * 50 + "\n  销售订单（多产品）→ 审核 → 生产订单\n" + "═" * 50)
+    class _MockClient:
+        """适配 build_foundation 的 TestClient 接口（路径自带 /api 前缀）"""
+        def request(self, method, path, json=None, headers=None, params=None):
+            hh = dict(H)
+            hh.update(headers or {})
+            return requests.request(method, f"http://localhost:{PORT}{path}",
+                                    json=json, headers=hh, params=params, timeout=60)
 
-so = api("POST", "/sales/orders", {
-    "customer_id": 1,
-    "currency_id": 2, "exchange_rate": 7.2,
-    "trade_term_id": 1, "payment_terms": "TT",
-    "order_date": "2026-07-22", "delivery_date": "2026-08-15",
-    "items": [
-        {"product_id": prod1["id"], "quantity": 50, "unit_price": 120, "tax_rate": 13},
-        {"product_id": prod2["id"], "quantity": 100, "unit_price": 80, "tax_rate": 13},
-    ]
-})
-print(f"✅ 销售订单: {so['order_no']} (2个产品)")
+    from tests.test_data import build_foundation
+    f = build_foundation(_MockClient(), {"Authorization": f"Bearer {T}"})
+    cny = f["cny"]
+    wh_rm, wh_fg = f["wh_rm"], f["wh_fg"]
+    sup = f["sup"]
+    sup_os = f["sup_os"]
+    cust = f["cust"][0]
+    mats, procs, prods = f["mats"], f["procs"], f["prods"]
+    print("✅ 基础档案完成（2仓 × 4材料 × 4工序 × 2供应商 × 2客户 × 2产品 × BOM × 工艺路线）\n")
 
-appr = api("POST", f"/sales/orders/{so['id']}/approve")
-print(f"✅ 审核完成 → {appr['production_order_nos']}")
-
-prods = api("GET", "/production/productions")
-print(f"✅ 生产订单: {prods['items'][0]['order_no']} & {prods['items'][1]['order_no']}")
-
-# ===== 采购订单 → 审核 → 入库 =====
-print("\n" + "═" * 50 + "\n  采购订单 → 审核 → 入库\n" + "═" * 50)
-
-po = api("POST", "/purchase/orders", {
-    "supplier_id": 1, "payment_terms": "TT", "tax_rate": 13,
-    "items": [
-        {"material_id": 1, "quantity": 200, "unit_price": 15},
-        {"material_id": 2, "quantity": 1000, "unit_price": 5},
-        {"material_id": 3, "quantity": 100, "unit_price": 3},
-    ]
-})
-print(f"✅ 采购订单: {po['order_no']}")
-api("POST", f"/purchase/orders/{po['id']}/approve")
-pr = api("POST", "/purchase/receipts", {
-    "order_id": po["id"], "warehouse_id": 1,
-    "items": [{"material_id": 1, "quantity": 200},
-              {"material_id": 2, "quantity": 1000},
-              {"material_id": 3, "quantity": 100}]
-})
-print(f"✅ 采购入库: {pr['receipt_no']}")
-
-# ===== 库存验证 =====
-bal = api("GET", "/inventory/balance")
-print(f"\n📊 原料库存: {bal['total']} 条")
-for b in bal.get("items", []):
-    print(f"  {b.get('material_name') or b.get('product_name','')} [{b['batch_no']}] 数量={b['quantity']} 金额=¥{b['total_cost']}")
-
-# ===== 生产流程 =====
-print("\n" + "═" * 50 + "\n  生产流程（展开BOM → 工艺路线 → 派产 → 发料 → 完工 → 入库）\n" + "═" * 50)
-
-for p in prods.get("items", []):
-    pid = p["id"]
-    
-    # 展开BOM
-    exp = api("POST", f"/production/productions/{pid}/expand-bom")
-    if not exp:
-        continue
-    print(f"  📦 {p['order_no']}: {exp['message']}")
-    
-    # 保存工艺路线
-    routes = api("PUT", f"/production/productions/{pid}/processes", {
-        "items": [{"process_id": proc_ent["id"], "process_qty": p["quantity"], "unit_price": 8}]
+    # ===== 销售订单 → 审核 → 生产订单 =====
+    print("═" * 50 + "\n  销售订单 → 审核 → 生产\n" + "═" * 50)
+    pid = prods["全棉色织布"]["id"]  # 含委外工序（染色→江苏阳光），覆盖发料拆类型
+    unit_price = prods["全棉色织布"]["price"]
+    so = api("POST", "/sales/orders", {
+        "customer_id": cust, "currency_id": cny["id"], "payment_terms": "TT",
+        "items": [{"product_id": pid, "quantity": 100, "unit_price": unit_price, "tax_rate": 13}],
     })
-    if not routes:
-        continue
-    print(f"  🛠️  工艺路线: {routes['message']}")
-    
-    # 派产
-    rel = api("POST", f"/production/productions/{pid}/release")
-    if not rel:
-        continue
-    print(f"  🚀 派产: {rel['message']}")
-    
-    # 获取生产详情（含物料清单、工艺路线）
-    detail = api("GET", f"/production/productions/{pid}")
-    if not detail:
-        continue
-    
-    # 发料 — 按物料清单逐个发料
-    for mat in detail.get("materials", []):
-        mid = mat["material_id"]
-        qty = mat["planned_qty"]
-        if qty <= 0:
+    if not so:
+        print("❌ 销售订单创建失败"); sys.exit(1)
+    so_id = so["id"]
+    print(f"✅ 销售订单 {so['order_no']}（100 件 × ¥{unit_price}）")
+    api("POST", f"/sales/orders/{so_id}/approve")
+    mo = api("GET", "/production/productions?page_size=5")
+    mo_id = mo["items"][0]["id"]
+    print(f"✅ 审核完成 → 生产订单 {mo['items'][0]['order_no']}")
+
+    # ===== 生产：确认备货方式 → BOM 展开 → 派产 =====
+    print("\n═" * 50 + "\n  生产准备（备货方式 → BOM → 派产）\n" + "═" * 50)
+    api("POST", f"/production/productions/{mo_id}/set-type", {"production_type": "自产"})
+    api("POST", f"/production/productions/{mo_id}/expand-bom")
+    api("POST", f"/production/productions/{mo_id}/release")
+    md = api("GET", f"/production/productions/{mo_id}")
+    print(f"✅ 备货方式=自产，BOM 展开 {len(md['materials'])} 项物料 / {len(md['processes'])} 道工序，已派产")
+
+    # ===== 采购材料（BOM 需求 ×1.3 余量）→ 审核 → 入库 =====
+    print("\n═" * 50 + "\n  采购 → 入库\n" + "═" * 50)
+    from tests.test_data import _realistic
+    boms = _realistic["boms"]["全棉色织布"]
+    po = api("POST", "/purchase/orders", {
+        "supplier_id": sup, "currency_id": cny["id"], "tax_rate": 13,
+        "items": [{"material_id": mats[mname], "quantity": round(100 * qty * 1.3, 2),
+                   "unit_price": 30.0} for mname, qty in boms],
+    })
+    po_id = po["id"]
+    api("POST", f"/purchase/orders/{po_id}/approve")
+    pod = api("GET", f"/purchase/orders/{po_id}")
+    receipt_items = [{"order_item_id": i["id"], "material_id": i["material_id"],
+                      "quantity": i["quantity"], "unit_price": i["unit_price"]}
+                     for i in pod["items"]]
+    rcp = api("POST", "/purchase/receipts", {
+        "order_id": po_id, "warehouse_id": wh_rm, "items": receipt_items})
+    print(f"✅ 采购订单 {po['order_no']} → 入库 {rcp.get('receipt_no', '')}（材料入库，批次已生成）")
+
+    # 材料批次映射（发料用）
+    bal = api("GET", "/inventory/balance?type=material&page_size=50")
+    batch_of_material = {}
+    for b in bal.get("items", []):
+        batch_of_material.setdefault(b["material_id"], b["batch_no"])
+    print(f"✅ 材料库存 {len(bal.get('items', []))} 条")
+
+    # ===== 生产领料（自产工序） + 委外发料 =====
+    print("\n═" * 50 + "\n  生产领料 / 委外发料\n" + "═" * 50)
+    first_proc = sorted(md["processes"], key=lambda p: p["seq"])[0]
+    os_proc = next((p for p in md["processes"] if p.get("outsourcer_id")), None)
+    for pm in md["materials"]:
+        bno = batch_of_material.get(pm["material_id"])
+        if not bno:
+            print(f"  ⚠️ 材料 {pm['material_id']} 无批次，跳过发料")
             continue
-        # 查原料库存（query param）
-        mat_bal = api("GET", "/inventory/balance", params={"material_id": mid})
-        if mat_bal and mat_bal.get("items"):
-            batch = mat_bal["items"][0]
-            if batch["quantity"] >= qty and detail.get("processes"):
-                first_proc = detail["processes"][0]
-                iss = api("POST", f"/production/productions/{pid}/processes/{first_proc['id']}/issue", {
-                    "material_id": mid,
-                    "batch_no": batch["batch_no"],
-                    "quantity": qty,
-                    "warehouse_id": 1,
-                })
-                if iss:
-                    print(f"  📤 发料: {mat['material_name']} × {qty}")
-    
-    # 完工工序
-    detail2 = api("GET", f"/production/productions/{pid}")
-    if detail2 and detail2.get("processes"):
-        for pr in detail2["processes"]:
-            fin = api("POST", f"/production/productions/{pid}/processes/{pr['id']}/finish", {
-                "unit_price": pr.get("unit_price", 8),
-                "process_qty": p["quantity"],
-            })
-            if fin:
-                print(f"  ✅ 完工: {pr['process_name']}")
-    
-    # 完工入库
-    rcpt = api("POST", f"/production/productions/{pid}/receipt", {
-        "quantity": p["quantity"],
-        "warehouse_id": 2,
-        "material_cost": 0,
-        "process_cost": 0,
-        "receipt_date": "2026-08-10",
-    })
-    if rcpt:
-        print(f"  📦 入库: {rcpt['message']}")
+        r = api("POST",
+                f"/production/productions/{mo_id}/processes/{first_proc['id']}/issue",
+                {"material_id": pm["material_id"], "quantity": pm["planned_qty"],
+                 "batch_no": bno, "warehouse_id": wh_rm}, quiet=True)
+        if r:
+            print(f"  ✅ 领料 {pm['material_name']} × {pm['planned_qty']}（material_issue_out）")
+    if os_proc:
+        first_mid = md["materials"][0]
+        bno = batch_of_material.get(first_mid["material_id"])
+        if bno:
+            api("POST", f"/production/productions/{mo_id}/processes/{os_proc['id']}/issue",
+                {"material_id": first_mid["material_id"], "quantity": 1,
+                 "batch_no": bno, "warehouse_id": wh_rm}, quiet=True)
+            print(f"  ✅ 委外发料（outsource_out）→ 染色工序")
 
-# ===== 销售发货 → 报关 → 发票 → 收款 =====
-print("\n" + "═" * 50 + "\n  销售发货 → 报关 → 发票 → 应收 → 收款\n" + "═" * 50)
+    # ===== 工序完工 → 成品入库 =====
+    print("\n═" * 50 + "\n  工序完工 → 成品入库\n" + "═" * 50)
+    for proc in sorted(md["processes"], key=lambda p: p["seq"]):
+        body = {"unit_price": proc.get("unit_price") or 0.5, "process_qty": 100}
+        if proc.get("outsourcer_id"):
+            body = {"unit_price": 2.0, "process_qty": 100}
+        api("POST", f"/production/productions/{mo_id}/processes/{proc['id']}/finish", body)
+    print(f"✅ {len(md['processes'])} 道工序完工")
+    receipt = api("POST", f"/production/productions/{mo_id}/receipt", {
+        "quantity": 100, "warehouse_id": wh_fg,
+        "material_cost": None, "process_cost": None, "receipt_date": "2026-08-03"})
+    batch_fg = receipt.get("batch_no", "")
+    print(f"✅ 成品入库 → 批次 {batch_fg}（成本自动结转）")
 
-# 查询成品库存
-fg_bal = api("GET", "/inventory/balance", params={"type": "product"})
-fg_batch = fg_bal["items"][0] if fg_bal and fg_bal.get("items") else None
+    # ===== 销售发货 → 发票 → 收款 =====
+    print("\n═" * 50 + "\n  销售发货 → 开票 → 收款\n" + "═" * 50)
+    so_detail = api("GET", f"/sales/orders/{so_id}")
+    oi_id = so_detail["items"][0]["id"]
+    dv = api("POST", "/sales/deliveries", {
+        "order_id": so_id, "order_item_id": oi_id,
+        "batch_no": batch_fg, "quantity": 100, "warehouse_id": wh_fg,
+        "delivery_date": "2026-08-03"})
+    dv_id = dv["id"]
+    print(f"✅ 销售发货 {dv['delivery_no']}（100 件，批次 {batch_fg}）")
 
-if fg_batch:
-    deliv = api("POST", "/sales/deliveries", {
-        "order_id": so["id"], "order_item_id": 1, "product_id": prod1["id"],
-        "batch_no": fg_batch["batch_no"], "quantity": 50, "warehouse_id": 2,
-        "delivery_date": "2026-08-15",
-    })
-    print(f"✅ 销售发货: {deliv['delivery_no']}" if deliv else "  ❌ 发货失败")
-else:
-    print("  ⚠️  无成品库存，跳过销售发货")
-    deliv = None
+    sa = round(100 * unit_price, 2)
+    inv = api("POST", "/sales/invoices", {
+        "invoice_no": "INV-20260803-001", "order_id": so_id, "invoice_date": "2026-08-03",
+        "amount": round(sa / 1.13, 2), "amount_fc": round(sa / 1.13, 2),
+        "tax_amount": round(sa * 0.13 / 1.13, 2), "total_amount": sa, "tax_rate": 13})
+    print(f"✅ 销售发票 INV-20260803-001（价税合计 ¥{sa}）→ 应收已生成")
 
-if deliv:
-    cus = api("POST", "/sales/customs", {
-        "customs_no": "CUS-20260815-001", "order_id": so["id"],
-        "delivery_id": deliv["id"], "hs_code_id": hs["id"],
-        "declare_amount": 10000, "declare_currency": 2,
-        "declare_date": "2026-08-15",
-    })
-    print(f"✅ 报关: {cus['customs_no']}" if cus else "  ❌ 报关失败")
+    ars = api("GET", "/sales/ar?page_size=50")["items"]
+    ar = next((a for a in ars if a.get("source_id") == inv["id"]), None)
+    coll_amt = round(sa * 0.4, 2)
+    api("POST", "/sales/collections", {
+        "customer_id": cust, "amount": coll_amt, "ar_account_id": ar["id"],
+        "payment_method": "银行转账", "collection_date": "2026-08-03"})
+    print(f"✅ 收款 ¥{coll_amt}（40%，部分收款）→ 应收余额 ¥{round(sa - coll_amt, 2)}")
 
-    sinv = api("POST", "/sales/invoices", {
-        "invoice_no": "SI-20260815-001", "order_id": so["id"],
-        "amount": 6000, "tax_rate": 13, "total_amount": 6780,
-        "invoice_date": "2026-08-15",
-    })
-    if sinv:
-        print(f"✅ 发票 → {sinv['ar_no']}")
+    # ===== 报关 → 退税申报（待申报） =====
+    print("\n═" * 50 + "\n  报关 → 退税申报\n" + "═" * 50)
+    hss = api("GET", "/foundation/hs-codes?page_size=5")
+    hs_id = hss["items"][0]["id"]
+    api("POST", "/sales/customs", {
+        "customs_no": "223320260803000001", "order_id": so_id, "delivery_id": dv_id,
+        "hs_code_id": hs_id, "declare_amount": sa, "declare_currency": cny["id"],
+        "declare_date": "2026-08-03"})
+    decl = api("POST", "/tax-refund/declarations", {
+        "declaration_no": "TD-202608-001", "declare_date": "2026-08-03",
+        "period": "202608", "export_amount_fob": sa,
+        "tax_rate": 13, "refund_rate": 13, "input_tax": round(sa * 0.13 / 1.13, 2)})
+    print(f"✅ 报关单 223320260803000001 + 退税申报 {decl['declaration_no']}（待申报）")
 
-        ars = api("GET", "/sales/ar")
-        if ars and ars.get("items"):
-            ar_id = ars["items"][0]["id"]
-            coll = api("POST", "/sales/collections", {
-                "customer_id": 1, "amount": 6780, "amount_fc": 942.0,
-                "currency_id": 2, "exchange_rate": 7.2,
-                "collection_date": "2026-08-20",
-                "payment_method": "TT",
-                "ar_account_id": ar_id,
-            })
-            print(f"✅ 收款: {coll['collection_no']}" if coll else "  ❌ 收款失败")
+    # ===== 演示：销售退货 + 发票全额红冲 + 退款（v2.5.2 新功能） =====
+    print("\n═" * 50 + "\n  演示：销售退货(10) + 发票全额红冲 + 退款\n" + "═" * 50)
+    ret = api("POST", f"/sales/deliveries/{dv_id}/return", {"quantity": 10, "remark": "演示: 质量退货"})
+    print(f"✅ 退货 10 件 → 红字退货单 {ret['return_no']}，库存回库（订单已发回退为 90）")
+    print(f"   ℹ️ 提示: {ret.get('message', '')[:60]}")
 
-# ===== 退税计算 =====
-print("\n" + "═" * 50 + "\n  退税计算\n" + "═" * 50)
+    red = api("POST", "/sales/invoices", {
+        "invoice_no": "INV-RED-20260803-001", "order_id": so_id, "red_of_invoice_id": inv["id"],
+        "invoice_date": "2026-08-03",
+        "amount": round(-sa / 1.13, 2), "tax_amount": round(-sa * 0.13 / 1.13, 2),
+        "total_amount": -sa, "tax_rate": 13})
+    print(f"✅ 发票全额红冲 → 红字发票 INV-RED-20260803-001（原票已红冲，红字应收已生成）")
 
-calc = api("POST", "/tax-refund/calculate", {
-    "export_amount_fob": 10000, "refund_rate": 13, "tax_rate": 13,
-    "domestic_tax": 50000, "input_tax": 20000, "last_period_deduction": 0,
-})
-if calc:
-    print(f"✅ 应退¥{calc['actual_refund']}, 免抵¥{calc['exemption_amount']}")
+    ars2 = api("GET", "/sales/ar?page_size=50")["items"]
+    red_ar = next((a for a in ars2 if a.get("is_red")), None)
+    refund = api("POST", "/sales/collections", {
+        "customer_id": cust, "amount": -coll_amt, "ar_account_id": red_ar["id"],
+        "payment_method": "电汇退款", "collection_date": "2026-08-03"})
+    print(f"✅ 退款 ¥{coll_amt}（负数收款单）→ 红字应收已核销（线下实际退钱）")
+    print("   ℹ️ 可查看：发票列表红字行/红冲票号列、应收红字(红)/核销转移入口、收款单退款标签")
 
-print(f"\n{'═' * 50}")
-print(f"  🎉 全流程测试完成! 成功={ok} 失败={fail}")
-print(f"{'═' * 50}")
+    # ===== 汇总 =====
+    print("\n" + "═" * 50)
+    print(f"  初始化完成 ✅ 成功={ok} 失败={fail}")
+    print("  数据一览：销售订单1 / 生产订单1 / 采购订单1 / 发货单1(含退货) / 发票1(已红冲+红字1)")
+    print(f"  应收（正1 红字1）/ 收款单2（收款+退款）/ 报关1 / 退税申报1（待申报）")
+    print("═" * 50)
+    sys.exit(1 if fail else 0)
+
+
+if __name__ == "__main__":
+    main()

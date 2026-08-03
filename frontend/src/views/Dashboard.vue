@@ -146,12 +146,21 @@
 
     <el-dialog v-model="invoiceVisible" title="销售发票详情" width="500px">
       <el-descriptions :column="2" border size="small" v-if="invoiceData">
-        <el-descriptions-item label="发票号" span="2">{{ invoiceData.invoice_no }}</el-descriptions-item>
+        <el-descriptions-item label="发票号" span="2">
+          {{ invoiceData.invoice_no }}
+          <el-tag v-if="invoiceData.is_red" type="danger" size="small" style="margin-left: 6px">红字发票</el-tag>
+          <el-tag v-else-if="invoiceData.status === '已红冲'" type="warning" size="small" style="margin-left: 6px">已红冲</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="invoiceData.red_of_invoice_no" label="红冲原发票" span="2">
+          <span style="color: #f56c6c">{{ invoiceData.red_of_invoice_no }}</span>
+        </el-descriptions-item>
         <el-descriptions-item label="客户">{{ invoiceData.customer_name }}</el-descriptions-item>
-        <el-descriptions-item label="含税金额"><span style="font-weight: bold">{{ $fm(invoiceData.total_amount || invoiceData.amount) }}</span></el-descriptions-item>
+        <el-descriptions-item label="含税金额">
+          <span :style="{ color: invoiceData.is_red ? '#f56c6c' : '', fontWeight: 'bold' }">{{ $fm(invoiceData.total_amount || invoiceData.amount) }}</span>
+        </el-descriptions-item>
         <el-descriptions-item label="税率">{{ invoiceData.tax_rate }}%</el-descriptions-item>
-        <el-descriptions-item label="税额">{{ $fm(invoiceData.tax_amount) }}</el-descriptions-item>
-        <el-descriptions-item label="不含税金额">{{ $fm(invoiceData.amount_excl_tax || invoiceData.total_amount_excl_tax) }}</el-descriptions-item>
+        <el-descriptions-item label="税额"><span :style="{ color: invoiceData.is_red ? '#f56c6c' : '' }">{{ $fm(invoiceData.tax_amount) }}</span></el-descriptions-item>
+        <el-descriptions-item label="不含税金额"><span :style="{ color: invoiceData.is_red ? '#f56c6c' : '' }">{{ $fm(invoiceData.amount_excl_tax || invoiceData.total_amount_excl_tax) }}</span></el-descriptions-item>
         <el-descriptions-item label="开票日期">{{ invoiceData.invoice_date }}</el-descriptions-item>
       </el-descriptions>
     </el-dialog>

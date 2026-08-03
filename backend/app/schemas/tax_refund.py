@@ -133,8 +133,9 @@ class TaxRefundDetailOut(BaseModel):
 # ========== 申报明细（标准格式行） ==========
 
 class TaxRefundDeclarationRowCreate(BaseModel):
-    input_invoice_id: int
+    input_invoice_id: Optional[int] = None
     voucher_type: str = "增值税专用发票"
+    voucher_no: str = ""
     product_code: str = ""
     product_name: str = ""
     unit: str = ""

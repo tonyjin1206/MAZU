@@ -198,7 +198,10 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | 取消完工入库 | 批次有**任何**其他出入库（发货/盘点/退货等）→ 禁止，走销售退货 |
 | 采购取消 | 仅限批次未消耗；补一条 purchase_return_out 冲销流水（保留审计） |
 | 采购红冲 | 批次已消耗场景：负向红冲单 + 冲销流水；红冲量 ≤ 批次当前剩余；回退订单 received_qty/状态 + 外购型 MO 状态 |
-| 销售退货 | 退回原批次、原发货成本；批次已清空则重建；回退订单 delivered_qty/状态；dashboard 毛利自动冲减 |
+| 销售退货 | 退回原批次、原发货成本；批次已清空则重建；回退订单 delivered_qty/状态；dashboard 毛利自动冲减；已开票→提示全额红冲发票（红字发票+红字应收等额联动）；已收款→负数收款单（退款）核销红字应收；已报税→打标 refund_declared、退税冻结、次月负数申报冲减 |
+| 发票红冲 | 全额红冲（不可部分/不可干预金额）：红字发票手工录入（票号来自开票系统），原票标已红冲，自动生成等额红字应收；红字发票禁改/禁删；开票校验 ≤ 未开票金额（SUM 含红字负数，红冲后额度自动返还 → 补开新票） |
+| 核销转移 | 红字应收负余额 → 同客户正余额应收（`ar_adjustment` 表，无收款单参与）；跨客户/超上限拒绝；收款↔应收核销关系表保持纯语义不动 |
+| 退款（负数收款单） | 金额为负=退款；核销红字应收负余额向 0 靠拢；退超拦截；删除退款单自动回滚；不自动生成退款（线下办理） |
 | 盘点 | 差异=实盘−账面；盘盈 stocktake_in / 盘亏 stocktake_out（成本=批次当前成本）；盘亏不可超账面；提交后不可改/删 |
 | 完工入库成本 | 留空 = 自动结转（剩余投入×本次入库占比，最后一次全转）；可手改覆盖 |
 | 发料类型 | 自产工序=material_issue_out，委外工序=outsource_out（历史流水由 migrate_inventory_v2.py 拆分） |
@@ -220,8 +223,10 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/declarations/{id}/cancel-submit` | PUT | 取消申报（状态→待申报）|
 | `/declarations/{id}/refund` | PUT | 完成退税（输入实际金额）|
 | `/declarations/{id}/cancel-refund` | PUT | 取消退税 |
-| `/declarations/{id}/rows` | POST | 添加明细行（自动编号+更新发票状态）|
+| `/declarations/{id}/rows` | POST | 添加明细行（自动编号+更新发票状态；`input_invoice_id` 可空 → 支持负数行）|
 | `/declarations/{id}/rows/{row_id}` | PUT/DELETE | 修改/删除明细行（回滚发票状态）|
+| `/declarations/{id}/return-candidates` | GET | 已报税退货单候选（负数申报取数，未添加过）|
+| `/declarations/{id}/return-adjustments` | POST | 添加退货冲减负数行（自动重算出口FOB金额+免抵退结果）|
 
 状态流程: 待申报 → 已申报 → 已退税（支持取消申报/取消退税）
 

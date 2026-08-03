@@ -1,6 +1,6 @@
 # MTS 已知问题清单（Known Issues）
 
-> 由 `scripts/test_robust.py` 健壮性测试 + 自动化测试套件（tests/）自动发现。
+> 由自动化测试套件（backend/tests/ pytest 体系，统一入口 `./test.sh`）发现与验证。
 > 状态：`遗留` = 用户确认暂不修复；`已修复` = 已处理；`待修` = 排队修复。
 
 ## 数据完整性
@@ -50,8 +50,9 @@
 ## 复现方式
 
 ```bash
-# 全量测试（已修复项自动转为 PASS）
-python scripts/test_robust.py
+# 全量测试（已修复项自动转为 PASS）— 统一测试入口
+./test.sh
+# 分段复现：./test.sh -k 关键字 / tests/xxx.py / 单用例路径
 ```
 
 退出码 0 = 无未知失败（已知问题以 ⚠️ 标记，不计入失败）。
