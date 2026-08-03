@@ -76,7 +76,6 @@
             <el-button v-if="row.status === '已审核'" link type="warning" @click="handleUnapprove(row)">取消审核</el-button>
             <el-button v-if="row.status === '已审核' || row.status === '部分入库'" link type="primary" @click="handleInStore(row)">入库</el-button>
             <el-button v-if="row.status === '待审核'" link type="danger" @click="handleDelete(row)">删除</el-button>
-            <el-button link @click="openDetail(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -120,6 +119,20 @@
             </el-dropdown>
           </template>
           <template v-if="col.prop === 'unit_price' || col.prop === 'total_amount' || col.prop === 'tax_amount' || col.prop === 'total_amount_excl_tax'" #default="{ row }">{{ $fm(row[col.prop]) }}</template>
+          <template v-else-if="col.prop === 'receive_type'" #default="{ row }">
+            <el-tag v-if="row.receive_type === '成品库'" type="success" size="small">成品库</el-tag>
+            <el-tag v-else-if="row.receive_type === '原料库'" type="primary" size="small">原料库</el-tag>
+            <el-tag v-else type="info" size="small">未转</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="190" fixed="right">
+          <template #default="{ row }">
+            <template v-if="!row.receive_type && selectedOrder?.status === '已审核'">
+              <el-button v-if="row.product_id" :disabled="false" link type="primary" size="small" @click.stop="openToStockIn(row)">转成品库</el-button>
+              <el-button v-else :disabled="false" link type="primary" size="small" @click.stop="handleToMaterial(row)">转原料库</el-button>
+            </template>
+            <span v-else-if="row.receive_type" style="color: #909399; font-size: 12px">{{ row.receive_type === '成品库' ? '待收货' : '待入库' }}</span>
+          </template>
         </el-table-column>
       </el-table>
     </el-card>
@@ -340,6 +353,7 @@ const defaultItemColumns = [
   { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'tax_amount', label: '税额', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'total_amount_excl_tax', label: '不含税', width: 100, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'receive_type', label: '去向', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
 const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, settingsVisible: itemSettingsVisible, settingsList: itemSettingsList, openColumnSettings: openItemSettingsRaw, confirmSettings: confirmItemSettingsFn, resetSettings: resetItemSettings } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-items .el-table__header-wrapper thead tr')
 const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
@@ -654,21 +668,23 @@ async function handleToStockIn() {
   if (toStockInForm.linkType === 'link' && !selectedCandidate.value) { ElMessage.warning('请选择要关联的待入库单'); return }
   submitting.value = true
   try {
-    const res = await request.post(`/purchase/orders/${orderForm.id}/items/${toStockInForm.item_id}/to-stock-in`, {
+    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${toStockInForm.item_id}/to-stock-in`, {
       stock_in_order_id: toStockInForm.linkType === 'link' ? selectedCandidate.value.id : 0,
     })
     ElMessage.success(res.message || '已转成品库入库')
     toStockInVisible.value = false
-    await refreshOrderForm()
+    loadOrderDetail(selectedOrder.value.id)
+    fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') } finally { submitting.value = false }
 }
 
 async function handleToMaterial(row) {
   await ElMessageBox.confirm('确定该明细转「原料库入库」？收货在采购入库模块进行。', '提示', { type: 'info' })
   try {
-    const res = await request.post(`/purchase/orders/${orderForm.id}/items/${row.id}/to-material`)
+    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${row.id}/to-material`)
     ElMessage.success(res.message || '已转原料库入库')
-    await refreshOrderForm()
+    loadOrderDetail(selectedOrder.value.id)
+    fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
 }
 

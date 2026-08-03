@@ -1,8 +1,11 @@
 <template>
-  <div>
-    <el-card style="margin-bottom: 12px">
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+    <!-- ========== 搜索区 ========== -->
+    <el-card style="margin-bottom: 8px; flex: none">
       <template #header>
-        <div style="display: flex; justify-content: flex-end; gap: 8px">
+        <div style="display: flex; align-items: center">
+          <span>查询条件</span>
+          <span style="flex: 1" />
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
           <el-button type="primary" @click="openDialog()">新建入库</el-button>
@@ -24,39 +27,85 @@
       </el-form>
     </el-card>
 
-    <el-card>
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
-        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
-      </div>
-<el-table :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+    <!-- ========== 入库单列表（上） ========== -->
+    <el-card style="flex: none">
+      <template #header>
+        <div style="display: flex; align-items: center">
+          <span>采购入库单</span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table ref="orderTableRef" class="drag-table-receipts" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row @current-change="onReceiptSelect" :height="topHeight - 92 + 'px'">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
-            <span class="col-header-wrap">
-              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
-              {{ col.label }}
-            </span>
+            <el-dropdown trigger="contextmenu" :hide-on-click="false">
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="c in allColumns" :key="c.prop">
+                    <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
+                  </el-dropdown-item>
+                  <el-dropdown-item @click.stop="openOrderSettings" style="color: #409eff">列设置...</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
           <template v-if="col.prop === 'status'" #default="{ row }">
             <el-tag type="success" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
-        <template #default="{ row }">
-          <el-button link type="primary" @click="showDetail(row)">详情</el-button>
-          <el-button link type="danger" @click="handleCancel(row)">取消入库</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="danger" @click="handleCancel(row)">取消入库</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 6px; flex: none" />
+    </el-card>
 
-      <el-pagination
-        v-model:current-page="queryParams.page"
-        v-model:page-size="queryParams.pageSize"
-        :total="total"
-        :page-sizes="[50, 100, 200]"
-        layout="total, sizes, prev, pager, next"
-        @change="fetchData"
-        style="margin-top: 16px"
-      />
+    <!-- 拖动条：上下拉动调节列表/明细区域高度 -->
+    <div
+      class="split-bar"
+      style="flex: none; height: 8px; margin: 0 -16px; cursor: row-resize; background: transparent; display: flex; align-items: center; justify-content: center; user-select: none"
+      @mousedown="onSplitterDown"
+    >
+      <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
+    </div>
+
+    <!-- ========== 收货明细（跟随选中入库单，占剩余高度） ========== -->
+    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+      <template #header>
+        <div style="display: flex; align-items: center">
+          <span>收货明细</span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table ref="itemTableRef" class="drag-table-receipt-items" :key="itemColumnVersion" :data="receiptDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方入库单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+        <el-table-column v-for="col in visibleItemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <el-dropdown trigger="contextmenu" :hide-on-click="false">
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-for="c in allItemColumns" :key="c.prop">
+                    <el-checkbox :model-value="c.visible !== false" @change="toggleItemColumn(c)">{{ c.label }}</el-checkbox>
+                  </el-dropdown-item>
+                  <el-dropdown-item @click.stop="openItemSettings" style="color: #409eff">列设置...</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+          <template v-if="col.prop === 'quantity' || col.prop === 'total_amount'" #default="{ row }">{{ col.prop === 'total_amount' ? $fm(row[col.prop]) : $fq(row[col.prop]) }}</template>
+        </el-table-column>
+      </el-table>
     </el-card>
 
     <!-- 新建入库对话框 -->
@@ -128,46 +177,26 @@
       </template>
     </el-dialog>
 
-    <!-- 详情弹窗 -->
-    <el-dialog v-model="detailVisible" title="入库单详情" width="700px">
-      <el-descriptions :column="2" border v-if="detail">
-        <el-descriptions-item label="入库单号" span="2">{{ detail.receipt_no }}</el-descriptions-item>
-        <el-descriptions-item label="关联订单">{{ detail.order_no }}</el-descriptions-item>
-        <el-descriptions-item label="仓库">{{ detail.warehouse_name }}</el-descriptions-item>
-        <el-descriptions-item label="入库日期">{{ detail.receipt_date }}</el-descriptions-item>
-        <el-descriptions-item label="总数量">{{ $fq(detail.total_qty) }}</el-descriptions-item>
-        <el-descriptions-item label="操作人">{{ detail.operator }}</el-descriptions-item>
-        <el-descriptions-item label="备注" span="2">{{ detail.remark || '-' }}</el-descriptions-item>
-      </el-descriptions>
-      <el-divider>入库明细</el-divider>
-      <el-table :data="detail?.items || []" stripe size="small">
-        <el-table-column prop="material_name" label="物料名称" min-width="150" />
-        <el-table-column prop="material_code" label="编码" width="100" />
-        <el-table-column prop="batch_no" label="批次号" width="140" />
-        <el-table-column prop="quantity" label="数量" width="90" align="right">
-          <template #default="{ row }">{{ $fq(row.quantity) }}</template>
-        </el-table-column>
-        <el-table-column prop="unit_price" label="单价" width="100" align="right">
-          <template #default="{ row }">{{ $fm(row.unit_price) }}</template>
-        </el-table-column>
-        <el-table-column prop="total_amount" label="金额" width="100" align="right">
-          <template #default="{ row }">{{ $fm(row.total_amount) }}</template>
-        </el-table-column>
-      </el-table>
-    </el-dialog>
+    <!-- 列设置弹窗 -->
+    <ColumnSettingsDialog v-model:visible="orderSettingsVisible" :columns="orderSettingsList" @confirm="confirmReceiptSettingsFn" @reset="resetReceiptSettingsFn" />
+    <ColumnSettingsDialog v-model:visible="itemSettingsVisible" :columns="itemSettingsList" @confirm="confirmItemSettingsFn" @reset="resetItemSettingsFn" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, onMounted, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { purchaseApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
 import request from '../../api/request'
 
 const route = useRoute()
+const { fitTable } = useColumnAutoFit()
 
 const autoFillMode = ref(false)
 
@@ -177,12 +206,46 @@ const defaultColumns = [
   { prop: 'receipt_no', label: '入库单号', width: 160, sortable: true },
   { prop: 'order_no', label: '关联订单', width: 160, sortable: true },
   { prop: 'warehouse_name', label: '仓库', minWidth: 120, sortable: true },
-  { prop: 'total_qty', label: '总数量', width: 100, align: 'right', sortable: true },
-  { prop: 'status', label: '状态', width: 100, sortable: true },
-  { prop: 'item_count', label: '明细项', width: 80, align: 'center', sortable: true },
+  { prop: 'total_qty', label: '总数量', width: 100, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'status', label: '状态', width: 100, sortable: true, fmt: 'tag' },
+  { prop: 'item_count', label: '明细项', width: 80, align: 'center', sortable: true, fmt: 'qty' },
   { prop: 'receipt_date', label: '入库日期', width: 120, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, columnVersion, initColumnDrag, settingsVisible: orderSettingsVisible, settingsList: orderSettingsList, openColumnSettings: openOrderSettingsRaw, confirmSettings: confirmOrderSettingsRaw, resetSettings: resetOrderSettingsRaw } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-receipts .el-table__header-wrapper thead tr')
+const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
+
+const ITEM_STORAGE_KEY = 'mazu_purchase_receipt_item_columns'
+const defaultItemColumns = [
+  { prop: 'material_name', label: '物料名称', minWidth: 150, sortable: true },
+  { prop: 'material_code', label: '编码', width: 100, sortable: true },
+  { prop: 'batch_no', label: '批次号', width: 140, sortable: true },
+  { prop: 'quantity', label: '数量', width: 90, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'unit_price', label: '单价', width: 100, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'total_amount', label: '金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
+]
+const { columns: itemColumns, columnVersion: itemColumnVersion, initColumnDrag: initItemColumnDrag, settingsVisible: itemSettingsVisible, settingsList: itemSettingsList, openColumnSettings: openItemSettingsRaw, confirmSettings: confirmItemSettingsRaw, resetSettings: resetItemSettingsRaw } = useColumnDrag(defaultItemColumns, ITEM_STORAGE_KEY, '.drag-table-receipt-items .el-table__header-wrapper thead tr')
+const { visibleColumns: visibleItemColumns, allColumns: allItemColumns, toggleColumn: toggleItemColumn, initColumnVisible: initItemVisible } = useColumnCustomize(itemColumns, ITEM_STORAGE_KEY)
+
+// ========== 列设置包装函数 ==========
+function confirmReceiptSettingsFn() {
+  confirmOrderSettingsRaw()
+  nextTick(() => { initColumnVisible(); initColumnDrag(); fitTable(orderTableRef.value, columns, dataList) })
+}
+
+function resetReceiptSettingsFn() {
+  resetOrderSettingsRaw()
+  nextTick(() => { initColumnVisible(); initColumnDrag(); fitTable(orderTableRef.value, columns, dataList) })
+}
+
+function confirmItemSettingsFn() {
+  confirmItemSettingsRaw()
+  nextTick(() => { initItemVisible(); initItemColumnDrag(); fitTable(itemTableRef.value, itemColumns, receiptDetailList) })
+}
+
+function resetItemSettingsFn() {
+  resetItemSettingsRaw()
+  nextTick(() => { initItemVisible(); initItemColumnDrag(); fitTable(itemTableRef.value, itemColumns, receiptDetailList) })
+}
 
 const loading = ref(false)
 const dataList = ref([])
@@ -204,9 +267,79 @@ function resetSearch() {
   fetchData()
 }
 
+// ========== 收货明细（跟随选中入库单） ==========
+const orderTableRef = ref(null)
+const itemTableRef = ref(null)
+const itemLoading = ref(false)
+const selectedReceipt = ref(null)
+const receiptDetailList = ref([])
+
+// ========== 上下区域高度拖动 ==========
+const SPLIT_KEY = 'mazu_purchase_receipt_split_height'
+const topHeight = ref(parseInt(localStorage.getItem(SPLIT_KEY) || '400') || 400)
+
+function onSplitterDown(e) {
+  const startY = e.clientY
+  const startH = topHeight.value
+  const onMove = (ev) => {
+    const h = startH + (ev.clientY - startY)
+    topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    localStorage.setItem(SPLIT_KEY, String(topHeight.value))
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
+
+// ========== 合计栏 ==========
+function fmtMoney(v) {
+  const n = typeof v === 'string' ? parseFloat(v) : v
+  if (n === null || n === undefined || isNaN(n)) return '¥0.00'
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function itemSummary({ columns: cols, data }) {
+  const sumCols = new Set(['quantity', 'total_amount'])
+  return cols.map((col, idx) => {
+    if (idx === 0) return '合计'
+    if (sumCols.has(col.property)) {
+      const v = data.reduce((s, r) => s + (parseFloat(r[col.property]) || 0), 0)
+      return col.property === 'quantity' ? String(v) : fmtMoney(v)
+    }
+    return ''
+  })
+}
+
+function onReceiptSelect(row) {
+  if (!row) return
+  selectedReceipt.value = row
+  loadReceiptDetail(row.id)
+}
+
+async function loadReceiptDetail(receiptId) {
+  if (!receiptId) { receiptDetailList.value = []; return }
+  itemLoading.value = true
+  try {
+    const res = await request.get(`/purchase/receipts/${receiptId}`)
+    receiptDetailList.value = res.items || []
+  } catch {} finally {
+    itemLoading.value = false
+    nextTick(() => {
+      initItemColumnDrag()
+      fitTable(itemTableRef.value, itemColumns, receiptDetailList)
+    })
+  }
+}
+
 const dialogVisible = ref(false)
-const detailVisible = ref(false)
-const detail = ref(null)
 const submitting = ref(false)
 const receiptFormRef = ref(null)
 
@@ -248,13 +381,11 @@ async function onOrderChange(orderId) {
     try {
       const detail = await purchaseApi.orders.get(orderId)
       orderItems = detail.items || []
-      console.log('onOrderChange: fetched detail, items:', orderItems.length)
     } catch (e) {
       console.error('onOrderChange: fetch detail failed', e)
       orderItems = []
     }
   }
-  console.log('onOrderChange: setting items:', orderItems.length)
   const batchNo = 'BATCH-' + Date.now()
   receiptForm.items = orderItems.map((item) => ({
     material_id: item.material_id,
@@ -293,11 +424,23 @@ async function fetchData() {
     const res = await purchaseApi.receipts.list(queryParams)
     dataList.value = res.items || res.list || res.data || []
     total.value = res.total || dataList.value.length
+    // 自动选中第一行，联动加载明细
+    if (dataList.value.length) {
+      selectedReceipt.value = dataList.value[0]
+      loadReceiptDetail(selectedReceipt.value.id)
+      nextTick(() => { orderTableRef.value?.setCurrentRow(dataList.value[0]) })
+    } else {
+      selectedReceipt.value = null
+      receiptDetailList.value = []
+    }
   } catch (e) {
     ElMessage.error('加载数据失败')
   } finally {
     loading.value = false
-    nextTick(initColumnDrag)
+    nextTick(() => {
+      initColumnDrag()
+      fitTable(orderTableRef.value, columns, dataList)
+    })
   }
 }
 
@@ -343,16 +486,6 @@ async function handleSubmit() {
   }
 }
 
-async function showDetail(row) {
-  try {
-    const res = await request.get(`/purchase/receipts/${row.id}`)
-    detail.value = res
-    detailVisible.value = true
-  } catch {
-    ElMessage.error('加载详情失败')
-  }
-}
-
 async function handleCancel(row) {
   await ElMessageBox.confirm(
     `确定取消入库单 ${row.receipt_no}？库存、批次数据将同步回滚。`,
@@ -368,6 +501,8 @@ async function handleCancel(row) {
 }
 
 onMounted(async () => {
+  initColumnVisible()
+  initItemVisible()
   await fetchData()
   await loadOrders()
   await loadWarehouses()
@@ -407,6 +542,12 @@ onMounted(async () => {
   // ===== 模式2：手工"新建入库" =====
   // 纯空表单，用户自己选订单触发 onOrderChange
 })
+
+// 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
+watch(columnVersion, () => {
+  nextTick(() => { initColumnVisible(); initColumnDrag() })
+})
+watch(itemColumnVersion, () => {
+  nextTick(() => { initItemVisible(); initItemColumnDrag() })
+})
 </script>
-
-
