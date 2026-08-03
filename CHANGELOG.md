@@ -1,5 +1,37 @@
 # Changelog
 
+## v2.6.0 (2026-08-03)
+
+### 报关单明细化（一票报关单报多个商品/多个 HS 编码）
+
+**背景**：原报关单按订单关联 + 单个 HS 编码单选——多明细订单（多产品多 HS）时无法正确申报，退税申报明细也落不到商品级。
+
+**数据模型**：
+- 新增 `so_customs_item` 报关单商品行表（customs_id / product_id / hs_code_id / quantity / declare_amount / unit_price）
+- `so_customs.hs_code_id` 改为可空（表头不再强制单 HS，保留冗余兼容旧数据）
+- `tr_declaration_detail` 新增 `customs_item_id`（精确追溯商品行，可空）
+- 迁移：`python scripts/migrate_customs_items.py`（幂等；SQLite 重建表 + 建商品行表 + 旧报关单自动回填 1 个商品行）
+
+**后端**：
+- 创建报关单：商品行 `items[]`（product_id / hs_code_id 默认产品档案带出 / quantity / unit_price / declare_amount），不传 items 自动按订单明细带出；商品行金额合计 = 表头报关金额
+- 校验补强：商品必须属于订单明细、数量 > 0、HS 必填；保留报关单号唯一 / 同一发货单唯一 / 同订单唯一
+- 列表/详情返回商品行（`items` + `hs_codes` 多 HS 合并摘要 + `items_count`）；编辑重建商品行；删除级联删商品行 + **已申报退税禁止删除**
+- 订单详情 items 返回 `hs_code_id`（产品档案带出，供报关自动带 HS）
+- 退税：`customs-for-refund` 按商品行粒度返回（修复历史坏引用）；`declaration-details` 支持 `customs_item_id` 从商品行带出商品/HS/数量/金额；负数申报退货 HS 从报关单商品行匹配
+
+**退税申报双端匹配（报关单 ↔ 进项发票 关联打通）**：
+- 申报明细行 `tr_declaration_row` 新增 `customs_item_id`（出口端：报关单商品行），与 `input_invoice_id`（采购端：进项发票）双端绑定——税局申报表"关联号 + 进货凭证 + 出口货物"格式
+- 添加明细行：进项发票（去重校验）+ 报关单商品行（去重校验，仅已放行/已结关可选）→ 自动带出商品/HS/数量/FOB金额/退税率；计税金额=出口FOB，退税额=FOB×退税率
+- 申报表出口FOB 自动重算 = 明细行计税金额汇总（含负数冲减行），免抵退结果同步重算（新增/改/删行均触发）
+- 明细行序列化含报关单号（`customs_no`）；修复历史 bug：负数申报行（无发票）删除失效
+
+**前端**：
+- 报关单创建/编辑：商品行表格（选订单自动带出明细商品行，HS 默认产品档案可改，数量×单价自动算金额，合计自动汇总）；列表 HS 列显示多 HS 合并
+- 退税申报明细：**「＋ 添加申报行（发票+报关单）」两步流程**（先选进项发票 → 再选报关单商品行，已选/已匹配自动置灰不可重复选）；明细表新增「报关单号」列
+- 修复 saveRows 传参 bug（原 addRow/updateRow 误传 id 数字，明细保存实际不可用）
+
+**测试**：`backend/tests/test_customs_items.py` 新增 7 个专项（多明细自动带出商品行+HS+金额合计 / 重复校验 / 商品行校验 / 删除保护+customs-for-refund 商品行 / 双端行带出+退税额+出口额重算 / 双端去重校验 / 未放行报关单拦截）；全套 248 个全绿；`vite build` 通过
+
 ## v2.5.2 (2026-08-03)
 
 ### 销售退货 · 发票红冲 · 负数申报（退货全链路补强）

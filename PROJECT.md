@@ -227,6 +227,9 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/declarations/{id}/rows/{row_id}` | PUT/DELETE | 修改/删除明细行（回滚发票状态）|
 | `/declarations/{id}/return-candidates` | GET | 已报税退货单候选（负数申报取数，未添加过）|
 | `/declarations/{id}/return-adjustments` | POST | 添加退货冲减负数行（自动重算出口FOB金额+免抵退结果）|
+| `/customs-for-refund` | GET | 待退税报关单**商品行**（v2.6.0 按商品行粒度，一票多商品多HS）|
+| `/declaration-details` | POST | 添加申报明细（`customs_item_id` 从报关单商品行带出商品/HS/数量/金额）|
+| `/declarations/{id}/rows` | POST/PUT/DELETE | 申报明细行**双端匹配**（`input_invoice_id` 进项发票 + `customs_item_id` 报关单商品行，各自去重；出口FOB自动重算=行汇总）|
 
 状态流程: 待申报 → 已申报 → 已退税（支持取消申报/取消退税）
 

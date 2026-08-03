@@ -57,33 +57,37 @@
       />
     </el-card>
 
-    <!-- 新建申报 -->
-    <el-dialog v-model="createDialog" title="新建退税申报" width="400px" destroy-on-close>
-      <el-form :model="createForm" label-width="100px">
-        <el-form-item label="申报年月"><el-input v-model="createForm.period" placeholder="YYYYMM" maxlength="6" /></el-form-item>
-        <el-form-item label="申报批次"><el-input-number v-model="createForm.batch" :min="1" :max="99" /></el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="createDialog = false">取消</el-button>
-        <el-button type="primary" @click="submitCreate">创建并编辑明细</el-button>
-      </template>
-    </el-dialog>
-
-    <!-- 明细编辑弹窗 -->
-    <el-dialog v-model="editDialog" :title="viewMode ? '退税申报详情 - ' + currentDeclNo : '退税申报明细编辑 - ' + currentDeclNo" width="98%" destroy-on-close>
-      <template v-if="currentDecl">
-        <el-descriptions :column="4" border size="small" style="margin-bottom: 12px">
-          <el-descriptions-item label="申报年月">{{ currentDecl.period }}</el-descriptions-item>
-          <el-descriptions-item label="批次">{{ currentDecl.batch }}</el-descriptions-item>
-          <el-descriptions-item label="申报单号">{{ currentDecl.declaration_no }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ currentDecl.status }}</el-descriptions-item>
-          <el-descriptions-item label="出口FOB金额">
-            <span :style="{ color: currentDecl.export_amount_fob < 0 ? '#f56c6c' : '' }">{{ $fm(currentDecl.export_amount_fob) }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
+    <!-- 明细编辑弹窗（新建=草稿模式，点保存才建库） -->
+    <el-dialog v-model="editDialog" :title="viewMode ? '退税申报详情 - ' + (currentDeclNo || draftForm.period) : (isNewDraft ? '新建退税申报 - 填好全部内容后点保存' : '退税申报明细编辑 - ' + currentDeclNo)" width="98%" destroy-on-close>
+      <template v-if="isNewDraft || currentDecl">
+        <el-form :inline="true" :model="draftForm" label-width="88px" style="margin-bottom: 8px">
+          <el-form-item label="申报年月">
+            <el-input v-model="draftForm.period" :disabled="!isNewDraft" placeholder="YYYYMM" maxlength="6" style="width: 110px" />
+          </el-form-item>
+          <el-form-item label="批次">
+            <el-input-number v-model="draftForm.batch" :min="1" :max="99" :disabled="!isNewDraft" style="width: 110px" />
+          </el-form-item>
+          <el-form-item label="进项税额">
+            <el-input-number v-model="draftForm.input_tax" :min="0" :precision="2" :disabled="viewMode" style="width: 140px" @change="calcPreview" />
+          </el-form-item>
+          <el-form-item label="内销销项税">
+            <el-input-number v-model="draftForm.domestic_tax" :min="0" :precision="2" :disabled="viewMode" style="width: 140px" @change="calcPreview" />
+          </el-form-item>
+          <el-form-item label="上期留抵">
+            <el-input-number v-model="draftForm.last_period_deduction" :min="0" :precision="2" :disabled="viewMode" style="width: 140px" @change="calcPreview" />
+          </el-form-item>
+        </el-form>
+        <el-alert type="info" :closable="false" style="margin-bottom: 10px; padding: 8px 12px">
+          <div style="font-size: 12px; line-height: 1.7">
+            出口FOB <b>{{ $fm(preview.fob) }}</b> × 退税率 {{ draftForm.refund_rate }}% → 免抵退税额 <b>{{ $fm(preview.refundable) }}</b>
+            ｜ 留抵(可退上限) <b>{{ $fm(preview.deduction) }}</b> → <span style="color: #67c23a">实际应退 <b>{{ $fm(preview.actual) }}</b></span>
+            ｜ 免抵税额 {{ $fm(preview.exemption) }} ｜ 不得免征抵扣 {{ $fm(preview.nonDeductible) }}
+            <div style="color: #909399">应退 = min(留抵, 免抵退税额)；留抵 = 进项税额 − 内销销项 − 不得免征抵扣 − 上期留抵</div>
+          </div>
+        </el-alert>
 
         <div style="margin-bottom: 10px">
-          <el-button v-if="!viewMode" size="small" type="primary" @click="openInvoiceSelector">+ 添加进项发票</el-button>
+          <el-button v-if="!viewMode" size="small" type="primary" @click="openInvoiceSelector">+ 添加申报行（发票+报关单）</el-button>
           <el-button v-if="!viewMode" size="small" type="danger" @click="openReturnSelector">＋ 添加退货冲减（负数申报）</el-button>
         </div>
 
@@ -92,6 +96,12 @@
           <el-table-column label="关联号" width="180"><template #default="{ row }">{{ row.assoc_no || row._assoc_no }}</template></el-table-column>
           <el-table-column label="税种" width="50" align="center"><template #default="{ row }">V</template></el-table-column>
           <el-table-column label="凭证种类" width="140"><template #default="{ row }">{{ row.voucher_type }}</template></el-table-column>
+          <el-table-column label="报关单号" width="170">
+            <template #default="{ row }">
+              <span v-if="row.customs_no" style="color: #409eff">{{ row.customs_no }}</span>
+              <span v-else style="color: #c0c4cc">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="进货凭证号" width="160"><template #default="{ row }">{{ row.voucher_no }}</template></el-table-column>
           <el-table-column label="供货方税号" width="150"><template #default="{ row }">{{ row.supplier_tax_id }}</template></el-table-column>
           <el-table-column label="开票日期" width="100"><template #default="{ row }">{{ row.invoice_date }}</template></el-table-column>
@@ -170,6 +180,30 @@
       </template>
     </el-dialog>
 
+    <!-- 选择报关单商品行弹窗（出口端，双端匹配第二步） -->
+    <el-dialog v-model="selectCustomsDialog" title="选择报关单商品行（出口货物）" width="760px" destroy-on-close>
+      <el-alert type="info" :closable="false" style="margin-bottom: 10px"
+        title="已选过/已匹配的报关单商品行不可重复选择；仅已放行/已结关的报关单可选。" />
+      <el-table :data="customsItemList" stripe border size="small" highlight-current-row @current-change="onCustomsSelect">
+        <el-table-column prop="customs_no" label="报关单号" width="165" />
+        <el-table-column prop="product_name" label="商品" min-width="130" />
+        <el-table-column prop="hs_code" label="HS编码" width="100" />
+        <el-table-column label="数量" width="90" align="right"><template #default="{ row }">{{ $fq(row.export_quantity) }}</template></el-table-column>
+        <el-table-column label="FOB金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.declare_amount) }}</template></el-table-column>
+        <el-table-column label="退税率%" width="85" align="center"><template #default="{ row }">{{ row.refund_rate }}</template></el-table-column>
+        <el-table-column label="状态" width="85">
+          <template #default="{ row }">
+            <el-tag v-if="row._disabled" type="info" size="small">已选</el-tag>
+            <el-tag v-else type="success" size="small">可选</el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <template #footer>
+        <el-button @click="selectCustomsDialog = false">取消</el-button>
+        <el-button type="primary" :disabled="!selectedCustomsItem" @click="confirmSelectCustoms">确认选择</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 选择退货冲减弹窗（已报税退货 → 负数申报） -->
     <el-dialog v-model="returnSelDialog" title="选择退货冲减（已报税退货 → 负数申报）" width="820px" destroy-on-close>
       <el-alert type="warning" :closable="false" style="margin-bottom: 10px"
@@ -216,7 +250,6 @@ const loading = ref(false)
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
-const createDialog = ref(false)
 const editDialog = ref(false)
 const selectInvoiceDialog = ref(false)
 const currentDeclId = ref(null)
@@ -232,12 +265,40 @@ const refundTarget = ref(null)
 const saving = ref(false)
 const viewMode = ref(false)
 
+// 草稿模式：新建申报（未建库）或编辑已有申报
+const isNewDraft = computed(() => currentDeclId.value === null)
+const draftForm = reactive({
+  period: '', batch: 1, input_tax: 0, domestic_tax: 0,
+  last_period_deduction: 0, tax_rate: 13, refund_rate: 13,
+})
+
+// 出口FOB = 明细行计税金额汇总（负数冲减行计入）
+const fobTotal = computed(() =>
+  Math.round(draftRows.value.filter(r => !r._pendingDelete)
+    .reduce((s, r) => s + (Number(r.taxable_amount) || 0), 0) * 100) / 100)
+
+// 免抵退预览（与后端 calculate_exempt_credit_refund 同公式）
+const preview = computed(() => {
+  const fob = fobTotal.value
+  const taxRate = Number(draftForm.tax_rate) || 13
+  const rate = Number(draftForm.refund_rate) || 13
+  const inputTax = Number(draftForm.input_tax) || 0
+  const domestic = Number(draftForm.domestic_tax) || 0
+  const last = Number(draftForm.last_period_deduction) || 0
+  const nonDeductible = fob * (taxRate - rate) / 100
+  const currentDue = domestic - (inputTax - nonDeductible) - last
+  const refundable = fob * rate / 100
+  const deduction = Math.max(0, -currentDue)
+  let actual = 0, exemption = refundable
+  if (deduction > 0) { actual = Math.min(deduction, refundable); exemption = refundable - actual }
+  return { fob, nonDeductible, refundable, deduction, actual, exemption }
+})
+function calcPreview() { /* preview 为 computed，此处仅触发生效 */ }
+
 // 退货冲减（负数申报）
 const returnSelDialog = ref(false)
 const returnCandidates = ref([])
 const selectedReturn = ref(null)
-
-const createForm = reactive({ period: '', batch: 1 })
 
 // 搜索过滤
 const searchForm = reactive({ keyword: '', status: '', dateRange: null })
@@ -271,26 +332,17 @@ async function fetchInvoices() {
 
 function openCreate() {
   const now = new Date()
-  createForm.period = now.getFullYear() + String(now.getMonth() + 1).padStart(2, '0')
-  createForm.batch = 1; createDialog.value = true
-}
-
-async function submitCreate() {
-  if (!createForm.period || createForm.period.length !== 6) { ElMessage.warning('申报年月格式为 YYYYMM'); return }
-  const declNo = `TS-${createForm.period}-${String(createForm.batch).padStart(2, '0')}`
-  try {
-    const res = await taxRefundApi.declarations.create({
-      declaration_no: declNo, declare_date: new Date().toISOString().slice(0, 10),
-      period: createForm.period, batch: createForm.batch,
-      export_amount_fob: 0, domestic_tax: 0, input_tax: 0, last_period_deduction: 0,
-    })
-    createDialog.value = false
-    ElMessage.success('申报已创建')
-    fetchList()
-    await loadDraft(res.id)
-    currentDeclId.value = res.id; currentDeclNo.value = declNo
-    editDialog.value = true
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '创建失败') }
+  currentDeclId.value = null
+  currentDecl.value = null
+  currentDeclNo.value = ''
+  viewMode.value = false
+  Object.assign(draftForm, {
+    period: String(now.getFullYear()) + String(now.getMonth() + 1).padStart(2, '0'),
+    batch: 1, input_tax: 0, domestic_tax: 0, last_period_deduction: 0,
+    tax_rate: 13, refund_rate: 13,
+  })
+  draftRows.value = []
+  editDialog.value = true
 }
 
 async function openDetail(row) {
@@ -312,7 +364,13 @@ async function loadDraft(id) {
     const res = await taxRefundApi.declarations.get(id, id)
     currentDecl.value = res
     draftRows.value = (res.rows || []).map(r => ({ ...r, _isNew: false, _pendingDelete: false }))
-  } catch {}
+    Object.assign(draftForm, {
+      period: res.period || '', batch: res.batch || 1,
+      input_tax: res.input_tax || 0, domestic_tax: res.domestic_tax || 0,
+      last_period_deduction: res.last_period_deduction || 0,
+      tax_rate: res.tax_rate || 13, refund_rate: res.refund_rate || 13,
+    })
+  } catch { ElMessage.error('加载申报详情失败') }
 }
 
 function closeEdit() {
@@ -326,23 +384,68 @@ function closeEdit() {
 }
 
 async function saveRows() {
+  if (!draftForm.period || draftForm.period.length !== 6) { ElMessage.warning('请填写申报年月（YYYYMM）'); return }
   saving.value = true
   try {
+    let declId = currentDeclId.value
+    // 草稿模式：先建申报表（此时才落库），再存明细行
+    if (isNewDraft.value) {
+      const declNo = `TS-${draftForm.period}-${String(draftForm.batch || 1).padStart(2, '0')}`
+      const res = await taxRefundApi.declarations.create({
+        declaration_no: declNo, declare_date: new Date().toISOString().slice(0, 10),
+        period: draftForm.period, batch: draftForm.batch || 1,
+        domestic_tax: draftForm.domestic_tax || 0, input_tax: draftForm.input_tax || 0,
+        last_period_deduction: draftForm.last_period_deduction || 0,
+      })
+      declId = res.id
+      currentDeclId.value = declId
+      currentDeclNo.value = declNo
+      // 创建后所有行都是新行
+      draftRows.value = draftRows.value.map(r => ({ ...r, _isNew: true, id: undefined }))
+    } else {
+      // 已有申报：更新表头（进项税额/内销销项/上期留抵/退税率）
+      await taxRefundApi.declarations.update(currentDeclId.value, {
+        domestic_tax: draftForm.domestic_tax || 0, input_tax: draftForm.input_tax || 0,
+        last_period_deduction: draftForm.last_period_deduction || 0,
+        tax_rate: draftForm.tax_rate || 13, refund_rate: draftForm.refund_rate || 13,
+      })
+    }
     // 删除标记的行
     for (const row of draftRows.value) {
       if (row._pendingDelete && row.id) {
-        await taxRefundApi.declarations.deleteRow(currentDeclId.value, row.id, currentDeclId.value)
+        await taxRefundApi.declarations.deleteRow(declId, row.id)
       }
     }
     // 保存新行和更新已有行
     const savePromises = draftRows.value
       .filter(r => !r._pendingDelete)
       .map(async (row) => {
-        if (row._isNew && row.input_invoice_id) {
-          await taxRefundApi.declarations.addRow(currentDeclId.value, currentDeclId.value)
+        if (row._isNew) {
+          // 双端行：进项发票 + 报关单商品行；负数申报行走独立入口
+          await taxRefundApi.declarations.addRow(declId, {
+            input_invoice_id: row.input_invoice_id || null,
+            customs_item_id: row.customs_item_id || null,
+            voucher_type: row.voucher_type || '',
+            voucher_no: row.voucher_no || '',
+            product_code: row.product_code || '',
+            product_name: row.product_name || '',
+            unit: row.unit || '',
+            quantity: row.quantity || 0,
+            taxable_amount: row.taxable_amount || 0,
+            tax_rate: row.tax_rate || 13,
+            refund_rate: row.refund_rate || 13,
+          })
         } else if (row.id && !row._isNew) {
           // 更新已有行（商品代码/名称/单位/数量/计税金额等）
-          await taxRefundApi.declarations.updateRow(currentDeclId.value, row.id, currentDeclId.value)
+          await taxRefundApi.declarations.updateRow(declId, row.id, {
+            product_code: row.product_code || '',
+            product_name: row.product_name || '',
+            unit: row.unit || '',
+            quantity: row.quantity || 0,
+            taxable_amount: row.taxable_amount || 0,
+            tax_rate: row.tax_rate || 13,
+            refund_rate: row.refund_rate || 13,
+          })
         }
       })
     await Promise.all(savePromises)
@@ -376,24 +479,65 @@ function onInvoiceSelect(row) {
   if (row && !row._disabled) selectedInvoice.value = row
 }
 
+// ===== 双端匹配：选完进项发票 → 选报关单商品行 =====
+const selectCustomsDialog = ref(false)
+const customsItemList = ref([])
+const selectedCustomsItem = ref(null)
+const pendingInvoice = ref(null)
+
 async function confirmSelectInvoice() {
   const inv = selectedInvoice.value
   if (!inv) return
   selectInvoiceDialog.value = false
+  pendingInvoice.value = inv
+  // 第二步：选报关单商品行（出口端，过滤已选）
+  const usedItemIds = new Set(draftRows.value.filter(r => !r._pendingDelete).map(r => r.customs_item_id).filter(Boolean))
+  try {
+    const res = await taxRefundApi.customsForRefund({ page: 1, page_size: 100 })
+    customsItemList.value = (res.items || []).map(it => ({
+      ...it, _disabled: usedItemIds.has(it.id)
+    }))
+    selectedCustomsItem.value = null
+    selectCustomsDialog.value = true
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '加载报关单商品行失败')
+  }
+}
+
+function onCustomsSelect(row) {
+  if (row && !row._disabled) selectedCustomsItem.value = row
+}
+
+async function confirmSelectCustoms() {
+  const item = selectedCustomsItem.value
+  const inv = pendingInvoice.value
+  if (!item || !inv) return
+  selectCustomsDialog.value = false
   const now = new Date()
+  const rate = parseFloat(item.refund_rate) || 13
+  const amt = parseFloat(item.declare_amount) || 0
   draftRows.value.push({
     _isNew: true, _pendingDelete: false,
     input_invoice_id: inv.id,
+    invoice_no: inv.invoice_no || '',
+    supplier_name: inv.supplier_name || '',
     voucher_type: '增值税专用发票',
-    voucher_no: inv.invoice_no || '',
+    voucher_no: item.customs_no || '',          // 报关单号
     supplier_tax_id: inv.supplier_tax_id || '',
     invoice_date: inv.invoice_date || '',
-    product_code: '', product_name: '', unit: '', quantity: 0,
-    taxable_amount: inv.amount || 0, tax_rate: 13, refund_rate: 13,
-    refundable_amount: Math.round((inv.amount || 0) * 13 / 100 * 100) / 100,
+    product_code: item.product_code || '',
+    product_name: item.product_name || '',
+    unit: item.unit || '',
+    quantity: item.export_quantity || 0,
+    taxable_amount: amt,
+    tax_rate: 13, refund_rate: rate,
+    refundable_amount: Math.round(amt * rate / 100 * 100) / 100,
+    customs_item_id: item.id,
+    customs_no: item.customs_no || '',
     _seq: String(draftRows.value.length + 1).padStart(8, '0'),
     _assoc_no: currentDecl.value?.period + String(currentDecl.value?.batch || 1).padStart(3, '0') + (draftRows.value.length + 1),
   })
+  pendingInvoice.value = null
 }
 
 // ===== 退货冲减（负数申报） =====
@@ -438,6 +582,9 @@ async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除申报 ${row.declaration_no}？`, '提示', { type: 'warning' })
   try {
     await taxRefundApi.declarations.delete(row.id, row.id)
+    // 本地立即移除（不依赖刷新时序），再兜底刷新
+    list.value = list.value.filter(x => x.id !== row.id)
+    total.value = Math.max(0, total.value - 1)
     ElMessage.success('已删除'); fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
 }

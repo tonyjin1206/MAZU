@@ -104,9 +104,11 @@ class TaxRefundCalculationResult(BaseModel):
 class TaxRefundDetailCreate(BaseModel):
     declaration_id: int
     customs_id: int
+    # 报关单商品行（v2.6.0 明细化；带出商品/HS/数量/金额，优先于下方手工值）
+    customs_item_id: Optional[int] = None
     order_id: int
-    hs_code_id: int
-    product_id: int
+    hs_code_id: Optional[int] = None
+    product_id: Optional[int] = None
     export_quantity: float = 0
     export_amount_fob: float = 0
     refund_rate: float = 0
@@ -134,6 +136,8 @@ class TaxRefundDetailOut(BaseModel):
 
 class TaxRefundDeclarationRowCreate(BaseModel):
     input_invoice_id: Optional[int] = None
+    # 出口端：报关单商品行（v2.6.0 双端匹配；带出商品/HS/数量/FOB/退税率）
+    customs_item_id: Optional[int] = None
     voucher_type: str = "增值税专用发票"
     voucher_no: str = ""
     product_code: str = ""

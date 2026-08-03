@@ -40,6 +40,7 @@
 | `test_bot_agent.py` | AI 助手工具执行器 |
 | `test_config_secret_guard.py` | 系统配置密钥守卫（BotConfig.api_key / WecomConfig.secret 防双重加密） |
 | `test_sales_return_red.py` | 销售退货全链路（v2.5.2：红字发票/退款/核销转移/负数申报） |
+| `test_customs_items.py` | 报关单明细化 + 退税双端匹配（v2.6.0：多商品行/多HS/去重校验/发票+报关单商品行双端申报行） |
 
 新增测试规范（详见 README「测试数据规范」）：共用 `build_foundation`、数据走 API 不灌 SQL、
 测试库隔离（`ERP_DATA_DIR` 临时目录，绝不触碰开发库）、单元式场景允许独立小数据集（如

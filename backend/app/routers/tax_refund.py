@@ -129,6 +129,19 @@ def create_declaration(
     current_user: User = Depends(get_current_user),
 ):
     """创建退税申报表"""
+    # 申报单号唯一 + 同申报年月批次唯一（避免重复建表撞唯一约束）
+    declaration_no = data.declaration_no or f"TS-{data.period}-{data.batch or 1:02d}"
+    dup_no = db.query(TaxRefundDeclaration).filter(
+        TaxRefundDeclaration.declaration_no == declaration_no).first()
+    if dup_no:
+        raise HTTPException(400, f"申报单号 {declaration_no} 已存在，请更换单号或批次")
+    dup_pb = db.query(TaxRefundDeclaration).filter(
+        TaxRefundDeclaration.period == data.period,
+        TaxRefundDeclaration.batch == (data.batch or 1),
+    ).first()
+    if dup_pb:
+        raise HTTPException(400, f"{data.period} 第 {data.batch or 1} 批已存在申报表（{dup_pb.declaration_no}），请使用下一批次")
+
     calc = calculate_exempt_credit_refund(
         export_amount_fob=data.export_amount_fob,
         refund_rate=data.refund_rate,
@@ -138,7 +151,7 @@ def create_declaration(
         last_period_deduction=data.last_period_deduction,
     )
     declaration = TaxRefundDeclaration(
-        declaration_no=data.declaration_no,
+        declaration_no=declaration_no,
         declare_date=data.declare_date,
         period=data.period,
         batch=data.batch or 1,
@@ -196,6 +209,31 @@ def list_declarations(
     ]}
 
 
+def _row_out(db, r, inv=None):
+    """申报明细行输出（含双端关联：进项发票 + 报关单商品行）"""
+    from app.models.sales import CustomsDeclarationItem
+    customs_no = ""
+    if r.customs_item_id:
+        ci = db.query(CustomsDeclarationItem).filter(CustomsDeclarationItem.id == r.customs_item_id).first()
+        customs_no = ci.customs.customs_no if ci and ci.customs else ""
+    return {
+        "id": r.id, "seq": r.seq or "", "assoc_no": r.assoc_no or "",
+        "tax_type": r.tax_type or "V", "voucher_type": r.voucher_type or "",
+        "voucher_no": r.voucher_no or "", "supplier_tax_id": r.supplier_tax_id or "",
+        "invoice_date": str(r.invoice_date) if r.invoice_date else "",
+        "product_code": r.product_code or "", "product_name": r.product_name or "",
+        "unit": r.unit or "", "quantity": r.quantity or 0,
+        "taxable_amount": r.taxable_amount or 0,
+        "tax_rate": r.tax_rate or 13, "refund_rate": r.refund_rate or 13,
+        "refundable_amount": r.refundable_amount or 0,
+        "input_invoice_id": r.input_invoice_id,
+        "invoice_no": inv.invoice_no if inv else "",
+        "supplier_name": inv.supplier.name if inv and inv.supplier else "",
+        "customs_item_id": r.customs_item_id,
+        "customs_no": customs_no,
+    }
+
+
 @router.get("/declarations/{decl_id}", tags=["退税管理"])
 def get_declaration(decl_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """申报详情（含明细行）"""
@@ -207,30 +245,43 @@ def get_declaration(decl_id: int, db: Session = Depends(get_db), current_user: U
     row_list = []
     for r in rows:
         inv = db.query(TaxRefundInputInvoice).filter(TaxRefundInputInvoice.id == r.input_invoice_id).first() if r.input_invoice_id else None
-        row_list.append({
-            "id": r.id, "seq": r.seq or "", "assoc_no": r.assoc_no or "",
-            "tax_type": r.tax_type or "V", "voucher_type": r.voucher_type or "",
-            "voucher_no": r.voucher_no or "", "supplier_tax_id": r.supplier_tax_id or "",
-            "invoice_date": str(r.invoice_date) if r.invoice_date else "",
-            "product_code": r.product_code or "", "product_name": r.product_name or "",
-            "unit": r.unit or "", "quantity": r.quantity or 0,
-            "taxable_amount": r.taxable_amount or 0,
-            "tax_rate": r.tax_rate or 13, "refund_rate": r.refund_rate or 13,
-            "refundable_amount": r.refundable_amount or 0,
-            "input_invoice_id": r.input_invoice_id,
-            "invoice_no": inv.invoice_no if inv else "",
-            "supplier_name": inv.supplier.name if inv and inv.supplier else "",
-        })
+        row_list.append(_row_out(db, r, inv))
     return {
         "id": d.id, "declaration_no": d.declaration_no,
         "period": d.period, "declare_date": str(d.declare_date),
         "batch": d.batch or 1,
         "status": d.status, "remark": d.remark or "",
+        "tax_rate": d.tax_rate or 13, "refund_rate": d.refund_rate or 13,
+        "domestic_tax": d.domestic_tax or 0, "input_tax": d.input_tax or 0,
+        "last_period_deduction": d.last_period_deduction or 0,
+        "non_deductible_amount": d.non_deductible_amount or 0,
+        "current_tax_due": d.current_tax_due or 0,
+        "current_deduction": d.current_deduction or 0,
+        "refundable_amount": d.refundable_amount or 0,
+        "actual_refund": d.actual_refund or 0,
+        "exemption_amount": d.exemption_amount or 0,
         "export_amount_fob": d.export_amount_fob or 0,
         "actual_refund_amount": d.actual_refund_amount or 0,
         "created_at": str(d.created_at) if d.created_at else "",
         "rows": row_list,
     }
+
+
+@router.put("/declarations/{decl_id}", tags=["退税管理"])
+def update_declaration(decl_id: int, data: dict, db: Session = Depends(get_db),
+                       current_user: User = Depends(get_current_user)):
+    """更新申报表头（进项税额/内销销项/上期留抵/退税率等，自动重算免抵退）"""
+    d = db.query(TaxRefundDeclaration).filter(TaxRefundDeclaration.id == decl_id).first()
+    if not d:
+        raise HTTPException(404, "申报不存在")
+    if d.status != "待申报":
+        raise HTTPException(400, "仅待申报状态可修改申报信息")
+    for f in ["domestic_tax", "input_tax", "last_period_deduction", "refund_rate", "tax_rate", "remark"]:
+        if f in data:
+            setattr(d, f, data[f])
+    _recalc_declaration(db, d)
+    db.commit()
+    return {"message": "申报已更新"}
 
 
 @router.put("/declarations/{decl_id}/submit", tags=["退税管理"])
@@ -334,7 +385,12 @@ def list_return_candidates(decl_id: int, db: Session = Depends(get_db), current_
         if not customs:
             continue
         product = db.query(Product).filter(Product.id == rd.product_id).first()
-        hs = db.query(HsCode).filter(HsCode.id == customs.hs_code_id).first()
+        # HS 从报关单商品行取（匹配退货产品；无匹配取第一行）
+        from app.models.sales import CustomsDeclarationItem
+        item_row = None
+        if customs.items:
+            item_row = next((i for i in customs.items if i.product_id == rd.product_id), customs.items[0])
+        hs = db.query(HsCode).filter(HsCode.id == (item_row.hs_code_id if item_row else customs.hs_code_id)).first()
         result.append({
             "delivery_id": rd.id, "return_no": rd.delivery_no,
             "customs_no": customs.customs_no,
@@ -425,41 +481,116 @@ def add_return_adjustment(decl_id: int, data: dict, db: Session = Depends(get_db
 @router.post("/declarations/{decl_id}/rows", tags=["退税管理"])
 def create_declaration_row(decl_id: int, data: TaxRefundDeclarationRowCreate,
                            db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """添加申报明细行（支持负数行：出口退运/退货冲减，无需进项发票）"""
+    """添加申报明细行（双端匹配：进项发票[采购端] + 报关单商品行[出口端]；已选不可重复）
+
+    - customs_item_id 非空：从报关单商品行带出商品/HS/数量/FOB金额/退税率（出口端）
+    - input_invoice_id 非空：从进项发票带出凭证信息（采购端）
+    - 特殊行：负数申报（出口货物退运）两端皆空
+    """
+    from app.models.sales import CustomsDeclarationItem
     decl = db.query(TaxRefundDeclaration).filter(TaxRefundDeclaration.id == decl_id).first()
     if not decl:
         raise HTTPException(404, "申报不存在")
+    if decl.status != "待申报":
+        raise HTTPException(400, "仅待申报状态可添加明细行")
+
+    # ===== 出口端：报关单商品行（去重 + 状态校验） =====
+    customs_item = None
+    if data.customs_item_id:
+        customs_item = db.query(CustomsDeclarationItem).filter(
+            CustomsDeclarationItem.id == data.customs_item_id).first()
+        if not customs_item:
+            raise HTTPException(404, "报关单商品行不存在")
+        # 已选过校验
+        used_item = db.query(TaxRefundDeclarationRow).filter(
+            TaxRefundDeclarationRow.declaration_id == decl_id,
+            TaxRefundDeclarationRow.customs_item_id == data.customs_item_id,
+        ).first()
+        if used_item:
+            raise HTTPException(400, f"报关单商品行已在申报明细中（{used_item.assoc_no}），不能重复选择")
+        # 报关单状态校验：必须已放行/已结关
+        c = customs_item.customs
+        if not c or c.status not in ("已放行", "已结关"):
+            raise HTTPException(400, f"报关单 {c.customs_no if c else ''} 未放行/未结关，不能申报退税")
+
+    # ===== 采购端：进项发票（去重） =====
     inv = None
     if data.input_invoice_id:
         inv = db.query(TaxRefundInputInvoice).filter(TaxRefundInputInvoice.id == data.input_invoice_id).first()
+        if not inv:
+            raise HTTPException(404, "进项发票不存在")
+        used_inv = db.query(TaxRefundDeclarationRow).filter(
+            TaxRefundDeclarationRow.declaration_id == decl_id,
+            TaxRefundDeclarationRow.input_invoice_id == data.input_invoice_id,
+        ).first()
+        if used_inv:
+            raise HTTPException(400, f"进项发票 {inv.invoice_no} 已在申报明细中，不能重复选择")
+
+    # ===== 出口端带出商品信息（优先商品行；其次传入；特殊行用传入值） =====
+    product_code = (customs_item.product.code if customs_item and customs_item.product else data.product_code)
+    product_name = (customs_item.product.name_cn if customs_item and customs_item.product else data.product_name)
+    unit = (customs_item.product.unit if customs_item and customs_item.product else data.unit)
+    quantity = data.quantity or (customs_item.quantity if customs_item else 0)
+    taxable_amount = data.taxable_amount or (customs_item.declare_amount if customs_item else 0)
+    refund_rate = data.refund_rate or (customs_item.hs_code.refund_rate if customs_item and customs_item.hs_code else 13)
+    tax_rate = data.tax_rate or (customs_item.hs_code.tax_rate if customs_item and customs_item.hs_code else 13)
+    voucher_type = data.voucher_type or ("增值税专用发票" if inv else ("出口报关单" if customs_item else "出口货物退运"))
+    voucher_no = inv.invoice_no if inv else (customs_item.customs.customs_no if customs_item and customs_item.customs else data.voucher_no)
+    supplier_tax_id = inv.supplier.tax_id if inv and inv.supplier else ""
+
     existing = db.query(TaxRefundDeclarationRow).filter(
         TaxRefundDeclarationRow.declaration_id == decl_id).count()
     seq = f"{existing + 1:08d}"
     batch_str = f"{decl.batch or 1:03d}"
     assoc_no = f"{decl.period}{batch_str}{existing + 1}"
-    refundable = round((data.taxable_amount or 0) * (data.refund_rate or 0) / 100, 2)
+    refundable = round((taxable_amount or 0) * (refund_rate or 0) / 100, 2)
     row = TaxRefundDeclarationRow(
         declaration_id=decl_id, seq=seq, assoc_no=assoc_no,
-        voucher_type=data.voucher_type or ("增值税专用发票" if inv else "出口货物退运"),
-        voucher_no=inv.invoice_no if inv else data.voucher_no,
-        supplier_tax_id=inv.supplier.tax_id if inv and inv.supplier else "",
+        voucher_type=voucher_type, voucher_no=voucher_no,
+        supplier_tax_id=supplier_tax_id,
         invoice_date=inv.invoice_date if inv else None,
-        product_code=data.product_code, product_name=data.product_name,
-        unit=data.unit, quantity=data.quantity, taxable_amount=data.taxable_amount or 0,
-        tax_rate=data.tax_rate or 13, refund_rate=data.refund_rate or 13,
+        product_code=product_code, product_name=product_name,
+        unit=unit, quantity=quantity, taxable_amount=taxable_amount,
+        tax_rate=tax_rate, refund_rate=refund_rate,
         refundable_amount=refundable, input_invoice_id=data.input_invoice_id,
+        customs_item_id=data.customs_item_id,
     )
     db.add(row)
     if inv:
         inv.refund_match_status = "已匹配"
-        # 同步更新采购发票状态
         if inv.purchase_invoice_id:
             pi = db.query(PurchaseInvoice).filter(PurchaseInvoice.id == inv.purchase_invoice_id).first()
             if pi:
                 pi.status = "已匹配(退税)"
+
+    # 申报表出口FOB = 明细行计税金额汇总（含负数冲减行），并重算免抵退
+    _recalc_declaration(db, decl)
     db.commit()
     db.refresh(row)
     return {"id": row.id, "assoc_no": assoc_no, "seq": seq, "message": "明细行已添加"}
+
+
+def _recalc_declaration(db: Session, decl):
+    """重算申报表：出口FOB = 明细行 taxable_amount 汇总 + 免抵退计算"""
+    db.flush()  # session autoflush=False，需显式 flush 让 pending 行可见
+    from sqlalchemy import func
+    total_fob = db.query(func.coalesce(func.sum(TaxRefundDeclarationRow.taxable_amount), 0)).filter(
+        TaxRefundDeclarationRow.declaration_id == decl.id).scalar() or 0
+    decl.export_amount_fob = round(float(total_fob), 2)
+    calc = calculate_exempt_credit_refund(
+        export_amount_fob=decl.export_amount_fob,
+        refund_rate=decl.refund_rate or 13,
+        tax_rate=decl.tax_rate or 13,
+        domestic_tax=decl.domestic_tax or 0,
+        input_tax=decl.input_tax or 0,
+        last_period_deduction=decl.last_period_deduction or 0,
+    )
+    decl.non_deductible_amount = calc["non_deductible_amount"]
+    decl.current_tax_due = calc["taxable_amount"]
+    decl.current_deduction = calc["current_deduction"]
+    decl.refundable_amount = calc["refundable_amount"]
+    decl.actual_refund = calc["actual_refund"]
+    decl.exemption_amount = calc["exemption_amount"]
 
 
 @router.delete("/declarations/{decl_id}/rows/{row_id}", tags=["退税管理"])
@@ -470,7 +601,7 @@ def delete_declaration_row(decl_id: int, row_id: int,
         TaxRefundDeclarationRow.id == row_id).first()
     if not row:
         raise HTTPException(404, "明细行不存在")
-    # 回滚进项发票匹配状态
+    # 回滚进项发票匹配状态（有发票才回滚；负数申报行无发票直接删）
     if row.input_invoice_id:
         remaining = db.query(TaxRefundDeclarationRow).filter(
             TaxRefundDeclarationRow.input_invoice_id == row.input_invoice_id,
@@ -484,7 +615,7 @@ def delete_declaration_row(decl_id: int, row_id: int,
                     pi = db.query(PurchaseInvoice).filter(PurchaseInvoice.id == inv.purchase_invoice_id).first()
                     if pi:
                         pi.status = "未匹配"
-        db.delete(row)
+    db.delete(row)
     remaining = db.query(TaxRefundDeclarationRow).filter(
         TaxRefundDeclarationRow.declaration_id == decl_id).order_by(TaxRefundDeclarationRow.id).all()
     decl = db.query(TaxRefundDeclaration).filter(TaxRefundDeclaration.id == decl_id).first()
@@ -492,6 +623,8 @@ def delete_declaration_row(decl_id: int, row_id: int,
     for i, r in enumerate(remaining):
         r.seq = f"{i+1:08d}"
         r.assoc_no = f"{decl.period}{batch_str}{i+1}" if decl else r.assoc_no
+    if decl:
+        _recalc_declaration(db, decl)
     db.commit()
     return {"message": "明细行已删除"}
 
@@ -508,6 +641,9 @@ def update_declaration_row(decl_id: int, row_id: int, data: dict, db: Session = 
         if field in data:
             setattr(row, field, data[field])
     row.refundable_amount = round((row.taxable_amount or 0) * (row.refund_rate or 0) / 100, 2)
+    decl = db.query(TaxRefundDeclaration).filter(TaxRefundDeclaration.id == decl_id).first()
+    if decl:
+        _recalc_declaration(db, decl)
     db.commit()
     return {"message": "明细行已更新"}
 
@@ -521,20 +657,7 @@ def list_declaration_rows(decl_id: int, db: Session = Depends(get_db),
     result = []
     for r in rows:
         inv = db.query(TaxRefundInputInvoice).filter(TaxRefundInputInvoice.id == r.input_invoice_id).first() if r.input_invoice_id else None
-        result.append({
-            "id": r.id, "seq": r.seq or "", "assoc_no": r.assoc_no or "",
-            "tax_type": r.tax_type or "V", "voucher_type": r.voucher_type or "",
-            "voucher_no": r.voucher_no or "", "supplier_tax_id": r.supplier_tax_id or "",
-            "invoice_date": str(r.invoice_date) if r.invoice_date else "",
-            "product_code": r.product_code or "", "product_name": r.product_name or "",
-            "unit": r.unit or "", "quantity": r.quantity or 0,
-            "taxable_amount": r.taxable_amount or 0,
-            "tax_rate": r.tax_rate or 13, "refund_rate": r.refund_rate or 13,
-            "refundable_amount": r.refundable_amount or 0,
-            "input_invoice_id": r.input_invoice_id,
-            "invoice_no": inv.invoice_no if inv else "",
-            "supplier_name": inv.supplier.name if inv and inv.supplier else "",
-        })
+        result.append(_row_out(db, r, inv))
     return {"items": result}
 
 
@@ -543,13 +666,29 @@ def list_declaration_rows(decl_id: int, db: Session = Depends(get_db),
 @router.post("/declaration-details", tags=["退税管理"])
 def create_declaration_detail(data: TaxRefundDetailCreate, db: Session = Depends(get_db),
                               current_user: User = Depends(get_current_user)):
-    hs_code = db.query(HsCode).filter(HsCode.id == data.hs_code_id).first()
+    # 商品行优先：从报关单商品行带出商品/HS/数量/金额（精确追溯）
+    from app.models.sales import CustomsDeclarationItem
+    customs_item = None
+    if data.customs_item_id:
+        customs_item = db.query(CustomsDeclarationItem).filter(
+            CustomsDeclarationItem.id == data.customs_item_id).first()
+        if not customs_item:
+            raise HTTPException(404, "报关单商品行不存在")
+    product_id = data.product_id or (customs_item.product_id if customs_item else None)
+    hs_code_id = data.hs_code_id or (customs_item.hs_code_id if customs_item else None)
+    export_qty = data.export_quantity or (customs_item.quantity if customs_item else 0)
+    export_fob = data.export_amount_fob or (customs_item.declare_amount if customs_item else 0)
+    if not product_id or not hs_code_id:
+        raise HTTPException(400, "缺少商品/HS 信息（请通过报关单商品行添加）")
+
+    hs_code = db.query(HsCode).filter(HsCode.id == hs_code_id).first()
     refund_rate = data.refund_rate or (hs_code.refund_rate if hs_code else 0)
-    refundable = data.export_amount_fob * refund_rate / 100
+    refundable = export_fob * refund_rate / 100
     detail = TaxRefundDetail(
         declaration_id=data.declaration_id, customs_id=data.customs_id,
-        order_id=data.order_id, hs_code_id=data.hs_code_id, product_id=data.product_id,
-        export_quantity=data.export_quantity, export_amount_fob=data.export_amount_fob,
+        customs_item_id=customs_item.id if customs_item else None,
+        order_id=data.order_id, hs_code_id=hs_code_id, product_id=product_id,
+        export_quantity=export_qty, export_amount_fob=export_fob,
         refund_rate=refund_rate, refundable_amount=refundable,
         input_invoice_ids=data.input_invoice_ids, remark=data.remark,
     )
@@ -591,19 +730,27 @@ def list_progress(declaration_id: int, db: Session = Depends(get_db),
 @router.get("/customs-for-refund", tags=["退税管理"])
 def list_customs_for_refund(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
                             db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """待退税报关单"""
-    items = db.query(CustomsDeclaration).filter(
+    """待退税报关单（按商品行粒度：一票报关单多商品行 → 每行一条退税明细）"""
+    from app.models.sales import CustomsDeclarationItem
+    items = db.query(CustomsDeclarationItem).join(CustomsDeclaration).filter(
         CustomsDeclaration.status.in_(["已放行", "已结关"])
-    ).order_by(CustomsDeclaration.id.desc()).offset((page-1)*page_size).limit(page_size).all()
-    total = db.query(CustomsDeclaration).filter(
+    ).order_by(CustomsDeclarationItem.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    total = db.query(CustomsDeclarationItem).join(CustomsDeclaration).filter(
         CustomsDeclaration.status.in_(["已放行", "已结关"])).count()
     return {"total": total, "page": page, "page_size": page_size, "items": [
-        {"id": c.id, "customs_no": c.customs_no, "product_name": c.product_name,
-         "customs_amount": c.declare_amount,
-         "declare_date": str(c.declare_date),
-         "hs_code": c.hs_code.hs_code if c.hs_code else "",
-         "refund_rate": c.hs_code.refund_rate if c.hs_code else 0,
-        } for c in items
+        {"id": it.id, "customs_id": it.customs_id,
+         "customs_no": it.customs.customs_no if it.customs else "",
+         "declare_date": str(it.customs.declare_date) if it.customs and it.customs.declare_date else "",
+         "product_id": it.product_id,
+         "product_code": it.product.code if it.product else "",
+         "product_name": it.product.name_cn if it.product else "",
+         "unit": it.product.unit if it.product else "",
+         "hs_code_id": it.hs_code_id,
+         "hs_code": it.hs_code.hs_code if it.hs_code else "",
+         "refund_rate": it.hs_code.refund_rate if it.hs_code else 0,
+         "export_quantity": it.quantity,
+         "declare_amount": it.declare_amount,
+        } for it in items
     ]}
 
 

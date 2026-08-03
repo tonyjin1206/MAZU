@@ -77,6 +77,8 @@ class TaxRefundDetail(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     declaration_id = Column(Integer, ForeignKey("tr_declaration.id"), nullable=False)
     customs_id = Column(Integer, ForeignKey("so_customs.id"), nullable=False)
+    # 精确追溯报关单商品行（v2.6.0 报关单明细化；旧数据为空）
+    customs_item_id = Column(Integer, ForeignKey("so_customs_item.id"))
     order_id = Column(Integer, ForeignKey("so_order.id"), nullable=False)
     hs_code_id = Column(Integer, ForeignKey("fd_hs_code.id"), nullable=False)
     product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False)
@@ -116,7 +118,9 @@ class TaxRefundDeclarationRow(Base):
     tax_rate = Column(Float, default=13, comment="征税率(%)")
     refund_rate = Column(Float, default=13, comment="退税率(%)")
     refundable_amount = Column(Float, default=0, comment="可退税额")
+    # 双端关联：进项发票（采购端）+ 报关单商品行（出口端，v2.6.0）
     input_invoice_id = Column(Integer, ForeignKey("tr_input_invoice.id"), comment="关联进项发票")
+    customs_item_id = Column(Integer, ForeignKey("so_customs_item.id"), comment="关联报关单商品行(出口端)")
 
     declaration = relationship("TaxRefundDeclaration", backref="rows")
     input_invoice = relationship("TaxRefundInputInvoice")

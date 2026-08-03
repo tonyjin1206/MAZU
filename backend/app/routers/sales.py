@@ -18,7 +18,7 @@ from app.models.auth import User
 from app.models.foundation import Customer, Product, Currency, HsCode, TradeTerm, Warehouse
 from app.models.sales import (
     SalesQuote, SalesOrder, SalesOrderItem,
-    SalesDelivery, CustomsDeclaration,
+    SalesDelivery, CustomsDeclaration, CustomsDeclarationItem,
     SalesInvoice,
     AccountsReceivable, Collection, CollectionAllocation, ArAdjustment,
 )
@@ -270,6 +270,8 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
             {"id": item.id, "product_id": item.product_id,
              "product_name": item.product.name_cn if item.product else "",
              "product_code": item.product.code if item.product else "",
+             "unit": item.product.unit if item.product else "",
+             "hs_code_id": item.product.hs_code_id if item.product else None,
              "quantity": item.quantity, "unit_price": item.unit_price,
              "total_amount": item.total_amount,
              "tax_rate": item.tax_rate, "tax_amount": item.tax_amount,
@@ -462,8 +464,8 @@ def create_delivery(data: dict, db: Session = Depends(get_db), current_user: Use
     if not order_item:
         raise HTTPException(400, "订单明细行不存在")
 
-    # 检查未发货数量
-    qty_to_ship = data["quantity"]
+    # 检查未发货数量（quantity 前端可能传字符串，统一转 float）
+    qty_to_ship = float(data.get("quantity") or 0)
     remaining = order_item.quantity - (order_item.delivered_qty or 0)
     if qty_to_ship > remaining:
         raise HTTPException(400, f"发货数量{qty_to_ship}超过未发数量{remaining}")
@@ -744,23 +746,91 @@ def return_delivery(
 
 @router.post("/customs", tags=["销售管理"])
 def create_customs(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """创建报关单"""
+    """创建报关单（商品行：一票报关单报多个商品/多个HS编码）
+
+    items: [{product_id, hs_code_id(默认产品档案), quantity, unit_price, declare_amount}]
+    不传 items → 自动按订单明细带出商品行。
+    """
     order = db.query(SalesOrder).filter(SalesOrder.id == data["order_id"]).first()
     if not order:
         raise HTTPException(404, "订单不存在")
 
+    # 校验：报关单号全局唯一（海关编号不可重复使用）
+    customs_no = data.get("customs_no", "")
+    dup_no = db.query(CustomsDeclaration).filter(CustomsDeclaration.customs_no == customs_no).first()
+    if dup_no:
+        raise HTTPException(400, f"报关单号 {customs_no} 已存在（报关单 {dup_no.id}），不能重复使用")
+
+    # 校验：同一发货单只能报一次关（按发货单粒度）
+    delivery_id = data.get("delivery_id")
+    if delivery_id:
+        dup_dv = db.query(CustomsDeclaration).filter(CustomsDeclaration.delivery_id == delivery_id).first()
+        if dup_dv:
+            raise HTTPException(400, f"发货单已关联报关单 {dup_dv.customs_no}，不能重复报关")
+
+    # 校验：不挂发货单时，同一订单也只能有一张报关单（防整单重复报关）
+    if not delivery_id:
+        dup_so = db.query(CustomsDeclaration).filter(
+            CustomsDeclaration.order_id == order.id,
+            CustomsDeclaration.delivery_id.is_(None),
+        ).first()
+        if dup_so:
+            raise HTTPException(400, f"订单 {order.order_no} 已有关联报关单 {dup_so.customs_no}，不能重复报关")
+
+    # ===== 商品行：items[] 或按订单明细自动带出 =====
+    order_items = db.query(SalesOrderItem).filter(SalesOrderItem.order_id == order.id).all()
+    order_item_by_product = {oi.product_id: oi for oi in order_items if oi.product_id}
+    raw_items = data.get("items") or []
+    if not raw_items:
+        raw_items = [{"product_id": oi.product_id, "quantity": oi.quantity or 0,
+                      "unit_price": oi.unit_price or 0} for oi in order_items]
+    if not raw_items:
+        raise HTTPException(400, "订单无明细行，无法创建报关单")
+
     customs = CustomsDeclaration(
-        customs_no=data["customs_no"],
+        customs_no=customs_no,
         order_id=order.id,
-        delivery_id=data.get("delivery_id"),
-        hs_code_id=data["hs_code_id"] or order.hs_code_id,
-        declare_amount=data["declare_amount"] or order.total_amount,
+        delivery_id=delivery_id,
         declare_currency=data.get("declare_currency") or order.currency_id,
         declare_date=_parse_date(data.get("declare_date")) or date.today(),
         customs_broker=data.get("customs_broker", ""),
+        status=data.get("status", "已报关"),
         remark=data.get("remark", ""),
     )
     db.add(customs)
+    db.flush()
+
+    total_declare = 0.0
+    first_hs_id = None
+    for it in raw_items:
+        product_id = it.get("product_id")
+        if not product_id:
+            raise HTTPException(400, "商品行缺少 product_id")
+        oi = order_item_by_product.get(product_id)
+        if not oi:
+            raise HTTPException(400, f"商品 {product_id} 不属于订单 {order.order_no} 的明细")
+        prod = db.query(Product).filter(Product.id == product_id).first()
+        prod_name = prod.name_cn if prod else f"商品#{product_id}"
+        hs_id = it.get("hs_code_id") or (prod.hs_code_id if prod else None)
+        if not hs_id:
+            raise HTTPException(400, f"{prod_name} 未配置 HS 编码，请选择")
+        qty = float(it.get("quantity") or 0)
+        if qty <= 0:
+            raise HTTPException(400, f"{prod_name} 报关数量必须大于 0")
+        unit_price = float(it.get("unit_price") or 0) or (oi.unit_price or 0)
+        amt = float(it.get("declare_amount") or 0)
+        if not amt and unit_price:
+            amt = round(qty * unit_price, 2)
+        total_declare += amt
+        if first_hs_id is None:
+            first_hs_id = hs_id
+        db.add(CustomsDeclarationItem(
+            customs_id=customs.id, product_id=product_id, hs_code_id=hs_id,
+            quantity=qty, declare_amount=amt, unit_price=unit_price,
+        ))
+
+    customs.declare_amount = round(total_declare, 2)
+    customs.hs_code_id = first_hs_id  # 冗余兼容（表头不再强制）
     db.commit()
     db.refresh(customs)
 
@@ -769,7 +839,26 @@ def create_customs(data: dict, db: Session = Depends(get_db), current_user: User
         delivery = db.query(SalesDelivery).filter(SalesDelivery.id == customs.delivery_id).first()
         if delivery:
             delivery.status = "已报关"
-    return {"id": customs.id, "customs_no": data["customs_no"], "message": "报关单创建成功"}
+    return {"id": customs.id, "customs_no": customs_no,
+            "message": f"报关单创建成功（{len(raw_items)} 个商品行）"}
+
+
+def _customs_item_out(it):
+    """报关单商品行输出序列化"""
+    return {
+        "id": it.id,
+        "product_id": it.product_id,
+        "product_code": it.product.code if it.product else "",
+        "product_name": it.product.name_cn if it.product else "",
+        "unit": it.product.unit if it.product else "",
+        "hs_code_id": it.hs_code_id,
+        "hs_code": it.hs_code.hs_code if it.hs_code else "",
+        "hs_name": it.hs_code.name if it.hs_code else "",
+        "refund_rate": it.hs_code.refund_rate if it.hs_code else 0,
+        "quantity": it.quantity,
+        "unit_price": it.unit_price,
+        "declare_amount": it.declare_amount,
+    }
 
 
 @router.get("/customs", tags=["销售管理"])
@@ -793,6 +882,9 @@ def list_customs(
          "currency_code": c.currency.code if c.currency else "",
          "hs_code_id": c.hs_code_id,
          "hs_code": c.hs_code.hs_code if c.hs_code else "",
+         # 商品行摘要（多 HS 合并展示）
+         "hs_codes": ",".join(sorted({i.hs_code.hs_code for i in c.items if i.hs_code})),
+         "items_count": len(c.items),
          "customs_broker": c.customs_broker or "",
          "declare_date": str(c.declare_date),
          "status": c.status,
@@ -826,6 +918,7 @@ def get_customs(customs_id: int, db: Session = Depends(get_db), current_user: Us
         "remark": c.remark or "",
         "delivery_id": c.delivery_id,
         "created_at": str(c.created_at) if c.created_at else "",
+        "items": [_customs_item_out(i) for i in c.items],
     }
 
 
@@ -835,11 +928,41 @@ def update_customs(customs_id: int, data: dict, db: Session = Depends(get_db), c
     if not c:
         raise HTTPException(404, "报关单不存在")
     for k, v in data.items():
-        if k in ("customs_no", "order_id", "delivery_id", "hs_code_id", "declare_amount",
+        if k in ("customs_no", "order_id", "delivery_id", "declare_amount",
                  "declare_currency", "declare_date", "customs_broker", "status", "refund_status", "remark"):
             if k == "declare_date":
                 v = _parse_date(v)
             setattr(c, k, v)
+    # 商品行更新：传 items 则重建
+    if "items" in data and data["items"]:
+        order_items = db.query(SalesOrderItem).filter(SalesOrderItem.order_id == c.order_id).all()
+        order_item_by_product = {oi.product_id: oi for oi in order_items if oi.product_id}
+        for old in list(c.items):
+            db.delete(old)
+        db.flush()
+        total_declare = 0.0
+        first_hs_id = None
+        for it in data["items"]:
+            product_id = it.get("product_id")
+            if not product_id or product_id not in order_item_by_product:
+                raise HTTPException(400, f"商品 {product_id} 不属于订单明细")
+            prod = db.query(Product).filter(Product.id == product_id).first()
+            hs_id = it.get("hs_code_id") or (prod.hs_code_id if prod else None)
+            if not hs_id:
+                raise HTTPException(400, f"{(prod.name_cn if prod else product_id)} 未配置 HS 编码")
+            qty = float(it.get("quantity") or 0)
+            unit_price = float(it.get("unit_price") or 0) or (order_item_by_product[product_id].unit_price or 0)
+            amt = float(it.get("declare_amount") or 0)
+            if not amt and unit_price:
+                amt = round(qty * unit_price, 2)
+            total_declare += amt
+            if first_hs_id is None:
+                first_hs_id = hs_id
+            db.add(CustomsDeclarationItem(
+                customs_id=c.id, product_id=product_id, hs_code_id=hs_id,
+                quantity=qty, declare_amount=amt, unit_price=unit_price))
+        c.declare_amount = round(total_declare, 2)
+        c.hs_code_id = first_hs_id
     db.commit()
     return {"message": "报关单已更新"}
 
@@ -849,7 +972,10 @@ def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user:
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
-    db.delete(c)
+    # 已申报退税的报关单禁止删除（保护退税数据）
+    if c.refund_status in ("已申报", "审核中", "已退税", "已退库"):
+        raise HTTPException(400, f"报关单 {c.customs_no} 已进入退税流程（{c.refund_status}），禁止删除")
+    db.delete(c)  # cascade 级联删除商品行
     db.commit()
     return {"message": "报关单已删除"}
 
