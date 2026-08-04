@@ -65,6 +65,10 @@
           <template v-else-if="col.prop === 'unpaid_amount'" #default="{ row }">
             <span :style="{ color: (row.unpaid_amount || 0) > 0 ? '#e6a23c' : '#909399' }">{{ $fm(row.unpaid_amount) }}</span>
           </template>
+          <template v-else-if="col.prop === 'source'" #default="{ row }">
+            <el-tag v-if="row.from_sales" type="success" size="small">销售订单转采购</el-tag>
+            <el-tag v-else type="info" size="small">备货</el-tag>
+          </template>
           <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
@@ -352,6 +356,7 @@ const defaultColumns = [
   { prop: 'uninvoiced_amount', label: '未开票', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'paid_amount', label: '已付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'unpaid_amount', label: '未付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
+  { prop: 'source', label: '来源', width: 130, align: 'center', sortable: true },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
 ]
 const { columns, columnVersion, initColumnDrag, settingsVisible: orderSettingsVisible, settingsList: orderSettingsList, openColumnSettings: openOrderSettingsRaw, confirmSettings: confirmOrderSettingsFn, resetSettings: resetOrderSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
