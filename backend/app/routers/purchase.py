@@ -596,6 +596,8 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
             raise HTTPException(400, "有明细行未选择供应商")
         if not r.get("quantity") or float(r.get("quantity")) <= 0:
             raise HTTPException(400, "采购数量必须大于0")
+        if not r.get("unit_price") or float(r.get("unit_price")) <= 0:
+            raise HTTPException(400, f"{r.get('name','')} 单价必须大于 0，请填写单价")
         if not r.get("material_id") and not r.get("product_id"):
             raise HTTPException(400, "明细行缺少物料/产品")
         # 找到对应销售明细行，按 BOM 计算真实需求量

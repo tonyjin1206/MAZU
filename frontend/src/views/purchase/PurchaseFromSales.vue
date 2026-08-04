@@ -249,6 +249,8 @@ async function submitPurchase() {
   if (!validRows.length) { ElMessage.warning('请至少选择供应商并填写采购数量'); return }
   const missing = purchaseRows.value.filter(r => (r.quantity || 0) > 0 && !r.supplier_id)
   if (missing.length) { ElMessage.warning(`「${missing[0].name}」选择了数量但未选供应商`); return }
+  const zeroPrice = validRows.filter(r => !(r.unit_price > 0))
+  if (zeroPrice.length) { ElMessage.warning(`「${zeroPrice[0].name}」单价为 0，请填写单价`); return }
   submitting.value = true
   try {
     const payload = {
