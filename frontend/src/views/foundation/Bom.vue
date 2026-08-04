@@ -7,12 +7,12 @@
           <el-button type="primary" @click="fetchProducts">刷新</el-button>
         </div>
       </template>
-      <el-input v-model="productKeyword" placeholder="按产品名称搜索" clearable style="margin-bottom: 8px" @input="filterProducts" />
+      <el-input v-model="productKeyword" placeholder="按编码/名称搜索" clearable style="margin-bottom: 8px" @input="filterProducts" />
       <el-table :data="filteredProducts" v-loading="productLoading" stripe border size="small" style="width: 100%" highlight-current-row @row-click="onProductClick" max-height="550">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name" label="名称" min-width="120" />
-        <el-table-column label="规格" width="100" show-overflow-tooltip><template #default="{ row }">{{ row.spec || '-' }}</template></el-table-column>
-        <el-table-column label="型号" width="100" show-overflow-tooltip><template #default="{ row }">{{ row.model || '-' }}</template></el-table-column>
+        <el-table-column prop="code" label="编码" width="120" sortable />
+        <el-table-column prop="name" label="名称" min-width="120" sortable />
+        <el-table-column label="规格" width="100" show-overflow-tooltip sortable><template #default="{ row }">{{ row.spec || '-' }}</template></el-table-column>
+        <el-table-column label="型号" width="100" show-overflow-tooltip sortable><template #default="{ row }">{{ row.model || '-' }}</template></el-table-column>
       </el-table>
     </el-card>
 
@@ -84,7 +84,8 @@ const filteredProducts = computed(() => {
   if (!productKeyword.value) return productList.value
   const kw = productKeyword.value.toLowerCase()
   return productList.value.filter(p =>
-    (p.name || '').toLowerCase().includes(kw)
+    (p.name || '').toLowerCase().includes(kw) ||
+    (p.code || '').toLowerCase().includes(kw)
   )
 })
 
