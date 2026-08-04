@@ -458,6 +458,48 @@ def list_sales_to_purchase(
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 
+@router.post("/sales-to-purchase/{item_id}/return", tags=["采购管理"])
+def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """退回销售明细行关联的采购订单（销售订单明细变更前必须先退采购单）
+    待审核的直接删除；已审核的先取消审核再删除；有入库/发票的下游则拒绝"""
+    from app.models.sales import SalesOrderItem
+    from app.models.purchase import PurchaseOrderItem, PurchaseReceipt
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
+        PurchaseOrderItem.sales_item_id == si.id,
+        PurchaseOrder.status != "已关闭",
+    ).all()
+    if not pois:
+        raise HTTPException(400, "该明细行没有关联采购订单，无需退回")
+    po_ids = {p.order_id for p in pois}
+    # 检查下游（入库单/发票）——有下游必须先退下游
+    for po_id in po_ids:
+        receipts = db.query(PurchaseReceipt).filter(PurchaseReceipt.order_id == po_id).count()
+        invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == po_id).count()
+        if receipts > 0:
+            po = db.query(PurchaseOrder).get(po_id)
+            raise HTTPException(400, f"采购订单 {po.order_no if po else po_id} 已有入库单，请先在采购入库中退回后再操作")
+        if invoices > 0:
+            po = db.query(PurchaseOrder).get(po_id)
+            raise HTTPException(400, f"采购订单 {po.order_no if po else po_id} 已有发票，请先删除发票后再操作")
+    # 删除采购单（已审核的自动取消审核后删除；待审核直接删）
+    nos = []
+    for po_id in po_ids:
+        po = db.query(PurchaseOrder).get(po_id)
+        if not po:
+            continue
+        po.status = "待审核"  # 解除审核锁定（无下游才走到这里）
+        db.delete(po)
+        nos.append(po.order_no)
+    # 明细行回到未生产（可重新转采购/变更）
+    if si.production_status == "已通知入库":
+        si.production_status = "未生产"
+    db.commit()
+    return {"message": f"已退回采购订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转采购"}
+
+
 @router.get("/sales-to-purchase/{item_id}", tags=["采购管理"])
 def get_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """销售明细行采购需求：按 BOM 展开成物料清单（无 BOM 则直接采购产品本身）"""

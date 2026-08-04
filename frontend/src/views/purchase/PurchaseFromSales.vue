@@ -31,14 +31,15 @@
           <el-table-column label="采购状态" width="120" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
             <template #default="{ row }">
               <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">采购完成</el-tag>
-              <el-tag v-else-if="row.purchase_status === 'transferred'" type="primary" size="small">已转采购订单</el-tag>
+              <el-tag v-else-if="row.purchase_status === 'transferred'" type="success" size="small">已转采购订单</el-tag>
               <el-tag v-else-if="row.purchase_status === 'partial'" type="warning" size="small">部分采购</el-tag>
               <el-tag v-else type="info" size="small">未采购</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="80" align="center" fixed="right">
+          <el-table-column label="操作" width="140" align="center" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.purchase_status === 'none' || row.purchase_status === 'partial'" type="primary" size="small" @click="openPurchase(row)">采购</el-button>
+              <el-button v-if="row.purchase_status === 'transferred' || row.purchase_status === 'partial'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -120,7 +121,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../../api/request'
 
 // ========== 销售订单列表 ==========
@@ -191,6 +192,17 @@ async function openPurchase(row) {
     }
     purchaseVisible.value = true
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载采购需求明细失败') }
+}
+
+async function handleReturn(row) {
+  try {
+    await ElMessageBox.confirm(`确定退回 ${row.name}（批次 ${row.batch_no}）关联的采购订单？退回后销售订单明细可重新变更/转采购。`, '退回确认', { type: 'warning' })
+    const res = await request.post(`/purchase/sales-to-purchase/${row.sales_item_id}/return`)
+    ElMessage.success(res.message || '已退回')
+    fetchData()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '退回失败')
+  }
 }
 
 const supplierGroupCount = computed(() => {
