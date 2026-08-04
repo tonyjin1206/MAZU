@@ -126,7 +126,7 @@ const rules = {
 }
 
 function statusType(s) {
-  return { '待发料': 'info', '已发料': 'warning', '加工中': 'warning', '已入库': 'success', '已完成': 'success', '已关闭': 'danger' }[s] || 'info'
+  return { '待发料': 'info', '已发料': 'success', '加工中': 'warning', '已入库': 'success', '已完成': 'success', '已关闭': 'danger' }[s] || 'info'
 }
 
 async function fetchList() {

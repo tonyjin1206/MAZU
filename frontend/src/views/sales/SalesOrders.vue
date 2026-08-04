@@ -53,9 +53,11 @@
           <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag v-if="row.status === '已发货'" type="success" size="small">已发货</el-tag>
             <el-tag v-else-if="row.status === '部分发货'" type="warning" size="small">部分发货</el-tag>
-            <el-tag v-else-if="row.status === '生产中'" type="primary" size="small">生产中</el-tag>
-            <el-tag v-else-if="row.status === '已审'" type="info" size="small">已审</el-tag>
+            <el-tag v-else-if="row.status === '生产中'" type="warning" size="small">生产中</el-tag>
+            <el-tag v-else-if="row.status === '已审'" type="success" size="small">已审</el-tag>
             <el-tag v-else-if="row.status === '待审核'" type="info" size="small">待审核</el-tag>
+            <el-tag v-else-if="row.status === '已完成'" type="success" size="small">已完成</el-tag>
+            <el-tag v-else-if="row.status === '已关闭'" type="danger" size="small">已关闭</el-tag>
             <el-tag v-else size="small">{{ row.status }}</el-tag>
           </template>
           <template v-else-if="col.prop === 'pending_count'" #default="{ row }">
@@ -509,7 +511,7 @@ async function loadOrderDetail(orderId) {
 
 function productionStatusType(status) {
   const map = {
-    '未生产': 'info', '已通知入库': 'primary', '已通知外发': 'warning',
+    '未生产': 'info', '已通知入库': 'success', '已通知外发': 'success',
     '部分入库': 'warning', '已入库': 'success', '已停售': 'danger',
   }
   return map[status] || 'info'

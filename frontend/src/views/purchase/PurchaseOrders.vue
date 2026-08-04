@@ -524,10 +524,10 @@ function calcTotals() {
 
 function statusType(status) {
   const map = {
-    '待审核': 'warning', '已审核': 'success', '部分入库': 'warning',
-    '待开票': 'info', '已开票': 'primary', '部分付款': 'warning', '已付款': 'success',
-    '已完成': 'info', '已入库': 'success',
-    pending: 'warning', approved: 'success', received: 'info',
+    '待审核': 'info', '已审核': 'success', '部分入库': 'warning',
+    '待开票': 'info', '已开票': 'success', '部分付款': 'warning', '已付款': 'success',
+    '已完成': 'success', '已入库': 'success', '已关闭': 'danger',
+    pending: 'info', approved: 'success', received: 'success',
   }
   return map[status] || 'info'
 }

@@ -103,7 +103,7 @@ function resetSearch() {
 }
 
 function statusType(status) {
-  const map = { '待排产': 'info', '已排产': 'warning', '生产中': 'primary', '已完成': 'success', '部分入库': 'warning', '已入库': 'success', '已关闭': 'danger' }
+  const map = { '待排产': 'info', '已排产': 'success', '生产中': 'warning', '已完成': 'success', '部分入库': 'warning', '已入库': 'success', '已关闭': 'danger' }
   return map[status] || 'info'
 }
 

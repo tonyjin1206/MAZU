@@ -165,7 +165,7 @@ function resetSearch() {
 }
 
 function statusType(status) {
-  const map = { '待确认': 'info', '已审核': 'warning', '已完工': 'primary', '已入库': 'success', '已退回': 'danger' }
+  const map = { '待确认': 'info', '已审核': 'success', '已完工': 'success', '已入库': 'success', '已退回': 'danger' }
   return map[status] || 'info'
 }
 

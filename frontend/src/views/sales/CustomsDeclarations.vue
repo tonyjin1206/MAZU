@@ -296,7 +296,7 @@ async function handleDelete(row) {
 }
 
 function statusType(status) {
-  const map = { 已报关: 'primary', 已放行: 'success', 已结关: 'success', 已取消: 'info' }
+  const map = { 已报关: 'success', 已放行: 'success', 已结关: 'success', 已取消: 'danger' }
   return map[status] || 'info'
 }
 function statusLabel(status) {

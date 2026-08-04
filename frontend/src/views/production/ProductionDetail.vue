@@ -212,10 +212,10 @@ const matDetailItems = ref([])
 const matDetailSummary = ref(null)
 
 function statusType(s) {
-  return { '待排产': 'info', '已排产': 'warning', '生产中': 'primary', '已完成': 'success', '已入库': 'success', '已关闭': 'danger' }[s] || 'info'
+  return { '待排产': 'info', '已排产': 'success', '生产中': 'warning', '已完成': 'success', '已入库': 'success', '已关闭': 'danger' }[s] || 'info'
 }
 function procStatusType(s) {
-  return { '待排产': 'info', '待发料': '', '已发料': 'warning', '加工中': 'primary', '已完工': 'success' }[s] || 'info'
+  return { '待排产': 'info', '待发料': 'info', '已发料': 'warning', '加工中': 'warning', '已完工': 'success' }[s] || 'info'
 }
 
 async function fetchDetail() {
