@@ -106,6 +106,8 @@ def list_orders(
     for o in items:
         # 是否转采购生成（明细关联销售单）
         from_sales = any(item.sales_item_id for item in o.items)
+        # 关联销售订单号（转采购的单一一对应；备货为空）
+        sales_nos = sorted({item.sales_item.order.order_no for item in o.items if item.sales_item and item.sales_item.order})
         # 已入库金额
         received_amount = sum(
             (item.received_qty or 0) * (item.unit_price_local or item.unit_price or 0)
@@ -129,6 +131,7 @@ def list_orders(
             "paid_amount": round(pay_agg.get(o.id, 0), 2),
             "unpaid_amount": round(inv_agg.get(o.id, 0) - pay_agg.get(o.id, 0), 2),
             "from_sales": from_sales,
+            "sales_order_no": ", ".join(sales_nos),
             "created_by": o.created_by or "",
         })
 

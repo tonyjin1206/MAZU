@@ -346,6 +346,7 @@ const STORAGE_KEY = 'mazu_purchase_order_columns'
 const defaultColumns = [
   { prop: 'order_date', label: '日期', width: 100, sortable: true },
   { prop: 'order_no', label: '订单号', minWidth: 130, sortable: true },
+  { prop: 'sales_order_no', label: '销售订单号', minWidth: 130, sortable: true },
   { prop: 'supplier_name', label: '供应商', minWidth: 120, sortable: true },
   { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true, fmt: 'qty' },
   { prop: 'source', label: '来源', width: 130, align: 'center', sortable: true },
