@@ -249,6 +249,8 @@
               <el-table-column label="生产状态" width="80" align="center">
                 <template #default="{ row }">
                   <el-tag v-if="row.production_status === '未生产' || !row.production_status" type="info" size="small">未生产</el-tag>
+                  <el-tag v-else-if="row.production_status === '已通知入库'" type="success" size="small">转直采</el-tag>
+                  <el-tag v-else-if="row.production_status === '已通知外发'" type="success" size="small">转外发</el-tag>
                   <el-tag v-else-if="row.production_status === '生产中'" type="warning" size="small">生产中</el-tag>
                   <el-tag v-else-if="row.production_status === '已生产'" type="success" size="small">✓已生产</el-tag>
                   <el-tag v-else size="small">{{ row.production_status }}</el-tag>
@@ -519,7 +521,7 @@ function productionStatusType(status) {
 
 function productionStatusLabel(status) {
   const map = {
-    '未生产': '未生产', '已通知入库': '已通知入库', '已通知外发': '已通知外发',
+    '未生产': '未生产', '已通知入库': '转直采', '已通知外发': '转外发',
     '部分入库': '部分入库', '已入库': '已入库', '已停售': '已停售',
   }
   return map[status] || status || '未生产'
