@@ -232,65 +232,80 @@ def list_sales_to_outsource(
     keyword: str = Query(""), date_from: str = Query(""), date_to: str = Query(""),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    """销售订单转委外：已审核销售单列表 + 委外状态（completed绿/partial橙/none灰）
-    只显示还有可转委外明细行的单（已入库行不计）"""
-    query = db.query(SalesOrder).filter(SalesOrder.status.in_(["已审", "生产中", "部分发货"]))
+    """销售订单转委外：已「转外发」的销售明细行列表（按行显示产品+批次号）+ 委外状态"""
+    from app.models.sales import SalesOrder, SalesOrderItem
+    query = db.query(SalesOrderItem).join(SalesOrder, SalesOrder.id == SalesOrderItem.order_id).filter(
+        SalesOrderItem.production_status == "已通知外发",
+        SalesOrder.status.in_(["已审", "生产中", "部分发货"]),
+    )
     if keyword:
-        query = query.join(Customer).filter(
+        query = query.join(Customer, Customer.id == SalesOrder.customer_id).filter(
             SalesOrder.order_no.like(f"%{keyword}%") | Customer.name_cn.like(f"%{keyword}%"))
     if date_from:
         query = query.filter(SalesOrder.order_date >= date_from)
     if date_to:
         query = query.filter(SalesOrder.order_date <= date_to)
     total = query.count()
-    items = query.order_by(SalesOrder.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    result = []
-    for o in items:
-        # 有可转委外的行才显示（未生产/已通知外发=可追加；已入库/已停售不计）
-        transferable = any(i.production_status in (None, "", "未生产", "已通知外发") for i in o.items)
-        if not transferable:
-            continue
-        result.append({
-            "id": o.id, "order_no": o.order_no,
-            "order_date": str(o.order_date) if o.order_date else "",
-            "customer_name": o.customer.name_cn if o.customer else "",
-            "total_amount": o.total_amount or 0,
-            "item_count": sum(1 for i in o.items if i.production_status not in ("已停售", "已入库")),
-            "status": o.status,
-            "outsource_status": _so_outsource_status(db, o),
-        })
-    return {"total": len(result), "page": page, "page_size": page_size, "items": result}
+    items = query.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
-
-@router.get("/sales-to-outsource/{order_id}", tags=["委外管理"])
-def get_sales_to_outsource(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """销售单转委外明细：产品行 + 已委外数量（委外商/加工单价在委外订单维护里填）"""
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
-    if not order:
-        raise HTTPException(404, "订单不存在")
-    if order.status not in ("已审", "生产中", "部分发货"):
-        raise HTTPException(400, f"该销售单状态「{order.status}」，不能转委外")
-    rows = []
-    for si in order.items:
-        if si.production_status in ("已停售", "已入库"):
-            continue
+    def row_status(si):
+        """该明细行委外状态: completed/partial/none"""
         os_orders = db.query(OutsourceOrder).filter(
             OutsourceOrder.sales_item_id == si.id,
             OutsourceOrder.status != "已退回",
         ).all()
-        outsourced_qty = sum((o.quantity or 0) for o in os_orders)
+        if not os_orders:
+            return "none"
+        total_qty = sum((o.quantity or 0) for o in os_orders)
+        if total_qty >= (si.quantity or 0):
+            return "completed"
+        return "partial"
+
+    result = []
+    for si in items:
+        if si.production_status in ("已停售", "已入库"):
+            continue
         prod = si.product
-        rows.append({
-            "sales_item_id": si.id, "product_id": si.product_id,
+        result.append({
+            "sales_item_id": si.id, "order_id": si.order_id,
+            "order_no": si.order.order_no,
+            "order_date": str(si.order.order_date) if si.order.order_date else "",
+            "customer_name": si.order.customer.name_cn if si.order.customer else "",
+            "product_id": si.product_id,
             "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
             "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
-            "need_qty": si.quantity or 0, "outsourced_qty": round(outsourced_qty, 2),
-            "production_status": si.production_status or "未生产",
+            "quantity": si.quantity or 0, "batch_no": si.batch_no or "",
+            "outsource_status": row_status(si),
         })
+    return {"total": total, "page": page, "page_size": page_size, "items": result}
+
+
+@router.get("/sales-to-outsource/{item_id}", tags=["委外管理"])
+def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """销售明细行转委外：产品行 + 已委外数量（委外商/加工单价在委外订单维护里填）"""
+    from app.models.sales import SalesOrderItem
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    if si.production_status in ("已停售", "已入库"):
+        raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转委外")
+    os_orders = db.query(OutsourceOrder).filter(
+        OutsourceOrder.sales_item_id == si.id,
+        OutsourceOrder.status != "已退回",
+    ).all()
+    outsourced_qty = sum((o.quantity or 0) for o in os_orders)
+    prod = si.product
+    rows = [{
+        "sales_item_id": si.id, "product_id": si.product_id,
+        "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
+        "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
+        "need_qty": si.quantity or 0, "outsourced_qty": round(outsourced_qty, 2),
+        "production_status": si.production_status or "未生产",
+    }]
     return {
-        "id": order.id, "order_no": order.order_no,
-        "customer_name": order.customer.name_cn if order.customer else "",
-        "outsource_status": _so_outsource_status(db, order),
+        "id": si.order_id, "order_no": si.order.order_no,
+        "customer_name": si.order.customer.name_cn if si.order.customer else "",
+        "batch_no": si.batch_no or "",
         "rows": rows,
     }
 

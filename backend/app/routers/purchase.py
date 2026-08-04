@@ -387,83 +387,110 @@ def list_sales_to_purchase(
     keyword: str = Query(""), date_from: str = Query(""), date_to: str = Query(""),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    """销售订单转采购：已审核销售单列表 + 采购状态（completed绿/partial橙/none灰）"""
-    from app.models.sales import SalesOrder
+    """销售订单转采购：已「转入库」的销售明细行列表（按行显示产品+批次号）+ 采购状态"""
+    from app.models.sales import SalesOrder, SalesOrderItem
     from app.models.foundation import Customer
-    query = db.query(SalesOrder).filter(SalesOrder.status.in_(["已审", "生产中", "部分发货"]))
+    from app.models.purchase import PurchaseOrderItem
+    # 只显示在销售订单那边点了「转入库」的明细行
+    query = db.query(SalesOrderItem).join(SalesOrder, SalesOrder.id == SalesOrderItem.order_id).filter(
+        SalesOrderItem.production_status == "已通知入库",
+        SalesOrder.status.in_(["已审", "生产中", "部分发货"]),
+    )
     if keyword:
-        query = query.join(Customer).filter(
+        query = query.join(Customer, Customer.id == SalesOrder.customer_id).filter(
             SalesOrder.order_no.like(f"%{keyword}%") | Customer.name_cn.like(f"%{keyword}%"))
     if date_from:
         query = query.filter(SalesOrder.order_date >= date_from)
     if date_to:
         query = query.filter(SalesOrder.order_date <= date_to)
     total = query.count()
-    items = query.order_by(SalesOrder.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"total": total, "page": page, "page_size": page_size, "items": [
-        {
-            "id": o.id, "order_no": o.order_no,
-            "order_date": str(o.order_date) if o.order_date else "",
-            "customer_name": o.customer.name_cn if o.customer else "",
-            "total_amount": o.total_amount or 0,
-            "item_count": sum(1 for i in o.items if i.production_status != "已停售"),
-            "status": o.status,
-            "purchase_status": _so_purchase_status(db, o),
-        } for o in items
-    ]}
+    items = query.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
-
-@router.get("/sales-to-purchase/{order_id}", tags=["采购管理"])
-def get_sales_to_purchase(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """销售单采购需求明细：明细行按 BOM 展开成物料清单（无 BOM 则直接采购产品本身）"""
-    from app.models.sales import SalesOrder
-    from app.models.foundation import BomItem
-    from app.models.purchase import PurchaseOrderItem
-    order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
-    if not order:
-        raise HTTPException(404, "订单不存在")
-    if order.status not in ("已审", "生产中", "部分发货"):
-        raise HTTPException(400, f"该销售单状态「{order.status}」，不能转采购")
-
-    rows = []
-    for si in order.items:
-        if si.production_status == "已停售":
-            continue
-        # 该销售明细行已采购明细（非关闭）
+    def row_status(si):
+        """该明细行采购状态: completed/partial/none（全部材料足额=completed）"""
         pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
             PurchaseOrderItem.sales_item_id == si.id,
             PurchaseOrder.status != "已关闭",
         ).all()
-        # 按 BOM 展开需求（无 BOM 则产品本身）
+        statuses = []
         for req in _so_row_requirements(db, si):
             if req["material_id"]:
-                mat = db.query(Material).filter(Material.id == req["material_id"]).first()
-                purchased = sum((p.quantity or 0) for p in pois if p.material_id == mat.id)
-                rows.append({
-                    "sales_item_id": si.id, "material_id": mat.id, "product_id": None,
-                    "code": mat.code if mat else "", "name": mat.name if mat else "",
-                    "spec": mat.spec or "" if mat else "", "unit": mat.unit if mat else "",
-                    "need_qty": req["need_qty"], "purchased_qty": round(purchased, 2),
-                    "ref_price": mat.purchase_price or 0 if mat else 0,
-                    "default_supplier_id": mat.default_supplier_id or None if mat else None,
-                })
+                purchased = sum((p.quantity or 0) for p in pois if p.material_id == req["material_id"])
             else:
-                prod = si.product
                 purchased = sum((p.quantity or 0) for p in pois if p.product_id == si.product_id)
-                rows.append({
-                    "sales_item_id": si.id, "material_id": None, "product_id": si.product_id,
-                    "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
-                    "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
+            statuses.append("done" if purchased >= req["need_qty"] else ("partial" if purchased > 0 else "none"))
+        if not statuses:
+            return "none"
+        if all(s == "done" for s in statuses):
+            return "completed"
+        if all(s == "none" for s in statuses):
+            return "none"
+        return "partial"
+
+    result = []
+    for si in items:
+        prod = si.product
+        result.append({
+            "sales_item_id": si.id, "order_id": si.order_id,
+            "order_no": si.order.order_no,
+            "order_date": str(si.order.order_date) if si.order.order_date else "",
+            "customer_name": si.order.customer.name_cn if si.order.customer else "",
+            "product_id": si.product_id,
+            "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
+            "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
+            "quantity": si.quantity or 0, "batch_no": si.batch_no or "",
+            "purchase_status": row_status(si),
+        })
+    return {"total": total, "page": page, "page_size": page_size, "items": result}
+
+
+@router.get("/sales-to-purchase/{item_id}", tags=["采购管理"])
+def get_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """销售明细行采购需求：按 BOM 展开成物料清单（无 BOM 则直接采购产品本身）"""
+    from app.models.sales import SalesOrderItem
+    from app.models.foundation import BomItem
+    from app.models.purchase import PurchaseOrderItem
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    if si.production_status != "已通知入库":
+        raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请在销售订单明细行点「转入库」）")
+
+    pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
+        PurchaseOrderItem.sales_item_id == si.id,
+        PurchaseOrder.status != "已关闭",
+    ).all()
+    rows = []
+    for req in _so_row_requirements(db, si):
+        if req["material_id"]:
+            mat = db.query(Material).filter(Material.id == req["material_id"]).first()
+            purchased = sum((p.quantity or 0) for p in pois if p.material_id == mat.id)
+            rows.append({
+                "sales_item_id": si.id, "material_id": mat.id, "product_id": None,
+                "code": mat.code if mat else "", "name": mat.name if mat else "",
+                "spec": mat.spec or "" if mat else "", "unit": mat.unit if mat else "",
+                "need_qty": req["need_qty"], "purchased_qty": round(purchased, 2),
+                "ref_price": mat.purchase_price or 0 if mat else 0,
+                "default_supplier_id": mat.default_supplier_id or None if mat else None,
+            })
+        else:
+            prod = si.product
+            purchased = sum((p.quantity or 0) for p in pois if p.product_id == si.product_id)
+            rows.append({
+                "sales_item_id": si.id, "material_id": None, "product_id": si.product_id,
+                "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
+                "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
                     "need_qty": req["need_qty"], "purchased_qty": round(purchased, 2),
                     "ref_price": (prod.estimated_cost or 0) if prod else 0,
                     "default_supplier_id": None,
                 })
     return {
-        "id": order.id, "order_no": order.order_no,
-        "customer_name": order.customer.name_cn if order.customer else "",
-        "currency_code": order.currency.code if order.currency else "CNY",
-        "exchange_rate": order.exchange_rate or 1,
-        "purchase_status": _so_purchase_status(db, order),
+        "id": si.order_id, "order_no": si.order.order_no,
+        "customer_name": si.order.customer.name_cn if si.order.customer else "",
+        "batch_no": si.batch_no or "",
+        "product_code": si.product.code if si.product else "",
+        "product_name": si.product.name_cn if si.product else "",
+        "quantity": si.quantity or 0,
         "rows": rows,
     }
 

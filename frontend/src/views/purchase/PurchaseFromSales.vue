@@ -14,30 +14,28 @@
       </div>
     </el-card>
 
-    <!-- ========== 销售订单列表 ========== -->
+    <!-- ========== 销售明细行列表（销售订单那边点了「转入库」的行） ========== -->
     <el-card style="flex: 1; overflow: hidden; display: flex; flex-direction: column">
       <div style="flex: 1; overflow: auto">
         <el-table v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row class="drag-table-so">
           <el-table-column prop="order_no" label="销售订单号" min-width="150" sortable />
-          <el-table-column prop="customer_name" label="客户" min-width="130" show-overflow-tooltip sortable />
-          <el-table-column prop="order_date" label="日期" width="110" sortable />
-          <el-table-column prop="item_count" label="明细" width="70" align="center" sortable />
-          <el-table-column prop="total_amount" label="金额" width="110" align="right" sortable>
-            <template #default="{ row }">{{ fmtMoney(row.total_amount) }}</template>
+          <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip sortable />
+          <el-table-column prop="code" label="产品编码" min-width="110" sortable />
+          <el-table-column prop="name" label="产品名称" min-width="130" show-overflow-tooltip sortable />
+          <el-table-column prop="spec" label="规格" min-width="90" show-overflow-tooltip sortable />
+          <el-table-column prop="unit" label="单位" width="60" align="center" sortable />
+          <el-table-column prop="quantity" label="数量" width="95" align="right" sortable>
+            <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
           </el-table-column>
-          <el-table-column prop="status" label="订单状态" width="100" align="center" sortable>
-            <template #default>
-              <el-tag type="success" size="small">已审核</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="采购状态" width="110" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
+          <el-table-column prop="batch_no" label="批次号" min-width="150" show-overflow-tooltip sortable />
+          <el-table-column label="采购状态" width="100" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
             <template #default="{ row }">
               <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">采购完成</el-tag>
               <el-tag v-else-if="row.purchase_status === 'partial'" type="warning" size="small">部分采购</el-tag>
               <el-tag v-else type="info" size="small">未采购</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="90" align="center" fixed="right">
+          <el-table-column label="操作" width="80" align="center" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.purchase_status !== 'completed'" type="primary" size="small" @click="openPurchase(row)">采购</el-button>
             </template>
@@ -52,7 +50,7 @@
     <!-- ========== 采购弹窗（选供应商/数量/单价，自动拆单） ========== -->
     <el-dialog v-model="purchaseVisible" :title="`销售订单转采购：${currentOrderNo || ''}`" width="1280px" destroy-on-close>
       <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
-        客户：{{ currentCustomer }} ｜ 每个物料行选择供应商后，系统按供应商自动拆成多张采购订单，一次生成。单价默认带出参考采购价，可改。
+        客户：{{ currentCustomer }} ｜ 产品：{{ currentProductName }}（批次 {{ currentBatchNo }}）｜ 每个物料行选择供应商后，系统按供应商自动拆成多张采购订单，一次生成。单价默认带出参考采购价，可改。
       </div>
       <el-table :data="purchaseRows" height="420" border size="small">
         <el-table-column type="index" label="#" width="45" align="center" />
@@ -163,15 +161,19 @@ const purchaseVisible = ref(false)
 const currentOrderId = ref(null)
 const currentOrderNo = ref('')
 const currentCustomer = ref('')
+const currentBatchNo = ref('')
+const currentProductName = ref('')
 const purchaseRows = ref([])
 const submitting = ref(false)
 
 async function openPurchase(row) {
   try {
-    const res = await request.get(`/purchase/sales-to-purchase/${row.id}`)
-    currentOrderId.value = row.id
+    const res = await request.get(`/purchase/sales-to-purchase/${row.sales_item_id}`)
+    currentOrderId.value = row.order_id || row.sales_item_id
     currentOrderNo.value = res.order_no || ''
     currentCustomer.value = res.customer_name || ''
+    currentBatchNo.value = res.batch_no || ''
+    currentProductName.value = res.product_name || ''
     purchaseRows.value = (res.rows || []).map(r => ({
       ...r,
       quantity: Math.max(0, (r.need_qty || 0) - (r.purchased_qty || 0)),
@@ -187,7 +189,7 @@ async function openPurchase(row) {
       }
     }
     purchaseVisible.value = true
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '加载销售订单明细失败') }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '加载采购需求明细失败') }
 }
 
 const supplierGroupCount = computed(() => {

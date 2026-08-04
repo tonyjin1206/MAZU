@@ -14,30 +14,28 @@
       </div>
     </el-card>
 
-    <!-- ========== 销售订单列表 ========== -->
+    <!-- ========== 销售明细行列表（销售订单那边点了「转外发」的行） ========== -->
     <el-card style="flex: 1; overflow: hidden; display: flex; flex-direction: column">
       <div style="flex: 1; overflow: auto">
         <el-table v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row class="drag-table-so">
           <el-table-column prop="order_no" label="销售订单号" min-width="150" sortable />
-          <el-table-column prop="customer_name" label="客户" min-width="130" show-overflow-tooltip sortable />
-          <el-table-column prop="order_date" label="日期" width="110" sortable />
-          <el-table-column prop="item_count" label="明细" width="70" align="center" sortable />
-          <el-table-column prop="total_amount" label="金额" width="110" align="right" sortable>
-            <template #default="{ row }">{{ fmtMoney(row.total_amount) }}</template>
+          <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip sortable />
+          <el-table-column prop="code" label="产品编码" min-width="110" sortable />
+          <el-table-column prop="name" label="产品名称" min-width="130" show-overflow-tooltip sortable />
+          <el-table-column prop="spec" label="规格" min-width="90" show-overflow-tooltip sortable />
+          <el-table-column prop="unit" label="单位" width="60" align="center" sortable />
+          <el-table-column prop="quantity" label="数量" width="95" align="right" sortable>
+            <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
           </el-table-column>
-          <el-table-column prop="status" label="订单状态" width="100" align="center" sortable>
-            <template #default>
-              <el-tag type="success" size="small">已审核</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="委外状态" width="110" align="center" sortable :sort-method="(a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status)">
+          <el-table-column prop="batch_no" label="批次号" min-width="150" show-overflow-tooltip sortable />
+          <el-table-column label="委外状态" width="100" align="center" sortable :sort-method="(a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status)">
             <template #default="{ row }">
               <el-tag v-if="row.outsource_status === 'completed'" type="success" size="small">委外完成</el-tag>
               <el-tag v-else-if="row.outsource_status === 'partial'" type="warning" size="small">部分转委外</el-tag>
               <el-tag v-else type="info" size="small">未转委外</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="100" align="center" fixed="right">
+          <el-table-column label="操作" width="85" align="center" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.outsource_status !== 'completed'" type="primary" size="small" @click="openTransfer(row)">转委外</el-button>
             </template>
@@ -52,7 +50,7 @@
     <!-- ========== 转委外弹窗 ========== -->
     <el-dialog v-model="transferVisible" :title="`销售订单转委外：${currentOrderNo || ''}`" width="1000px" destroy-on-close>
       <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
-        客户：{{ currentCustomer }} ｜ 勾选明细行并填写委外数量，确认后生成委外订单（草稿）。委外商/加工单价请在委外订单中维护。
+        客户：{{ currentCustomer }} ｜ 批次 {{ currentBatchNo }} ｜ 勾选明细行并填写委外数量，确认后生成委外订单（草稿）。委外商/加工单价请在委外订单中维护。
       </div>
       <el-table :data="transferRows" height="420" border size="small" @selection-change="onSelectionChange">
         <el-table-column type="selection" width="45" align="center" />
@@ -127,23 +125,25 @@ const transferVisible = ref(false)
 const currentOrderId = ref(null)
 const currentOrderNo = ref('')
 const currentCustomer = ref('')
+const currentBatchNo = ref('')
 const transferRows = ref([])
 const selectedRows = ref([])
 const submitting = ref(false)
 
 async function openTransfer(row) {
   try {
-    const res = await request.get(`/outsource/sales-to-outsource/${row.id}`)
-    currentOrderId.value = row.id
+    const res = await request.get(`/outsource/sales-to-outsource/${row.sales_item_id}`)
+    currentOrderId.value = row.order_id || row.sales_item_id
     currentOrderNo.value = res.order_no || ''
     currentCustomer.value = res.customer_name || ''
+    currentBatchNo.value = res.batch_no || ''
     transferRows.value = (res.rows || []).map(r => ({
       ...r,
       quantity: Math.max(0, (r.need_qty || 0) - (r.outsourced_qty || 0)),
     }))
     selectedRows.value = []
     transferVisible.value = true
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '加载销售订单明细失败') }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '加载销售明细失败') }
 }
 
 function onSelectionChange(rows) {
