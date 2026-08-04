@@ -51,8 +51,16 @@
 
     <!-- ========== 采购弹窗（选供应商/数量/单价，自动拆单） ========== -->
     <el-dialog v-model="purchaseVisible" :title="`销售订单转采购：${currentOrderNo || ''}`" width="1280px" destroy-on-close>
-      <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
-        客户：{{ currentCustomer }} ｜ 产品：{{ currentProductName }}（批次 {{ currentBatchNo }}）｜ 每个物料行选择供应商后，系统按供应商自动拆成多张采购订单，一次生成。单价默认带出参考采购价，可改。
+      <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 12px; font-size: 12px; color: #606266">
+        <span>客户：{{ currentCustomer }} ｜ 产品：{{ currentProductName }}（批次 {{ currentBatchNo }}）</span>
+        <span style="margin-left: auto; display: flex; align-items: center; gap: 4px">
+          损耗
+          <el-input-number v-model="lossPct" :min="0" :max="50" :precision="0" size="small" controls-position="right" style="width: 90px" />
+          %
+        </span>
+      </div>
+      <div style="margin-bottom: 10px; font-size: 12px; color: #909399">
+        每个物料行选择供应商后，系统按供应商自动拆成多张采购订单，一次生成。单价默认带出参考采购价，可改。采购数量上限 = 需求数量 ×（1+损耗%），损耗默认 10%。
       </div>
       <el-table :data="purchaseRows" height="420" border size="small">
         <el-table-column type="index" label="#" width="45" align="center" />
@@ -72,7 +80,7 @@
         </el-table-column>
         <el-table-column label="本次采购" width="130">
           <template #default="{ row }">
-            <el-input-number v-model="row.quantity" :min="0" :max="Math.max(0, row.need_qty - row.purchased_qty)" :precision="2" size="small" controls-position="right" style="width: 100%" />
+            <el-input-number v-model="row.quantity" :min="0" :max="Math.max(0, (row.need_qty - row.purchased_qty) * (1 + lossPct / 100))" :precision="2" size="small" controls-position="right" style="width: 100%" />
           </template>
         </el-table-column>
         <el-table-column label="供应商" min-width="170">
@@ -165,6 +173,7 @@ const currentOrderNo = ref('')
 const currentCustomer = ref('')
 const currentBatchNo = ref('')
 const currentProductName = ref('')
+const lossPct = ref(10)
 const purchaseRows = ref([])
 const submitting = ref(false)
 
@@ -220,6 +229,7 @@ async function submitPurchase() {
   try {
     const payload = {
       sales_order_id: currentOrderId.value,
+      loss_pct: lossPct.value,
       rows: validRows.map(r => ({
         sales_item_id: r.sales_item_id,
         material_id: r.material_id,

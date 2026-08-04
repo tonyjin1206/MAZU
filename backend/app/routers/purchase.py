@@ -408,7 +408,8 @@ def list_sales_to_purchase(
 
     def row_status(si):
         """该明细行采购状态:
-        none=未采购 / partial=部分采购(还能追加) / transferred=已转采购订单(数量足额但未入库完成) / completed=采购完成(全部入库)
+        none=未采购 / partial=部分采购(还能追加) / transferred=已转采购订单(数量足额含损耗但未入库完成) / completed=采购完成(全部入库)
+        足额判定: 已采购 >= 需求量×(1+损耗10%)
         入库完成判定: 关联采购单状态已越过入库阶段(待开票/已开票/部分付款/已付款/已完成)"""
         pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
             PurchaseOrderItem.sales_item_id == si.id,
@@ -416,16 +417,14 @@ def list_sales_to_purchase(
         ).all()
         if not pois:
             return "none"
-        # 该行各材料: 已采购量 vs 需求量
+        # 该行各材料: 已采购量 vs 需求量（含损耗线）
         statuses = []
-        received_flags = []
         for req in _so_row_requirements(db, si):
             if req["material_id"]:
                 purchased = sum((p.quantity or 0) for p in pois if p.material_id == req["material_id"])
             else:
                 purchased = sum((p.quantity or 0) for p in pois if p.product_id == si.product_id)
-            statuses.append("done" if purchased >= req["need_qty"] else ("partial" if purchased > 0 else "none"))
-            received_flags.append(purchased >= req["need_qty"])
+            statuses.append("done" if purchased >= req["need_qty"] * 1.1 else ("partial" if purchased > 0 else "none"))
         # 全部材料足额
         if all(s == "done" for s in statuses):
             # 采购单是否都入库完成（状态越过入库阶段）
@@ -570,6 +569,10 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
         raise HTTPException(400, f"该销售单状态「{order.status}」，不能转采购")
 
     # 校验行 + 检查剩余量（硬校验：需求量以 BOM 比例为准，不接受前端传入的 need_qty）
+    # 损耗: 允许采购到 需求量×(1+损耗%)，默认 10%
+    loss_pct = float(data.get("loss_pct", 10) or 10)
+    if loss_pct < 0 or loss_pct > 50:
+        raise HTTPException(400, "损耗率须在 0~50% 之间")
     for r in rows:
         if not r.get("supplier_id"):
             raise HTTPException(400, "有明细行未选择供应商")
@@ -594,8 +597,8 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
             purchased = sum(p.quantity or 0 for p in pois if p.material_id == r["material_id"])
         else:
             purchased = sum(p.quantity or 0 for p in pois if p.product_id == r["product_id"])
-        if float(r["quantity"]) + purchased > req["need_qty"]:
-            raise HTTPException(400, f"{r.get('name','')} 采购数量超过 BOM 比例需求量（剩余 {round(req['need_qty'] - purchased, 2)}）")
+        if float(r["quantity"]) + purchased > req["need_qty"] * (1 + loss_pct / 100):
+            raise HTTPException(400, f"{r.get('name','')} 采购数量超过需求数量×（1+损耗{loss_pct:.0f}%）（还可采 {round(req['need_qty'] * (1 + loss_pct / 100) - purchased, 2)}）")
 
     # 按供应商分组
     groups = {}

@@ -50,8 +50,16 @@
 
     <!-- ========== 转委外弹窗 ========== -->
     <el-dialog v-model="transferVisible" :title="`销售订单转委外：${currentOrderNo || ''}`" width="1000px" destroy-on-close>
-      <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
-        客户：{{ currentCustomer }} ｜ 批次 {{ currentBatchNo }} ｜ 勾选明细行并填写委外数量，确认后生成委外订单（草稿）。委外商/加工单价请在委外订单中维护。
+      <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 12px; font-size: 12px; color: #606266">
+        <span>客户：{{ currentCustomer }} ｜ 批次 {{ currentBatchNo }}</span>
+        <span style="margin-left: auto; display: flex; align-items: center; gap: 4px">
+          损耗
+          <el-input-number v-model="lossPct" :min="0" :max="50" :precision="0" size="small" controls-position="right" style="width: 90px" />
+          %
+        </span>
+      </div>
+      <div style="margin-bottom: 10px; font-size: 12px; color: #909399">
+        勾选明细行并填写委外数量，确认后生成委外订单（草稿）。委外商/加工单价请在委外订单中维护。委外数量上限 = 销售数量 ×（1+损耗%），损耗默认 10%。
       </div>
       <el-table :data="transferRows" height="420" border size="small" @selection-change="onSelectionChange">
         <el-table-column type="selection" width="45" align="center" />
@@ -71,7 +79,7 @@
         </el-table-column>
         <el-table-column label="本次转委外" width="130">
           <template #default="{ row }">
-            <el-input-number v-model="row.quantity" :min="0" :max="Math.max(0, row.need_qty - row.outsourced_qty)" :precision="2" size="small" controls-position="right" style="width: 100%" />
+            <el-input-number v-model="row.quantity" :min="0" :max="Math.max(0, (row.need_qty - row.outsourced_qty) * (1 + lossPct / 100))" :precision="2" size="small" controls-position="right" style="width: 100%" />
           </template>
         </el-table-column>
       </el-table>
@@ -127,6 +135,7 @@ const currentOrderId = ref(null)
 const currentOrderNo = ref('')
 const currentCustomer = ref('')
 const currentBatchNo = ref('')
+const lossPct = ref(10)
 const transferRows = ref([])
 const selectedRows = ref([])
 const submitting = ref(false)
@@ -170,6 +179,7 @@ async function submitTransfer() {
   try {
     const payload = {
       sales_order_id: currentOrderId.value,
+      loss_pct: lossPct.value,
       rows: validRows.map(r => ({ sales_item_id: r.sales_item_id, quantity: r.quantity })),
     }
     const res = await request.post('/outsource/orders/from-sales', payload)

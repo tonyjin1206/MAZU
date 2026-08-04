@@ -249,7 +249,7 @@ def list_sales_to_outsource(
     items = query.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     def row_status(si):
-        """该明细行委外状态: completed/partial/none"""
+        """该明细行委外状态: completed/partial/none（足额=销售数量×1.1 含损耗）"""
         os_orders = db.query(OutsourceOrder).filter(
             OutsourceOrder.sales_item_id == si.id,
             OutsourceOrder.status != "已退回",
@@ -257,7 +257,7 @@ def list_sales_to_outsource(
         if not os_orders:
             return "none"
         total_qty = sum((o.quantity or 0) for o in os_orders)
-        if total_qty >= (si.quantity or 0):
+        if total_qty >= (si.quantity or 0) * 1.1:
             return "completed"
         return "partial"
 
@@ -355,6 +355,11 @@ def create_outsource_from_sales(data: dict, db: Session = Depends(get_db), curre
     if order.status not in ("已审", "生产中", "部分发货"):
         raise HTTPException(400, f"该销售单状态「{order.status}」，不能转委外")
 
+    # 损耗: 允许委外到 销售数量×(1+损耗%)，默认 10%
+    loss_pct = float(data.get("loss_pct", 10) or 10)
+    if loss_pct < 0 or loss_pct > 50:
+        raise HTTPException(400, "损耗率须在 0~50% 之间")
+
     created = []
     for r in rows:
         si = db.query(SalesOrderItem).filter(
@@ -375,8 +380,8 @@ def create_outsource_from_sales(data: dict, db: Session = Depends(get_db), curre
             OutsourceOrder.status != "已退回",
         ).all()
         already = sum((o.quantity or 0) for o in os_orders)
-        if qty + already > (si.quantity or 0):
-            raise HTTPException(400, f"{si.product.name_cn if si.product else ''} 委外数量超过销售数量（剩余 {round((si.quantity or 0) - already, 2)}）")
+        if qty + already > (si.quantity or 0) * (1 + loss_pct / 100):
+            raise HTTPException(400, f"{si.product.name_cn if si.product else ''} 委外数量超过销售数量×（1+损耗{loss_pct:.0f}%）（还可转 {round((si.quantity or 0) * (1 + loss_pct / 100) - already, 2)}）")
         os_order = OutsourceOrder(
             outsource_no=generate_doc_no(db, "WO", OutsourceOrder, "outsource_no"),
             sales_order_id=sales_order_id,
