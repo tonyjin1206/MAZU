@@ -36,12 +36,12 @@
               <el-tag v-else type="info" size="small">未采购</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="220" align="center" fixed="right">
+          <el-table-column label="操作" width="200" align="center" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.purchase_status === 'none' || row.purchase_status === 'partial'" type="primary" size="small" @click="openPurchase(row)">采购</el-button>
               <el-button v-if="row.purchase_status === 'partial' || row.purchase_status === 'transferred'" type="success" size="small" @click="handleComplete(row)">完成采购</el-button>
               <el-button v-if="row.purchase_status === 'completed'" type="warning" size="small" @click="handleUncomplete(row)">取消完成</el-button>
-              <el-button v-if="row.purchase_status !== 'completed'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
+              <el-button v-if="row.purchase_status === 'none'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -229,8 +229,7 @@ async function handleUncomplete(row) {
 
 async function handleReturn(row) {
   try {
-    const tip = row.purchase_status === 'none' ? '确定退回（撤销转入库）？退回后销售订单明细可重新变更/转采购。' : `确定退回 ${row.name}（批次 ${row.batch_no}）关联的采购订单？退回后销售订单明细可重新变更/转采购。`
-    await ElMessageBox.confirm(tip, '退回确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定退回（撤销转入库）？退回后销售订单明细可重新变更/转采购。`, '退回确认', { type: 'warning' })
     const res = await request.post(`/purchase/sales-to-purchase/${row.sales_item_id}/return`)
     ElMessage.success(res.message || '已退回')
     fetchData()

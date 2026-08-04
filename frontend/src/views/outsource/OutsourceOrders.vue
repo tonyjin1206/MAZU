@@ -55,6 +55,7 @@
             <el-button v-if="row.status === '待确认'" link type="primary" @click="openEdit(row)">维护</el-button>
             <el-button v-if="row.status === '待确认'" link type="success" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待确认'" link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.status === '已审核'" link type="warning" @click="handleUnapprove(row)">取消审核</el-button>
             <el-button link @click="openDetail(row)">详情</el-button>
           </template>
         </el-table-column>
@@ -234,10 +235,19 @@ async function handleApprove(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除委外订单 ${row.outsource_no}？删除后销售明细行回到「未生产」。`, '提示', { type: 'warning' })
   try {
-    const res = await request.delete(`/outsource/orders/${row.id}`)
+    await request.delete(`/outsource/orders/${row.id}`)
     ElMessage.success(res.message || '已删除')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
+}
+
+async function handleUnapprove(row) {
+  await ElMessageBox.confirm(`确定取消审核委外订单 ${row.outsource_no}？取消后可修改或删除。`, '提示', { type: 'warning' })
+  try {
+    const res = await request.post(`/outsource/orders/${row.id}/unapprove`)
+    ElMessage.success(res.message || '已取消审核')
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
 
 const detailVisible = ref(false)

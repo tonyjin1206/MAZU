@@ -206,7 +206,20 @@ def delete_order(order_id: int, db: Session = Depends(get_db), current_user: Use
         raise HTTPException(400, "该订单已有关联入库单，无法删除")
     if invoices > 0:
         raise HTTPException(400, "该订单已有关联发票，无法删除")
+    # 铁律：删除后检查该销售明细行是否还有其他采购单——没有了才解锁回未生产
+    item_ids = {i.sales_item_id for i in order.items if i.sales_item_id}
     db.delete(order)
+    db.commit()
+    from app.models.sales import SalesOrderItem
+    for sid in item_ids:
+        remain = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
+            PurchaseOrderItem.sales_item_id == sid,
+            PurchaseOrder.status != "已关闭",
+        ).count()
+        if remain == 0:
+            si = db.query(SalesOrderItem).filter(SalesOrderItem.id == sid).first()
+            if si and si.production_status == "已通知入库":
+                si.production_status = "未生产"
     db.commit()
     return {"message": "采购订单已删除"}
 
@@ -464,32 +477,14 @@ def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), curren
         PurchaseOrderItem.sales_item_id == si.id,
         PurchaseOrder.status != "已关闭",
     ).all()
-    po_ids = {p.order_id for p in pois}
-    # 有采购单：检查下游（入库单/发票）——有下游必须先退下游
-    for po_id in po_ids:
-        receipts = db.query(PurchaseReceipt).filter(PurchaseReceipt.order_id == po_id).count()
-        invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == po_id).count()
-        if receipts > 0:
-            po = db.query(PurchaseOrder).get(po_id)
-            raise HTTPException(400, f"采购订单 {po.order_no if po else po_id} 已有入库单，请先在采购入库中退回后再操作")
-        if invoices > 0:
-            po = db.query(PurchaseOrder).get(po_id)
-            raise HTTPException(400, f"采购订单 {po.order_no if po else po_id} 已有发票，请先删除发票后再操作")
-    # 删除采购单（已审核的自动取消审核后删除；待审核直接删）
-    nos = []
-    for po_id in po_ids:
-        po = db.query(PurchaseOrder).get(po_id)
-        if not po:
-            continue
-        po.status = "待审核"  # 解除审核锁定（无下游才走到这里）
-        db.delete(po)
-        nos.append(po.order_no)
-    # 明细行回到未生产（可重新转采购/变更）——无采购单时仅解锁状态
+    # 铁律：下游有单据，上游不能退回——先到采购订单页退回采购单
+    if pois:
+        nos_list = sorted({p.order.order_no for p in pois if p.order})
+        raise HTTPException(400, f"该明细行已关联采购订单（{', '.join(nos_list)}），请先到「采购订单」页退回采购单后再操作")
+    # 明细行回到未生产（仅撤销转入库，无采购单的情况）
     if si.production_status == "已通知入库":
         si.production_status = "未生产"
     db.commit()
-    if nos:
-        return {"message": f"已退回采购订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转采购"}
     return {"message": "已退回（撤销转入库），销售明细行已解锁，可重新变更或转采购"}
 
 

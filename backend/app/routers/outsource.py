@@ -175,6 +175,39 @@ def approve_order(
     return {"message": f"委外订单已审核：已生成应付账款 {ap_no}，待入库单已生成，收货请到「库存管理 → 成品入库」", "amount": os.amount}
 
 
+@router.post("/orders/{order_id}/unapprove", tags=["委外管理"])
+def unapprove_order(
+    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """取消审核委外订单 → 回「待确认」（有下游应收/入库则拒绝）"""
+    os = db.query(OutsourceOrder).filter(OutsourceOrder.id == order_id).first()
+    if not os:
+        raise HTTPException(404, "委外订单不存在")
+    if os.status != "已审核":
+        raise HTTPException(400, f"当前状态「{os.status}」，不能取消审核")
+    # 下游：应付账款（加工费）+ 待入库单
+    ap = db.query(AccountsPayable).filter(
+        AccountsPayable.source_type == "outsource",
+        AccountsPayable.source_id == os.id,
+    ).first()
+    if ap and (ap.paid_amount or 0) > 0:
+        raise HTTPException(400, f"该委外单应付账款 {ap.ap_no} 已付款，请先退回付款")
+    if ap:
+        db.delete(ap)
+    sin = db.query(StockInOrder).filter(
+        StockInOrder.source_type == "outsource",
+        StockInOrder.outsource_order_id == os.id,
+        StockInOrder.status.in_(["待入库", "部分入库"]),
+    ).first()
+    if sin and (sin.received_qty or 0) > 0:
+        raise HTTPException(400, "该委外单已部分入库，请先退回入库单")
+    if sin:
+        db.delete(sin)
+    os.status = "待确认"
+    db.commit()
+    return {"message": "已取消审核，可修改或删除委外订单"}
+
+
 @router.delete("/orders/{order_id}", tags=["委外管理"])
 def delete_order(
     order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
@@ -185,13 +218,20 @@ def delete_order(
         raise HTTPException(404, "委外订单不存在")
     if os.status != "待确认":
         raise HTTPException(400, f"当前状态「{os.status}」不能删除")
-    # 回写销售明细：已通知外发 → 未生产
-    if os.sales_item_id:
-        item = db.query(SalesOrderItem).filter(SalesOrderItem.id == os.sales_item_id).first()
-        if item and item.production_status == "已通知外发":
-            item.production_status = "未生产"
+    # 铁律：删除后检查该销售明细行是否还有其他委外单——没有了才解锁回未生产
+    sid = os.sales_item_id
     db.delete(os)
     db.commit()
+    if sid:
+        remain = db.query(OutsourceOrder).filter(
+            OutsourceOrder.sales_item_id == sid,
+            OutsourceOrder.status != "已退回",
+        ).count()
+        if remain == 0:
+            item = db.query(SalesOrderItem).filter(SalesOrderItem.id == sid).first()
+            if item and item.production_status == "已通知外发":
+                item.production_status = "未生产"
+            db.commit()
     return {"message": "委外订单已删除"}
 
 
@@ -297,20 +337,14 @@ def return_sales_to_outsource(item_id: int, db: Session = Depends(get_db), curre
         OutsourceOrder.sales_item_id == si.id,
         OutsourceOrder.status != "已退回",
     ).all()
-    # 已入库的委外单有入库单下游，拒绝
-    for o in os_orders:
-        if o.status == "已入库":
-            raise HTTPException(400, f"委外订单 {o.outsource_no} 已入库，请先退回相关入库单后再操作")
-    nos = []
-    for o in os_orders:
-        db.delete(o)
-        nos.append(o.outsource_no)
-    # 明细行回到未生产（可重新转委外/变更）——无委外单时仅解锁状态
+    # 铁律：下游有单据，上游不能退回——先到委外订单页退回委外单
+    if os_orders:
+        nos_list = sorted({o.outsource_no for o in os_orders})
+        raise HTTPException(400, f"该明细行已关联委外订单（{', '.join(nos_list)}），请先到「委外订单」页退回委外单后再操作")
+    # 明细行回到未生产（仅撤销转外发，无委外单的情况）
     if si.production_status == "已通知外发":
         si.production_status = "未生产"
     db.commit()
-    if nos:
-        return {"message": f"已退回委外订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转委外"}
     return {"message": "已退回（撤销转外发），销售明细行已解锁，可重新变更或转委外"}
 
 

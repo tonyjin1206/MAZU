@@ -36,12 +36,12 @@
               <el-tag v-else type="info" size="small">未转委外</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="220" align="center" fixed="right">
+          <el-table-column label="操作" width="200" align="center" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.outsource_status === 'none' || row.outsource_status === 'partial'" type="primary" size="small" @click="openTransfer(row)">转委外</el-button>
               <el-button v-if="row.outsource_status === 'partial' || row.outsource_status === 'transferred'" type="success" size="small" @click="handleComplete(row)">完成委外</el-button>
               <el-button v-if="row.outsource_status === 'completed'" type="warning" size="small" @click="handleUncomplete(row)">取消完成</el-button>
-              <el-button v-if="row.outsource_status !== 'completed'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
+              <el-button v-if="row.outsource_status === 'none'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -183,8 +183,7 @@ async function handleUncomplete(row) {
 
 async function handleReturn(row) {
   try {
-    const tip = row.outsource_status === 'none' ? '确定退回（撤销转外发）？退回后销售订单明细可重新变更/转委外。' : `确定退回 ${row.name}（批次 ${row.batch_no}）关联的委外订单？退回后销售订单明细可重新变更/转委外。`
-    await ElMessageBox.confirm(tip, '退回确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定退回（撤销转外发）？退回后销售订单明细可重新变更/转委外。`, '退回确认', { type: 'warning' })
     const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/return`)
     ElMessage.success(res.message || '已退回')
     fetchData()
