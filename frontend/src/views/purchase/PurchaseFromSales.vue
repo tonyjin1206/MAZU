@@ -82,7 +82,7 @@
         </el-table-column>
         <el-table-column label="本次采购" width="130">
           <template #default="{ row }">
-            <el-input-number v-model="row.quantity" :min="0" :max="Math.max(0, (row.need_qty - row.purchased_qty) * (1 + lossPct / 100))" :precision="2" size="small" controls-position="right" style="width: 100%" />
+            <el-input-number v-model="row.quantity" :min="0" :max="Math.max(0, row.need_qty * (1 + lossPct / 100) - row.purchased_qty)" :precision="2" size="small" controls-position="right" style="width: 100%" />
           </template>
         </el-table-column>
         <el-table-column label="供应商" min-width="170">
@@ -189,7 +189,7 @@ async function openPurchase(row) {
     currentProductName.value = res.product_name || ''
     purchaseRows.value = (res.rows || []).map(r => ({
       ...r,
-      quantity: Math.max(0, (r.need_qty || 0) - (r.purchased_qty || 0)),
+      quantity: Math.max(0, (r.need_qty || 0) * 1.1 - (r.purchased_qty || 0)),
       unit_price: r.ref_price || 0,
       supplier_id: r.default_supplier_id || null,
       supplier_name: '',
