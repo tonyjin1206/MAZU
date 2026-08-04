@@ -28,16 +28,17 @@
             <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
           </el-table-column>
           <el-table-column prop="batch_no" label="批次号" min-width="150" show-overflow-tooltip sortable />
-          <el-table-column label="采购状态" width="100" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
+          <el-table-column label="采购状态" width="120" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
             <template #default="{ row }">
               <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">采购完成</el-tag>
+              <el-tag v-else-if="row.purchase_status === 'transferred'" type="primary" size="small">已转采购订单</el-tag>
               <el-tag v-else-if="row.purchase_status === 'partial'" type="warning" size="small">部分采购</el-tag>
               <el-tag v-else type="info" size="small">未采购</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="80" align="center" fixed="right">
             <template #default="{ row }">
-              <el-button v-if="row.purchase_status !== 'completed'" type="primary" size="small" @click="openPurchase(row)">采购</el-button>
+              <el-button v-if="row.purchase_status === 'none' || row.purchase_status === 'partial'" type="primary" size="small" @click="openPurchase(row)">采购</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -153,7 +154,7 @@ function fmtQty(v) {
   return Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 }
 function statusRank(s) {
-  return s === 'completed' ? 2 : s === 'partial' ? 1 : 0
+  return s === 'completed' ? 3 : s === 'transferred' ? 2 : s === 'partial' ? 1 : 0
 }
 
 // ========== 采购弹窗 ==========

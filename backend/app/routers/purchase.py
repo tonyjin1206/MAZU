@@ -407,22 +407,36 @@ def list_sales_to_purchase(
     items = query.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     def row_status(si):
-        """该明细行采购状态: completed/partial/none（全部材料足额=completed）"""
+        """该明细行采购状态:
+        none=未采购 / partial=部分采购(还能追加) / transferred=已转采购订单(数量足额但未入库完成) / completed=采购完成(全部入库)
+        入库完成判定: 关联采购单状态已越过入库阶段(待开票/已开票/部分付款/已付款/已完成)"""
         pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
             PurchaseOrderItem.sales_item_id == si.id,
             PurchaseOrder.status != "已关闭",
         ).all()
+        if not pois:
+            return "none"
+        # 该行各材料: 已采购量 vs 需求量
         statuses = []
+        received_flags = []
         for req in _so_row_requirements(db, si):
             if req["material_id"]:
                 purchased = sum((p.quantity or 0) for p in pois if p.material_id == req["material_id"])
             else:
                 purchased = sum((p.quantity or 0) for p in pois if p.product_id == si.product_id)
             statuses.append("done" if purchased >= req["need_qty"] else ("partial" if purchased > 0 else "none"))
-        if not statuses:
-            return "none"
+            received_flags.append(purchased >= req["need_qty"])
+        # 全部材料足额
         if all(s == "done" for s in statuses):
-            return "completed"
+            # 采购单是否都入库完成（状态越过入库阶段）
+            po_ids = {p.order_id for p in pois}
+            all_received = True
+            for po_id in po_ids:
+                po = db.query(PurchaseOrder).get(po_id)
+                if not po or po.status in ("待审核", "已审核", "部分入库", "已关闭"):
+                    all_received = False
+                    break
+            return "completed" if all_received else "transferred"
         if all(s == "none" for s in statuses):
             return "none"
         return "partial"
