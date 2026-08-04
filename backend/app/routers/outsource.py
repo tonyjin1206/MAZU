@@ -51,6 +51,11 @@ def list_orders(
     for os in items:
         prod = db.query(Product).filter(Product.id == os.product_id).first()
         sup = db.query(Supplier).filter(Supplier.id == os.outsourcer_id).first() if os.outsourcer_id else None
+        # 关联销售订单号（转委外的单一一对应；直接录入为空）
+        sales_no = ""
+        if os.sales_order_id:
+            so = db.query(SalesOrder).filter(SalesOrder.id == os.sales_order_id).first()
+            sales_no = so.order_no if so else ""
         # 已入库数量（来自关联待入库单）
         received = db.query(StockInOrder).filter(
             StockInOrder.outsource_order_id == os.id,
@@ -60,6 +65,7 @@ def list_orders(
         result.append({
             "id": os.id,
             "outsource_no": os.outsource_no,
+            "sales_order_no": sales_no,
             "sales_order_id": os.sales_order_id,
             "sales_item_id": os.sales_item_id,
             "product_id": os.product_id,

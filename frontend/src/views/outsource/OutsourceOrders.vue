@@ -129,6 +129,7 @@ import request from '../../api/request'
 const STORAGE_KEY = 'mazu_outsource_order_columns'
 const defaultColumns = [
   { prop: 'outsource_no', label: '委外单号', width: 150, sortable: true },
+  { prop: 'sales_order_no', label: '销售订单号', minWidth: 130, sortable: true },
   { prop: 'product_code', label: '产品编码', minWidth: 110, sortable: true },
   { prop: 'product_name', label: '产品名称', minWidth: 140, sortable: true },
   { prop: 'quantity', label: '数量', width: 80, align: 'right', sortable: true, fmt: 'qty' },
