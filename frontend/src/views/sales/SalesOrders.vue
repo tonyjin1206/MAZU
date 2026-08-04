@@ -120,7 +120,7 @@
             <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
             <el-button v-if="(row.production_status === '未生产' || !row.production_status || row.production_status === '部分入库') && selectedOrder?.status === '已审'" link type="success" size="small" @click="openClaimDialog(row)">认领库存</el-button>
             <el-button v-if="row.claimed_from_batch && selectedOrder?.status === '已审' && !(row.delivered_qty || 0)" link type="danger" size="small" @click="handleUnclaim(row)">解绑</el-button>
-            <el-button v-if="row.production_status !== '已停售'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
+            <el-button v-if="!row.production_status || row.production_status === '未生产'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
           </template>
         </el-table-column>
       </el-table>

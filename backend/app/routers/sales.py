@@ -1650,6 +1650,12 @@ def update_order_item(
     if item.production_status == "已停售":
         raise HTTPException(400, "该明细行已停售，不能变更")
 
+    # 单据在「转采购/转委外」页（已转直采/已转外发）→ 必须先退回才能变更
+    if item.production_status == "已通知入库":
+        raise HTTPException(400, "该明细行已转直采，请先到「采购管理 → 销售订单转采购」退回后再变更")
+    if item.production_status == "已通知外发":
+        raise HTTPException(400, "该明细行已转外发，请先到「委外管理 → 销售订单转委外」退回后再变更")
+
     # 有活跃采购单引用（销售订单转采购生成）→ 必须先退回采购单
     active_po = db.query(PurchaseOrderItem).join(PoOrder, PoOrder.id == PurchaseOrderItem.order_id).filter(
         PurchaseOrderItem.sales_item_id == item_id,
