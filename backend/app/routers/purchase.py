@@ -407,17 +407,19 @@ def list_sales_to_purchase(
     items = query.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     def row_status(si):
-        """该明细行采购状态:
-        none=未采购 / partial=部分采购(还能追加) / transferred=已转采购订单(数量足额含损耗但未入库完成) / completed=采购完成(全部入库)
-        足额判定: 已采购 >= 需求量×(1+损耗10%)
-        入库完成判定: 关联采购单状态已越过入库阶段(待开票/已开票/部分付款/已付款/已完成)"""
+        """该明细行采购状态（人工判定完成）:
+        none=未采购 / partial=部分采购(还可追加) / transferred=已转采购订单(达上限不可追加,未手动完成) / completed=采购完成(手动完成)
+        上限判定: 已采购 >= 需求量×(1+损耗10%) 视为达上限
+        完成判定: si.purchase_done=1 人工完成"""
+        if si.purchase_done:
+            return "completed"
         pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
             PurchaseOrderItem.sales_item_id == si.id,
             PurchaseOrder.status != "已关闭",
         ).all()
         if not pois:
             return "none"
-        # 该行各材料: 已采购量 vs 需求量（含损耗线）
+        # 该行各材料: 已采购量 vs 需求量（含损耗上限）
         statuses = []
         for req in _so_row_requirements(db, si):
             if req["material_id"]:
@@ -425,17 +427,9 @@ def list_sales_to_purchase(
             else:
                 purchased = sum((p.quantity or 0) for p in pois if p.product_id == si.product_id)
             statuses.append("done" if purchased >= req["need_qty"] * 1.1 else ("partial" if purchased > 0 else "none"))
-        # 全部材料足额
+        # 全部材料达上限
         if all(s == "done" for s in statuses):
-            # 采购单是否都入库完成（状态越过入库阶段）
-            po_ids = {p.order_id for p in pois}
-            all_received = True
-            for po_id in po_ids:
-                po = db.query(PurchaseOrder).get(po_id)
-                if not po or po.status in ("待审核", "已审核", "部分入库", "已关闭"):
-                    all_received = False
-                    break
-            return "completed" if all_received else "transferred"
+            return "transferred"
         if all(s == "none" for s in statuses):
             return "none"
         return "partial"
@@ -497,6 +491,30 @@ def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), curren
     if nos:
         return {"message": f"已退回采购订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转采购"}
     return {"message": "已退回（撤销转入库），销售明细行已解锁，可重新变更或转采购"}
+
+
+@router.post("/sales-to-purchase/{item_id}/complete", tags=["采购管理"])
+def complete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """人工确认采购完成（业务员判断数量足够）"""
+    from app.models.sales import SalesOrderItem
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    si.purchase_done = 1
+    db.commit()
+    return {"message": "已标记采购完成"}
+
+
+@router.post("/sales-to-purchase/{item_id}/uncomplete", tags=["采购管理"])
+def uncomplete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """取消采购完成（业务员改主意，可继续追加采购）"""
+    from app.models.sales import SalesOrderItem
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    si.purchase_done = 0
+    db.commit()
+    return {"message": "已取消采购完成，可继续追加采购"}
 
 
 @router.get("/sales-to-purchase/{item_id}", tags=["采购管理"])

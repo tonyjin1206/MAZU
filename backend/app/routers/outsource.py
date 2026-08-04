@@ -249,7 +249,11 @@ def list_sales_to_outsource(
     items = query.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
     def row_status(si):
-        """该明细行委外状态: completed/partial/none（足额=销售数量×1.1 含损耗）"""
+        """该明细行委外状态（人工判定完成）:
+        none=未转委外 / partial=部分转委外(还可追加) / transferred=已转委外订单(达上限不可追加) / completed=委外完成(手动完成)
+        上限判定: 已转 >= 销售数量×1.1；完成判定: si.outsource_done=1"""
+        if si.outsource_done:
+            return "completed"
         os_orders = db.query(OutsourceOrder).filter(
             OutsourceOrder.sales_item_id == si.id,
             OutsourceOrder.status != "已退回",
@@ -258,7 +262,7 @@ def list_sales_to_outsource(
             return "none"
         total_qty = sum((o.quantity or 0) for o in os_orders)
         if total_qty >= (si.quantity or 0) * 1.1:
-            return "completed"
+            return "transferred"
         return "partial"
 
     result = []
@@ -308,6 +312,30 @@ def return_sales_to_outsource(item_id: int, db: Session = Depends(get_db), curre
     if nos:
         return {"message": f"已退回委外订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转委外"}
     return {"message": "已退回（撤销转外发），销售明细行已解锁，可重新变更或转委外"}
+
+
+@router.post("/sales-to-outsource/{item_id}/complete", tags=["委外管理"])
+def complete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """人工确认委外完成（业务员判断数量足够）"""
+    from app.models.sales import SalesOrderItem
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    si.outsource_done = 1
+    db.commit()
+    return {"message": "已标记委外完成"}
+
+
+@router.post("/sales-to-outsource/{item_id}/uncomplete", tags=["委外管理"])
+def uncomplete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """取消委外完成（业务员改主意，可继续追加委外）"""
+    from app.models.sales import SalesOrderItem
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    si.outsource_done = 0
+    db.commit()
+    return {"message": "已取消委外完成，可继续追加委外"}
 
 
 @router.get("/sales-to-outsource/{item_id}", tags=["委外管理"])

@@ -28,16 +28,19 @@
             <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
           </el-table-column>
           <el-table-column prop="batch_no" label="批次号" min-width="150" show-overflow-tooltip sortable />
-          <el-table-column label="委外状态" width="100" align="center" sortable :sort-method="(a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status)">
+          <el-table-column label="委外状态" width="110" align="center" sortable :sort-method="(a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status)">
             <template #default="{ row }">
               <el-tag v-if="row.outsource_status === 'completed'" type="success" size="small">委外完成</el-tag>
+              <el-tag v-else-if="row.outsource_status === 'transferred'" type="success" size="small">已转委外订单</el-tag>
               <el-tag v-else-if="row.outsource_status === 'partial'" type="warning" size="small">部分转委外</el-tag>
               <el-tag v-else type="info" size="small">未转委外</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="140" align="center" fixed="right">
+          <el-table-column label="操作" width="220" align="center" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.outsource_status === 'none' || row.outsource_status === 'partial'" type="primary" size="small" @click="openTransfer(row)">转委外</el-button>
+              <el-button v-if="row.outsource_status === 'partial' || row.outsource_status === 'transferred'" type="success" size="small" @click="handleComplete(row)">完成委外</el-button>
+              <el-button v-if="row.outsource_status === 'completed'" type="warning" size="small" @click="handleUncomplete(row)">取消完成</el-button>
               <el-button v-if="row.outsource_status !== 'completed'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
             </template>
           </el-table-column>
@@ -126,7 +129,7 @@ function fmtQty(v) {
   return Number(v || 0).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
 }
 function statusRank(s) {
-  return s === 'completed' ? 2 : s === 'partial' ? 1 : 0
+  return s === 'completed' ? 3 : s === 'transferred' ? 2 : s === 'partial' ? 1 : 0
 }
 
 // ========== 转委外弹窗 ==========
@@ -154,6 +157,28 @@ async function openTransfer(row) {
     selectedRows.value = []
     transferVisible.value = true
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载销售明细失败') }
+}
+
+async function handleComplete(row) {
+  try {
+    await ElMessageBox.confirm(`确认完成委外？系统按人工判定：数量是否足够由你决定。完成后不能再追加委外，可随时「取消完成」。`, '完成确认', { type: 'info' })
+    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/complete`)
+    ElMessage.success(res.message || '已标记委外完成')
+    fetchData()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '操作失败')
+  }
+}
+
+async function handleUncomplete(row) {
+  try {
+    await ElMessageBox.confirm(`确定取消委外完成？取消后可以继续追加委外。`, '取消完成确认', { type: 'warning' })
+    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/uncomplete`)
+    ElMessage.success(res.message || '已取消委外完成')
+    fetchData()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '操作失败')
+  }
 }
 
 async function handleReturn(row) {

@@ -85,6 +85,8 @@ class SalesOrderItem(Base):
     delivered_qty = Column(Float, default=0, comment="已发货数量")
     delivery_confirmed = Column(Integer, default=0, comment="发货确认完成(人工): 0未确认/1已确认")
     production_status = Column(String(16), default="未生产", comment="生产状态: 未生产/生产中/已生产")
+    purchase_done = Column(Integer, default=0, comment="转采购页: 手动完成采购(人工判定数量够): 0未完成/1已完成")
+    outsource_done = Column(Integer, default=0, comment="转委外页: 手动完成委外(人工判定数量够): 0未完成/1已完成")
     claimed_from_batch = Column(String(64), comment="认领库存前原批次号（备货FG-批次，解绑时退回）")
     remark = Column(Text)
 
