@@ -56,6 +56,7 @@
         <!-- 3. 委外管理 -->
         <el-sub-menu index="outsource">
           <template #title>委外管理</template>
+          <el-menu-item index="/outsource/from-sales">销售订单转委外</el-menu-item>
           <el-menu-item index="/outsource/orders">委外订单</el-menu-item>
           <el-menu-item index="/production/invoices">加工费发票</el-menu-item>
         </el-sub-menu>
@@ -158,6 +159,7 @@ const pageTitle = computed(() => {
     '/production/inventory': '批次库存/追溯',
     '/inventory/management': '库存管理',
     '/inventory/stock-ins': '成品入库',
+    '/outsource/from-sales': '销售订单转委外',
     '/outsource/orders': '委外订单',
     '/tax-refund/declarations': '退税申报',
     '/system/users': '用户管理',

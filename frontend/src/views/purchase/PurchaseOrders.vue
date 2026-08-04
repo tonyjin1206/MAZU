@@ -78,7 +78,6 @@
             <el-button v-if="row.status === '待审核'" link type="success" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待审核' && !row.from_sales" link type="primary" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="row.status === '已审核'" link type="warning" @click="handleUnapprove(row)">取消审核</el-button>
-            <el-button v-if="row.status === '已审核' || row.status === '部分入库'" link type="primary" @click="handleInStore(row)">入库</el-button>
             <el-button v-if="row.status === '待审核' && row.from_sales" link type="danger" @click="handleDelete(row)">退回</el-button>
             <el-button v-if="row.status === '待审核' && !row.from_sales" link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -866,8 +865,6 @@ async function handleUnapprove(row) {
   await ElMessageBox.confirm('确定取消审核该订单？取消后可重新编辑。', '提示', { type: 'warning' })
   try { await request.post(`/purchase/orders/${row.id}/unapprove`); ElMessage.success('已取消审核'); fetchData() } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
-
-function handleInStore(row) { router.push({ path: '/purchase/receipts', query: { oid: row.id } }) }
 
 async function handleDelete(row) {
   if (row.from_sales) {

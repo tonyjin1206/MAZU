@@ -36,6 +36,7 @@ const routes = [
       { path: 'sales/collections', name: 'Collections', component: () => import('../views/sales/Collections.vue') },
 
       // 委外管理
+      { path: 'outsource/from-sales', name: 'OutsourceFromSales', component: () => import('../views/outsource/OutsourceFromSales.vue') },
       { path: 'outsource/orders', name: 'OutsourceOrders', component: () => import('../views/outsource/OutsourceOrders.vue') },
       { path: 'production/invoices', name: 'ProcessingInvoices', component: () => import('../views/production/ProcessingInvoices.vue') },
 
