@@ -64,29 +64,43 @@
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增工序' : '编辑工序'" width="500px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增工序' : '编辑工序'" width="700px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
-        <el-form-item label="编码" prop="code">
+        <el-row :gutter="16">
+          <el-col :span="12">
+<el-form-item label="编码" prop="code">
           <el-input v-model="form.code" :disabled="dialogMode === 'edit'" />
         </el-form-item>
-        <el-form-item label="工序名称" prop="name">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="工序名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="标准工时(h)" prop="standard_hours">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="标准工时(h)" prop="standard_hours">
           <el-input type="number" v-model="form.standard_hours" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="类型" prop="is_outsource">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="类型" prop="is_outsource">
           <el-radio-group v-model="form.is_outsource">
             <el-radio :value="0">自制</el-radio>
             <el-radio :value="1">委外</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="加工单价" prop="unit_price">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="加工单价" prop="unit_price">
           <el-input type="number" v-model="form.unit_price" :min="0" :precision="2" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="备注" prop="remark">
+          </el-col>
+          <el-col :span="24">
+<el-form-item label="备注" prop="remark">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

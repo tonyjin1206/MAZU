@@ -83,40 +83,60 @@
       </el-table>
       <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="500px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="700px">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="110px">
-        <el-form-item label="品名（公司）" prop="name_cn">
+        <el-row :gutter="16">
+          <el-col :span="12">
+<el-form-item label="品名（公司）" prop="name_cn">
           <el-input v-model="form.name_cn" />
         </el-form-item>
-        <el-form-item label="品名（客户）" prop="name_en">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="品名（客户）" prop="name_en">
           <el-input v-model="form.name_en" />
         </el-form-item>
-        <el-form-item label="规格" prop="spec">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="规格" prop="spec">
           <el-input v-model="form.spec" />
         </el-form-item>
-        <el-form-item label="单位" prop="unit">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="单位" prop="unit">
           <el-select v-model="form.unit" placeholder="请选择" filterable allow-create style="width: 100%">
             <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
-        <el-form-item label="销售价" prop="sale_price">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="销售价" prop="sale_price">
           <el-input type="number" v-model="form.sale_price" :precision="2" :min="0" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="HS编码" prop="hs_code">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="HS编码" prop="hs_code">
           <el-input v-model="form.hs_code" placeholder="如 52094200" />
         </el-form-item>
-        <el-form-item label="退税率%" prop="refund_rate">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="退税率%" prop="refund_rate">
           <el-input type="number" v-model="form.refund_rate" :min="0" :max="17" />
         </el-form-item>
-        <el-form-item label="征税率%" prop="tax_rate">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="征税率%" prop="tax_rate">
           <el-input type="number" v-model="form.tax_rate" :min="0" :max="17" />
         </el-form-item>
-        <el-form-item label="选择已有HS" prop="hs_code_id">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="选择已有HS" prop="hs_code_id">
           <el-select v-model="form.hs_code_id" placeholder="(可选)选择已有HS编码" clearable filterable style="width: 100%" @change="onHsCodeSelect">
             <el-option v-for="h in hsCodeOptions" :key="h.id" :label="`${h.hs_code} - ${h.name}`" :value="h.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="关联客户">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="关联客户">
           <div style="width: 100%">
             <div v-for="(c, i) in form.customers" :key="i" style="display: flex; gap: 8px; margin-bottom: 8px">
               <el-select v-model="c.customer_id" filterable placeholder="选择客户" style="flex: 1">
@@ -130,6 +150,8 @@
             </div>
           </div>
         </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

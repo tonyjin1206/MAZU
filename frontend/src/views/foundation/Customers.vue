@@ -101,50 +101,78 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="640px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="900px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
-        <el-form-item label="编码" prop="code">
+        <el-row :gutter="16">
+          <el-col :span="12">
+<el-form-item label="编码" prop="code">
           <el-input v-model="form.code" disabled />
         </el-form-item>
-        <el-form-item label="中文名" prop="name_cn">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="中文名" prop="name_cn">
           <el-input v-model="form.name_cn" />
         </el-form-item>
-        <el-form-item label="英文名" prop="name_en">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="英文名" prop="name_en">
           <el-input v-model="form.name_en" />
         </el-form-item>
-        <el-form-item label="国家" prop="country">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="国家" prop="country">
           <el-select v-model="form.country" filterable placeholder="选择国家" style="width: 100%">
             <el-option v-for="c in countryList" :key="c" :label="c" :value="c" />
           </el-select>
         </el-form-item>
-        <el-form-item label="联系人" prop="contact_person">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="联系人" prop="contact_person">
           <el-input v-model="form.contact_person" />
         </el-form-item>
-        <el-form-item label="电话" prop="phone">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="电话" prop="phone">
           <el-input v-model="form.phone" />
         </el-form-item>
-        <el-form-item label="邮箱" prop="email">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="邮箱" prop="email">
           <el-input v-model="form.email" />
         </el-form-item>
-        <el-form-item label="税号" prop="tax_id">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="税号" prop="tax_id">
           <el-input v-model="form.tax_id" />
         </el-form-item>
-        <el-form-item label="客户地址" prop="address">
+          </el-col>
+          <el-col :span="24">
+<el-form-item label="客户地址" prop="address">
           <el-input v-model="form.address" type="textarea" :rows="2" />
         </el-form-item>
-        <el-form-item label="开户行" prop="bank_name">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="开户行" prop="bank_name">
           <el-input v-model="form.bank_name" />
         </el-form-item>
-        <el-form-item label="银行账号" prop="bank_account">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="银行账号" prop="bank_account">
           <el-input v-model="form.bank_account" />
         </el-form-item>
-        <el-form-item label="默认税率(%)" prop="default_tax_rate">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="默认税率(%)" prop="default_tax_rate">
           <el-input type="number" v-model="form.default_tax_rate" :min="0" :max="100" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="评级" prop="rating">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="评级" prop="rating">
           <el-rate v-model="form.rating" :max="5" />
         </el-form-item>
-        <el-form-item label="结算方式" prop="payment_terms">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="结算方式" prop="payment_terms">
           <el-select v-model="form.payment_terms" style="width: 100%">
             <el-option label="T/T" value="TT" />
             <el-option label="L/C" value="LC" />
@@ -153,12 +181,18 @@
             <el-option label="O/A" value="OA" />
           </el-select>
         </el-form-item>
-        <el-form-item label="账期(天)" prop="account_period">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="账期(天)" prop="account_period">
           <el-input type="number" v-model="form.account_period" :min="0" :step="15" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="备注" prop="remark">
+          </el-col>
+          <el-col :span="24">
+<el-form-item label="备注" prop="remark">
           <el-input v-model="form.remark" type="textarea" :rows="2" />
         </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

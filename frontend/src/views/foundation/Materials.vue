@@ -102,35 +102,51 @@
     </el-card>
 
     <!-- 新增/编辑弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增材料' : '编辑材料'" width="500px" @close="dialogVisible = false">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增材料' : '编辑材料'" width="700px" @close="dialogVisible = false">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="80px">
-        <el-form-item label="名称" prop="name">
+        <el-row :gutter="16">
+          <el-col :span="12">
+<el-form-item label="名称" prop="name">
           <el-input v-model="form.name" />
         </el-form-item>
-        <el-form-item label="规格" prop="spec">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="规格" prop="spec">
           <el-input v-model="form.spec" />
         </el-form-item>
-        <el-form-item label="型号" prop="model">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="型号" prop="model">
           <el-input v-model="form.model" />
         </el-form-item>
-        <el-form-item label="单位" prop="unit">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="单位" prop="unit">
           <el-select v-model="form.unit" placeholder="请选择" filterable allow-create style="width: 100%">
             <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
-        <el-form-item label="大类" prop="category">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="大类" prop="category">
           <el-select v-model="form.category" placeholder="请选择大类" style="width: 100%" @change="onMainCategoryChange">
             <el-option v-for="o in mainCategoryOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
-        <el-form-item label="小类" prop="category_sub">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="小类" prop="category_sub">
           <el-select v-model="form.category_sub" placeholder="请选择小类" style="width: 100%" :disabled="!form.category">
             <el-option v-for="o in subCategoryOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
-        <el-form-item label="单价" prop="purchase_price">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="单价" prop="purchase_price">
           <el-input type="number" v-model="form.purchase_price" :precision="2" :min="0" style="width: 100%" />
         </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

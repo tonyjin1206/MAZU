@@ -66,31 +66,47 @@
       <el-pagination style="margin-top: 16px" v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增HS编码' : '编辑HS编码'" width="550px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增HS编码' : '编辑HS编码'" width="800px">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="110px">
-        <el-form-item label="HS编码" prop="hs_code">
+        <el-row :gutter="16">
+          <el-col :span="12">
+<el-form-item label="HS编码" prop="hs_code">
           <el-input v-model="form.hs_code" placeholder="如 8471300000" />
         </el-form-item>
-        <el-form-item label="商品名称" prop="name">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="商品名称" prop="name">
           <el-input v-model="form.name" placeholder="商品名称" />
         </el-form-item>
-        <el-form-item label="单位" prop="unit">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="单位" prop="unit">
           <el-select v-model="form.unit" placeholder="请选择" style="width: 100%">
             <el-option v-for="o in unitOptions" :key="o.key" :label="o.label" :value="o.label" />
           </el-select>
         </el-form-item>
-        <el-form-item label="退税率(%)" prop="refund_rate">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="退税率(%)" prop="refund_rate">
           <el-input type="number" v-model="form.refund_rate" :min="0" :max="17" :precision="2" :step="0.5" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="增值税率(%)" prop="tax_rate">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="增值税率(%)" prop="tax_rate">
           <el-input type="number" v-model="form.tax_rate" :min="0" :max="17" :precision="2" :step="0.5" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="生效日期" prop="effective_date">
+          </el-col>
+          <el-col :span="12">
+<el-form-item label="生效日期" prop="effective_date">
           <el-date-picker v-model="form.effective_date" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="监管条件" prop="supervision_conditions">
+          </el-col>
+          <el-col :span="24">
+<el-form-item label="监管条件" prop="supervision_conditions">
           <el-input v-model="form.supervision_conditions" placeholder="选填" />
         </el-form-item>
+          </el-col>
+        </el-row>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
