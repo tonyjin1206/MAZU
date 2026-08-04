@@ -129,24 +129,13 @@ def list_orders(
             "paid_amount": round(pay_agg.get(o.id, 0), 2),
             "unpaid_amount": round(inv_agg.get(o.id, 0) - pay_agg.get(o.id, 0), 2),
             "from_sales": from_sales,
+            "created_by": o.created_by or "",
         })
 
-        # 动态计算状态（覆盖数据库状态）
+        # 状态只保留采购环节状态（待审核/已审核/已关闭），入库/开票/付款进度在明细和财务模块看
         computed_status = o.status
         if o.status not in ("待审核", "已审核", "已关闭"):
-            invoiced = inv_agg.get(o.id, 0)
-            paid = pay_agg.get(o.id, 0)
-            all_received = all((item.received_qty or 0) >= item.quantity for item in o.items)
-            if not all_received and received_amount > 0:
-                computed_status = "部分入库"
-            elif all_received and invoiced <= 0:
-                computed_status = "待开票"
-            elif invoiced > 0 and paid <= 0:
-                computed_status = "已开票"
-            elif paid > 0 and paid < invoiced:
-                computed_status = "部分付款"
-            elif paid >= invoiced and invoiced > 0:
-                computed_status = "已付款"
+            computed_status = "已审核"
 
         result[-1]["status"] = computed_status
 

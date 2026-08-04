@@ -348,15 +348,9 @@ const defaultColumns = [
   { prop: 'order_no', label: '订单号', minWidth: 130, sortable: true },
   { prop: 'supplier_name', label: '供应商', minWidth: 120, sortable: true },
   { prop: 'item_count', label: '明细', width: 70, align: 'center', sortable: true, fmt: 'qty' },
-  { prop: 'total_amount', label: '含税金额', width: 100, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'received_amount', label: '已入库', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'unreceived_amount', label: '未入库', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'invoiced_amount', label: '已开票', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'uninvoiced_amount', label: '未开票', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'paid_amount', label: '已付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
-  { prop: 'unpaid_amount', label: '未付款', width: 90, align: 'right', sortable: true, fmt: 'money' },
   { prop: 'source', label: '来源', width: 130, align: 'center', sortable: true },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
+  { prop: 'created_by', label: '采购员', width: 100, sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, settingsVisible: orderSettingsVisible, settingsList: orderSettingsList, openColumnSettings: openOrderSettingsRaw, confirmSettings: confirmOrderSettingsFn, resetSettings: resetOrderSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-orders .el-table__header-wrapper thead tr')
 
@@ -437,7 +431,7 @@ function fmtMoney(v) {
 }
 
 function orderSummary({ columns: cols, data }) {
-  const sumCols = new Set(['total_amount', 'received_amount', 'unreceived_amount', 'invoiced_amount', 'uninvoiced_amount', 'paid_amount', 'unpaid_amount'])
+  const sumCols = new Set(['total_amount'])
   return cols.map((col, idx) => {
     if (idx === 0) return '合计'
     if (sumCols.has(col.property)) {
@@ -524,10 +518,8 @@ function calcTotals() {
 
 function statusType(status) {
   const map = {
-    '待审核': 'info', '已审核': 'success', '部分入库': 'warning',
-    '待开票': 'info', '已开票': 'success', '部分付款': 'warning', '已付款': 'success',
-    '已完成': 'success', '已入库': 'success', '已关闭': 'danger',
-    pending: 'info', approved: 'success', received: 'success',
+    '待审核': 'info', '已审核': 'success', '已关闭': 'danger',
+    pending: 'info', approved: 'success',
   }
   return map[status] || 'info'
 }
