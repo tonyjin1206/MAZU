@@ -731,7 +731,8 @@ def to_stock_in(order_id: int, item_id: int, data: dict,
 @router.post("/orders/{order_id}/items/{item_id}/to-material", tags=["采购管理"])
 def to_material(order_id: int, item_id: int,
                 db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """采购明细「转原料库入库」— 走现有采购入库流程收货"""
+    """采购明细「转原料库入库」— 生成待入库单（原料入库模块收货）"""
+    from app.models.inventory import StockInOrder
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "采购订单不存在")
@@ -746,9 +747,20 @@ def to_material(order_id: int, item_id: int,
         raise HTTPException(400, "该明细为产品采购，请使用「转成品库入库」")
     if item.receive_type:
         raise HTTPException(400, f"该明细已转「{item.receive_type}」，不能重复操作")
+    # 生成待入库单（材料）→ 原料入库模块收货
+    sin = StockInOrder(
+        source_type="purchase",
+        purchase_order_id=order_id,
+        purchase_item_id=item_id,
+        material_id=item.material_id,
+        quantity=item.quantity,
+        status="待入库",
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(sin)
     item.receive_type = "原料库"
     db.commit()
-    return {"message": "已转原料库入库，请到「采购入库」模块收货"}
+    return {"message": "已生成待入库单，可在「库存管理 → 原料入库」模块收货"}
 
 
 @router.post("/orders/{order_id}/approve", tags=["采购管理"])

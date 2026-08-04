@@ -66,7 +66,6 @@
           <template #title>采购管理</template>
           <el-menu-item index="/purchase/from-sales">销售订单转采购</el-menu-item>
           <el-menu-item index="/purchase/orders">采购订单</el-menu-item>
-          <el-menu-item index="/purchase/receipts">采购入库</el-menu-item>
           <el-menu-item index="/purchase/invoices">采购发票</el-menu-item>
           <el-menu-item index="/purchase/ap">应付账款</el-menu-item>
           <el-menu-item index="/purchase/payments">付款管理</el-menu-item>
@@ -78,6 +77,7 @@
           <el-menu-item index="/inventory/management">库存查询</el-menu-item>
           <el-menu-item index="/inventory/summary">收发存</el-menu-item>
           <el-menu-item index="/inventory/stock-ins">成品入库</el-menu-item>
+          <el-menu-item index="/inventory/material-ins">原料入库</el-menu-item>
           <el-menu-item index="/production/inventory">批次追溯</el-menu-item>
         </el-sub-menu>
 
@@ -141,7 +141,6 @@ const pageTitle = computed(() => {
     '/foundation/processes': '工序管理',
     '/purchase/from-sales': '销售订单转采购',
     '/purchase/orders': '采购订单',
-    '/purchase/receipts': '采购入库',
     '/purchase/invoices': '采购发票',
     '/purchase/ap': '应付账款',
     '/purchase/payments': '付款管理',
@@ -159,6 +158,7 @@ const pageTitle = computed(() => {
     '/production/inventory': '批次库存/追溯',
     '/inventory/management': '库存管理',
     '/inventory/stock-ins': '成品入库',
+    '/inventory/material-ins': '原料入库',
     '/outsource/from-sales': '销售订单转委外',
     '/outsource/orders': '委外订单',
     '/tax-refund/declarations': '退税申报',

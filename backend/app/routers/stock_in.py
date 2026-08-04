@@ -42,19 +42,26 @@ def list_stock_in(
     status: str = Query("", description="状态筛选"),
     source_type: str = Query("", description="来源: sales/purchase/outsource"),
     keyword: str = Query("", description="单号/产品搜索"),
+    kind: str = Query("", description="类型: product=成品 / material=原料 / 空=全部"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """待入库单列表"""
+    """待入库单列表（kind=product 成品入库页 / kind=material 原料入库页）"""
+    from app.models.foundation import Material
     query = db.query(StockInOrder)
     if status:
         query = query.filter(StockInOrder.status == status)
     if source_type:
         query = query.filter(StockInOrder.source_type == source_type)
+    if kind == "product":
+        query = query.filter(StockInOrder.product_id.isnot(None))
+    elif kind == "material":
+        query = query.filter(StockInOrder.material_id.isnot(None))
     if keyword:
-        query = query.join(Product).filter(
+        query = query.join(Product, StockInOrder.product_id == Product.id, isouter=True).filter(
             Product.code.like(f"%{keyword}%")
             | Product.name_cn.like(f"%{keyword}%")
+            | db.query(Material).filter(Material.id == StockInOrder.material_id).exists()
         )
         # 支持按批次号搜索（销售/委外来源的待入库单）
         batch_hits = db.query(StockInOrder.id).join(
@@ -71,6 +78,7 @@ def list_stock_in(
     result = []
     for sin in items:
         prod = db.query(Product).filter(Product.id == sin.product_id).first()
+        mat = db.query(Material).filter(Material.id == sin.material_id).first()
         # 批次号：销售/委外来源取销售明细批次号（唯一标识）
         batch_label = ""
         if sin.sales_item_id:
@@ -88,8 +96,9 @@ def list_stock_in(
             "purchase_item_id": sin.purchase_item_id,
             "outsource_order_id": sin.outsource_order_id,
             "product_id": sin.product_id,
-            "product_code": prod.code if prod else "",
-            "product_name": prod.name_cn if prod else "",
+            "product_code": prod.code if prod else (mat.code if mat else ""),
+            "product_name": prod.name_cn if prod else (mat.name if mat else ""),
+            "kind": "material" if sin.material_id else "product",
             "quantity": sin.quantity,
             "received_qty": sin.received_qty or 0,
             "status": sin.status,
@@ -153,8 +162,9 @@ def receive_stock_in(
         _seq = int(_today_receipt.rsplit("-", 1)[1]) + 1
     receipt_no = f"RE-{date.today().strftime('%y%m%d')}{_seq:02d}"
 
-    # 库存批次号：优先用销售明细批次号（唯一贯穿全程）；无销售关联（采购备货）才生成 FG 批次
-    batch_no = generate_batch_no(db, "FG")
+    # 库存批次号：优先用销售明细批次号（唯一贯穿全程）；无销售关联（采购备货）才生成 FG/RM 批次
+    is_material = sin.material_id is not None
+    batch_no = generate_batch_no(db, "RM" if is_material else "FG")
     if sin.sales_item_id:
         so_item = db.query(SalesOrderItem).filter(SalesOrderItem.id == sin.sales_item_id).first()
         if so_item and so_item.batch_no:
@@ -165,41 +175,81 @@ def receive_stock_in(
         if poi:
             unit_cost = float(poi.unit_price_local or poi.unit_price or 0)
 
-    inventory = WarehouseInventory(
-        warehouse_id=warehouse_id,
-        product_id=sin.product_id,
-        batch_no=batch_no,
-        quantity=qty,
-        unit_cost=unit_cost,
-        total_cost=round(qty * unit_cost, 2),
-        in_date=date.today(),
-        source_type="stock_in",
-        source_doc_id=sin.id,
-        receipt_no=receipt_no,
-    )
-    db.add(inventory)
+    if is_material:
+        inventory = WarehouseInventory(
+            warehouse_id=warehouse_id,
+            material_id=sin.material_id,
+            batch_no=batch_no,
+            quantity=qty,
+            unit_cost=unit_cost,
+            total_cost=round(qty * unit_cost, 2),
+            in_date=date.today(),
+            source_type="stock_in",
+            source_doc_id=sin.id,
+            receipt_no=receipt_no,
+        )
+        db.add(inventory)
 
-    trans = StockTransaction(
-        trans_type="stock_in",
-        warehouse_id=warehouse_id,
-        product_id=sin.product_id,
-        batch_no=batch_no,
-        quantity=qty,
-        unit_cost=unit_cost,
-        total_amount=round(qty * unit_cost, 2),
-        before_qty=0,
-        after_qty=qty,
-        before_cost=0,
-        after_cost=round(qty * unit_cost, 2),
-        source_doc_type="成品入库",
-        source_doc_no=receipt_no,
-        trans_no=generate_doc_no(db, "ST"),
-        operator=operator,
-    )
-    db.add(trans)
+        trans = StockTransaction(
+            trans_type="stock_in",
+            warehouse_id=warehouse_id,
+            material_id=sin.material_id,
+            batch_no=batch_no,
+            quantity=qty,
+            unit_cost=unit_cost,
+            total_amount=round(qty * unit_cost, 2),
+            before_qty=0,
+            after_qty=qty,
+            before_cost=0,
+            after_cost=round(qty * unit_cost, 2),
+            source_doc_type="原料入库",
+            source_doc_no=receipt_no,
+            trans_no=generate_doc_no(db, "ST"),
+            operator=operator,
+        )
+        db.add(trans)
+    else:
+        inventory = WarehouseInventory(
+            warehouse_id=warehouse_id,
+            product_id=sin.product_id,
+            batch_no=batch_no,
+            quantity=qty,
+            unit_cost=unit_cost,
+            total_cost=round(qty * unit_cost, 2),
+            in_date=date.today(),
+            source_type="stock_in",
+            source_doc_id=sin.id,
+            receipt_no=receipt_no,
+        )
+        db.add(inventory)
+
+        trans = StockTransaction(
+            trans_type="stock_in",
+            warehouse_id=warehouse_id,
+            product_id=sin.product_id,
+            batch_no=batch_no,
+            quantity=qty,
+            unit_cost=unit_cost,
+            total_amount=round(qty * unit_cost, 2),
+            before_qty=0,
+            after_qty=qty,
+            before_cost=0,
+            after_cost=round(qty * unit_cost, 2),
+            source_doc_type="成品入库",
+            source_doc_no=receipt_no,
+            trans_no=generate_doc_no(db, "ST"),
+            operator=operator,
+        )
+        db.add(trans)
 
     sin.received_qty = (sin.received_qty or 0) + qty
     sin.warehouse_id = warehouse_id
+
+    # 回写采购明细已入库数量
+    if sin.purchase_item_id:
+        poi = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == sin.purchase_item_id).first()
+        if poi:
+            poi.received_qty = (poi.received_qty or 0) + qty
 
     # 收满自动完成；未满保持部分入库，人工确认完成
     if (sin.received_qty or 0) >= (sin.quantity or 0):
@@ -254,7 +304,7 @@ def cancel_stock_in(
     # 回写采购明细：解除去向
     if sin.purchase_item_id:
         poi = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == sin.purchase_item_id).first()
-        if poi and poi.receive_type == "成品库":
+        if poi and poi.receive_type in ("成品库", "原料库"):
             poi.receive_type = ""
     # 回写委外单：已完工 → 已审核（可重新确认完工）
     if sin.outsource_order_id:
@@ -285,6 +335,11 @@ def return_stock_in(
         raise HTTPException(400, f"退回数量不能超过已入数量 {sin.received_qty}")
     # 减少已入数量
     sin.received_qty = (sin.received_qty or 0) - return_qty
+    # 同步减采购明细已入库数量
+    if sin.purchase_item_id:
+        poi = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == sin.purchase_item_id).first()
+        if poi:
+            poi.received_qty = max(0, (poi.received_qty or 0) - return_qty)
     if sin.received_qty <= 0:
         sin.received_qty = 0
         sin.status = "待入库"
@@ -307,23 +362,42 @@ def return_stock_in(
         inv.quantity -= return_qty
         inv.total_cost = inv.unit_cost * inv.quantity
         # 生成负数入库流水（退回记录，可追溯）
-        trans = StockTransaction(
-            trans_type="stock_in_return",
-            warehouse_id=inv.warehouse_id,
-            product_id=inv.product_id,
-            batch_no=inv.batch_no,
-            quantity=-return_qty,
-            unit_cost=inv.unit_cost,
-            total_amount=-(return_qty * (inv.unit_cost or 0)),
-            before_qty=before_qty,
-            after_qty=inv.quantity,
-            before_cost=before_cost,
-            after_cost=inv.total_cost,
-            source_doc_type="成品入库退回",
-            source_doc_no=inv.receipt_no or "",
-            trans_no=generate_doc_no(db, "ST"),
-            operator=current_user.display_name or current_user.username,
-        )
+        if inv.material_id:
+            trans = StockTransaction(
+                trans_type="stock_in_return",
+                warehouse_id=inv.warehouse_id,
+                material_id=inv.material_id,
+                batch_no=inv.batch_no,
+                quantity=-return_qty,
+                unit_cost=inv.unit_cost,
+                total_amount=-(return_qty * (inv.unit_cost or 0)),
+                before_qty=before_qty,
+                after_qty=inv.quantity,
+                before_cost=before_cost,
+                after_cost=inv.total_cost,
+                source_doc_type="原料入库退回",
+                source_doc_no=inv.receipt_no or "",
+                trans_no=generate_doc_no(db, "ST"),
+                operator=current_user.display_name or current_user.username,
+            )
+        else:
+            trans = StockTransaction(
+                trans_type="stock_in_return",
+                warehouse_id=inv.warehouse_id,
+                product_id=inv.product_id,
+                batch_no=inv.batch_no,
+                quantity=-return_qty,
+                unit_cost=inv.unit_cost,
+                total_amount=-(return_qty * (inv.unit_cost or 0)),
+                before_qty=before_qty,
+                after_qty=inv.quantity,
+                before_cost=before_cost,
+                after_cost=inv.total_cost,
+                source_doc_type="成品入库退回",
+                source_doc_no=inv.receipt_no or "",
+                trans_no=generate_doc_no(db, "ST"),
+                operator=current_user.display_name or current_user.username,
+            )
         db.add(trans)
     db.commit()
     return {"message": f"已退回 {return_qty}，当前已入 {sin.received_qty}"}
@@ -342,9 +416,11 @@ def get_stock_in_records(
         WarehouseInventory.source_type == "stock_in"
     ).order_by(WarehouseInventory.id.desc()).all()
     items = []
+    from app.models.foundation import Material
     for inv in records:
         wh = db.query(Warehouse).filter(Warehouse.id == inv.warehouse_id).first()
         prod = db.query(Product).filter(Product.id == inv.product_id).first() if inv.product_id else None
+        mat = db.query(Material).filter(Material.id == inv.material_id).first() if inv.material_id else None
         # 批次号：优先显示销售明细的业务批次号（来源为销售时），否则显示库存批次号
         batch_label = inv.batch_no
         if sin and sin.sales_item_id:
@@ -354,8 +430,8 @@ def get_stock_in_records(
         items.append({
             "id": inv.id,
             "warehouse": wh.name if wh else "",
-            "product_name": prod.name_cn if prod else "",
-            "product_code": prod.code if prod else "",
+            "product_name": (prod.name_cn if prod else "") or (mat.name if mat else ""),
+            "product_code": (prod.code if prod else "") or (mat.code if mat else ""),
             "batch_no": batch_label,
             "receipt_no": inv.receipt_no or "",
             "quantity": inv.quantity,

@@ -10,7 +10,7 @@
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
         <el-form-item label="关键字">
-          <el-input v-model="searchForm.keyword" placeholder="批次号/产品" clearable style="width: 170px" @keyup.enter="fetchData" />
+          <el-input v-model="searchForm.keyword" placeholder="批次号/物料" clearable style="width: 170px" @keyup.enter="fetchData" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="searchForm.status" placeholder="全部" clearable style="width: 120px">
@@ -22,9 +22,7 @@
         </el-form-item>
         <el-form-item label="来源">
           <el-select v-model="searchForm.sourceType" placeholder="全部" clearable style="width: 130px">
-            <el-option label="销售转入库" value="sales" />
-            <el-option label="采购转成品库" value="purchase" />
-            <el-option label="委外完工" value="outsource" />
+            <el-option label="采购转原料库" value="purchase" />
           </el-select>
         </el-form-item>
       </el-form>
@@ -82,7 +80,7 @@
       <el-dialog v-model="receiveVisible" title="入库收货" width="440px" destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="批次号"><el-input :model-value="receiveForm.batch_no" readonly /></el-form-item>
-        <el-form-item label="产品"><el-input :model-value="`${receiveForm.product_code || ''} ${receiveForm.product_name || ''}`" readonly /></el-form-item>
+        <el-form-item label="物料"><el-input :model-value="`${receiveForm.product_code || ''} ${receiveForm.product_name || ''}`" readonly /></el-form-item>
         <el-form-item label="应入数量"><span>{{ receiveForm.quantity }}</span> <span style="margin-left: 20px; color: #909399">已入：{{ receiveForm.received_qty }}</span></el-form-item>
         <el-form-item label="本次入库" required>
           <el-input-number v-model="receiveForm.quantity_now" :min="0.01" style="width: 100%" />
@@ -130,12 +128,12 @@ import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'
 
 // ===== 列配置（可拖拽排序）=====
-const STORAGE_KEY = 'mazu_stock_in_columns'
+const STORAGE_KEY = 'mazu_material_in_columns'
 const defaultColumns = [
-  { prop: 'source_label', label: '销售订单号', minWidth: 130, sortable: true },
+  { prop: 'source_label', label: '来源单据', minWidth: 130, sortable: true },
   { prop: 'batch_no', label: '批次号', minWidth: 140, sortable: true },
-  { prop: 'product_code', label: '产品编码', minWidth: 110, sortable: true },
-  { prop: 'product_name', label: '产品名称', minWidth: 140, sortable: true },
+  { prop: 'product_code', label: '物料编码', minWidth: 110, sortable: true },
+  { prop: 'product_name', label: '物料名称', minWidth: 140, sortable: true },
   { prop: 'quantity', label: '应入', width: 80, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'received_qty', label: '已入', width: 80, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'status', label: '状态', width: 90, align: 'center', sortable: true, fmt: 'tag' },
@@ -179,7 +177,7 @@ async function fetchData() {
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
     if (searchForm.sourceType) params.source_type = searchForm.sourceType
-    params.kind = 'product'
+    params.kind = 'material'
     const res = await request.get('/stock-in', { params })
     dataList.value = res.items || []
     total.value = res.total || 0

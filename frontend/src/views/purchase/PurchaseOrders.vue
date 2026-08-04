@@ -700,7 +700,7 @@ async function handleToStockIn() {
 }
 
 async function handleToMaterial(row) {
-  await ElMessageBox.confirm('确定该明细转「原料库入库」？收货在采购入库模块进行。', '提示', { type: 'info' })
+  await ElMessageBox.confirm('确定该明细转「原料库入库」？收货在「库存管理 → 原料入库」模块进行。', '提示', { type: 'info' })
   try {
     const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${row.id}/to-material`)
     ElMessage.success(res.message || '已转原料库入库')

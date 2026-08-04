@@ -44,6 +44,7 @@ const routes = [
       { path: 'inventory/management', name: 'InventoryManagement', component: () => import('../views/inventory/InventoryManagement.vue') },
       { path: 'inventory/summary', name: 'StockSummary', component: () => import('../views/inventory/StockSummary.vue') },
       { path: 'inventory/stock-ins', name: 'StockIns', component: () => import('../views/inventory/StockIns.vue') },
+      { path: 'inventory/material-ins', name: 'MaterialIns', component: () => import('../views/inventory/MaterialIns.vue') },
       { path: 'production/inventory', name: 'BatchInventory', component: () => import('../views/production/BatchInventory.vue') },
 
       // 退税管理
