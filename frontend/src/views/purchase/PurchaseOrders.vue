@@ -296,31 +296,6 @@
         <el-pagination v-model:current-page="materialPage" v-model:page-size="materialPageSize" :total="materialTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchPicker" />
       </div>
     </el-dialog>
-    <!-- 转成品库入库弹窗（选择关联待入库单 / 备货新建） -->
-    <el-dialog v-model="toStockInVisible" title="转成品库入库" width="600px" destroy-on-close>
-      <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
-        这批货进哪个待入库单？选择已有的（同一产品、未完成），或作为备货新建一张：
-      </div>
-      <el-radio-group v-model="toStockInForm.linkType" style="margin-bottom: 10px">
-        <el-radio value="link">关联已有待入库单</el-radio>
-        <el-radio value="new">备货新建一张</el-radio>
-      </el-radio-group>
-      <el-table v-if="toStockInForm.linkType === 'link'" :data="candidateStockIns" height="240" border size="small" highlight-current-row @row-click="pickCandidate">
-        <el-table-column label="批次号" width="160">
-          <template #default="{ row }">{{ row.batch_no || row.source_label }}</template>
-        </el-table-column>
-        <el-table-column prop="source_label" label="来源" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="quantity" label="应入" width="70" align="right" />
-        <el-table-column prop="received_qty" label="已入" width="70" align="right" />
-        <el-table-column prop="status" label="状态" width="80" align="center" />
-      </el-table>
-      <el-empty v-if="toStockInForm.linkType === 'link' && !candidateStockIns.length" description="没有可关联的待入库单（该产品没有未完成、未关联采购的单据）" :image-size="60" />
-      <template #footer>
-        <el-button @click="toStockInVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleToStockIn">确定</el-button>
-      </template>
-    </el-dialog>
-    
     <!-- 列排序弹窗 -->
     <ColumnSettingsDialog v-model:visible="orderSettingsVisible" :columns="orderSettingsList" @confirm="confirmOrderSettingsFn" />
     <ColumnSettingsDialog v-model:visible="itemSettingsVisible" :columns="itemSettingsList" @confirm="confirmItemSettingsFn" />
@@ -662,38 +637,13 @@ async function loadSuppliers() {
 }
 
 // ========== 采购明细去向：转成品库入库 / 转原料库入库 ==========
-const toStockInVisible = ref(false)
-const toStockInForm = reactive({ item_id: null, product_id: null, linkType: 'link' })
-const candidateStockIns = ref([])
-const selectedCandidate = ref(null)
 
 async function openToStockIn(row) {
-  toStockInForm.item_id = row.id
-  toStockInForm.product_id = row.product_id
-  toStockInForm.linkType = 'link'
-  selectedCandidate.value = null
-  try {
-    const res = await request.get('/stock-in', { params: { page: 1, page_size: 200 } })
-    candidateStockIns.value = (res.items || []).filter(x =>
-      x.product_id === row.product_id &&
-      (x.status === '待入库' || x.status === '部分入库') &&
-      !x.purchase_item_id
-    )
-  } catch { candidateStockIns.value = [] }
-  toStockInVisible.value = true
-}
-
-function pickCandidate(row) { selectedCandidate.value = row }
-
-async function handleToStockIn() {
-  if (toStockInForm.linkType === 'link' && !selectedCandidate.value) { ElMessage.warning('请选择要关联的待入库单'); return }
+  await ElMessageBox.confirm(`确定该明细转「成品库入库」？将生成待入库单，收货在「库存管理 → 成品入库」模块进行。`, '提示', { type: 'info' })
   submitting.value = true
   try {
-    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${toStockInForm.item_id}/to-stock-in`, {
-      stock_in_order_id: toStockInForm.linkType === 'link' ? selectedCandidate.value.id : 0,
-    })
+    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${row.id}/to-stock-in`, { stock_in_order_id: 0 })
     ElMessage.success(res.message || '已转成品库入库')
-    toStockInVisible.value = false
     loadOrderDetail(selectedOrder.value.id)
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') } finally { submitting.value = false }
