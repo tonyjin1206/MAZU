@@ -280,6 +280,36 @@ def list_sales_to_outsource(
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 
+@router.post("/sales-to-outsource/{item_id}/return", tags=["委外管理"])
+def return_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """退回销售明细行关联的委外订单（销售订单明细变更前必须先退委外单）
+    待确认的直接删除；已审核/已完工的先取消审核再删除；已入库(有下游)则拒绝"""
+    from app.models.sales import SalesOrderItem
+    from app.models.inventory import StockInOrder
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    os_orders = db.query(OutsourceOrder).filter(
+        OutsourceOrder.sales_item_id == si.id,
+        OutsourceOrder.status != "已退回",
+    ).all()
+    # 已入库的委外单有入库单下游，拒绝
+    for o in os_orders:
+        if o.status == "已入库":
+            raise HTTPException(400, f"委外订单 {o.outsource_no} 已入库，请先退回相关入库单后再操作")
+    nos = []
+    for o in os_orders:
+        db.delete(o)
+        nos.append(o.outsource_no)
+    # 明细行回到未生产（可重新转委外/变更）——无委外单时仅解锁状态
+    if si.production_status == "已通知外发":
+        si.production_status = "未生产"
+    db.commit()
+    if nos:
+        return {"message": f"已退回委外订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转委外"}
+    return {"message": "已退回（撤销转外发），销售明细行已解锁，可重新变更或转委外"}
+
+
 @router.get("/sales-to-outsource/{item_id}", tags=["委外管理"])
 def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """销售明细行转委外：产品行 + 已委外数量（委外商/加工单价在委外订单维护里填）"""

@@ -471,10 +471,8 @@ def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), curren
         PurchaseOrderItem.sales_item_id == si.id,
         PurchaseOrder.status != "已关闭",
     ).all()
-    if not pois:
-        raise HTTPException(400, "该明细行没有关联采购订单，无需退回")
     po_ids = {p.order_id for p in pois}
-    # 检查下游（入库单/发票）——有下游必须先退下游
+    # 有采购单：检查下游（入库单/发票）——有下游必须先退下游
     for po_id in po_ids:
         receipts = db.query(PurchaseReceipt).filter(PurchaseReceipt.order_id == po_id).count()
         invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == po_id).count()
@@ -493,11 +491,13 @@ def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), curren
         po.status = "待审核"  # 解除审核锁定（无下游才走到这里）
         db.delete(po)
         nos.append(po.order_no)
-    # 明细行回到未生产（可重新转采购/变更）
+    # 明细行回到未生产（可重新转采购/变更）——无采购单时仅解锁状态
     if si.production_status == "已通知入库":
         si.production_status = "未生产"
     db.commit()
-    return {"message": f"已退回采购订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转采购"}
+    if nos:
+        return {"message": f"已退回采购订单：{', '.join(nos)}，销售明细行已解锁，可重新变更或转采购"}
+    return {"message": "已退回（撤销转入库），销售明细行已解锁，可重新变更或转采购"}
 
 
 @router.get("/sales-to-purchase/{item_id}", tags=["采购管理"])
