@@ -116,7 +116,7 @@
         </el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转入库</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转直采</el-button>
             <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
             <el-button v-if="(row.production_status === '未生产' || !row.production_status || row.production_status === '部分入库') && selectedOrder?.status === '已审'" link type="success" size="small" @click="openClaimDialog(row)">认领库存</el-button>
             <el-button v-if="row.claimed_from_batch && selectedOrder?.status === '已审' && !(row.delivered_qty || 0)" link type="danger" size="small" @click="handleUnclaim(row)">解绑</el-button>
@@ -579,18 +579,18 @@ async function handleUnclaim(row) {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '解绑失败') }
 }
 
-// ========== 明细行：转入库 / 转外发 ==========
+// ========== 明细行：转直采 / 转外发 ==========
 async function handleStockIn(row) {
-  await ElMessageBox.confirm(`将「${row.product_name}」转入库？将生成待入库单，收货在「库存管理 → 成品入库」进行。`, '提示', { type: 'info' })
+  await ElMessageBox.confirm(`将「${row.product_name}」转直采？单据将进入「采购管理 → 销售订单转采购」，在那里办理采购。`, '提示', { type: 'info' })
   try {
     const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/stock-in`)
-    ElMessage.success(res.message || '已转入库')
+    ElMessage.success(res.message || '已转直采')
     loadOrderDetail(selectedOrder.value.id)
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
 }
 
 async function handleOutsource(row) {
-  await ElMessageBox.confirm(`将「${row.product_name}」转外发？将生成委外订单（草稿），请在「委外管理 → 委外订单」维护委外商和加工单价。`, '提示', { type: 'info' })
+  await ElMessageBox.confirm(`将「${row.product_name}」转外发？单据将进入「委外管理 → 销售订单转委外」，在那里办理委外。`, '提示', { type: 'info' })
   try {
     const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/outsource`)
     ElMessage.success(res.message || '已转外发')

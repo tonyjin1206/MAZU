@@ -453,9 +453,8 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
 
 @router.post("/orders/{order_id}/items/{item_id}/stock-in", tags=["销售管理"])
 def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """销售明细「转入库」— 生成待入库单（成品入库模块收货），明细状态→已通知入库"""
+    """销售明细「转直采」— 仅推送单据到「销售订单转采购」页（不生成采购单，采购在转采购页进行）"""
     from app.models.inventory import StockInOrder
-    from app.utils.batch_no import generate_doc_no
     item = db.query(SalesOrderItem).filter(
         SalesOrderItem.id == item_id, SalesOrderItem.order_id == order_id,
     ).first()
@@ -465,28 +464,12 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
     if not order:
         raise HTTPException(404, "销售订单不存在")
     if order.status != "已审":
-        raise HTTPException(400, "订单审核通过后才能转入库")
+        raise HTTPException(400, "订单审核通过后才能转直采")
     if item.production_status not in (None, "", "未生产"):
-        raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转入库")
-    existing = db.query(StockInOrder).filter(
-        StockInOrder.sales_item_id == item_id,
-        StockInOrder.status.in_(["待入库", "部分入库"]),
-    ).first()
-    if existing:
-        raise HTTPException(400, "该明细行已有待入库单，无需重复转入库")
-    sin = StockInOrder(
-        source_type="sales",
-        sales_order_id=order_id,
-        sales_item_id=item_id,
-        product_id=item.product_id,
-        quantity=item.quantity,
-        status="待入库",
-        created_by=current_user.display_name or current_user.username,
-    )
-    db.add(sin)
+        raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转直采")
     item.production_status = "已通知入库"
     db.commit()
-    return {"message": "已转入库，收货请到「库存管理 → 成品入库」办理"}
+    return {"message": "已转直采，请到「采购管理 → 销售订单转采购」办理采购"}
 
 
 @router.post("/orders/{order_id}/items/{item_id}/outsource", tags=["销售管理"])
@@ -506,25 +489,9 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
         raise HTTPException(400, "订单审核通过后才能转外发")
     if item.production_status not in (None, "", "未生产"):
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转外发")
-    existing = db.query(OutsourceOrder).filter(
-        OutsourceOrder.sales_item_id == item_id,
-        OutsourceOrder.status.in_(["待确认", "已审核", "已完工"]),
-    ).first()
-    if existing:
-        raise HTTPException(400, f"该明细行已有委外订单（{existing.outsource_no}），无需重复转外发")
-    os_order = OutsourceOrder(
-        outsource_no=generate_doc_no(db, "WO", OutsourceOrder, "outsource_no"),
-        sales_order_id=order_id,
-        sales_item_id=item_id,
-        product_id=item.product_id,
-        quantity=item.quantity,
-        status="待确认",
-        created_by=current_user.display_name or current_user.username,
-    )
-    db.add(os_order)
     item.production_status = "已通知外发"
     db.commit()
-    return {"message": f"已生成委外订单 {os_order.outsource_no}", "outsource_no": os_order.outsource_no}
+    return {"message": "已转外发，请到「委外管理 → 销售订单转委外」办理委外"}
 
 
 # ==================== 备货批次认领（场景2：货先进来，后期挂销售单） ====================
