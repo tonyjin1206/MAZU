@@ -35,12 +35,12 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <div style="display: flex; gap: 4px; white-space: nowrap">
+            <div style="display: flex; gap: 8px; white-space: nowrap">
               <template v-if="row.status === '待处理'">
-                <el-button type="success" size="small" @click="handleToPurchase(row)">生成采购订单</el-button>
-                <el-button type="danger" link size="small" @click="handleClose(row)">关闭</el-button>
+                <el-button link type="success" @click="handleToPurchase(row)">生成采购订单</el-button>
+                <el-button link type="danger" @click="handleClose(row)">关闭</el-button>
               </template>
-              <el-button v-else type="primary" size="small" @click="openDetail(row)">详情</el-button>
+              <el-button v-else link type="primary" @click="openDetail(row)">详情</el-button>
             </div>
           </template>
         </el-table-column>

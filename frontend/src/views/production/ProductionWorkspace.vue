@@ -53,33 +53,33 @@
             <template #default="{ row }"><el-tag :type="tagType(row.process_status)" size="small">{{ row.process_status }}</el-tag></template>
           </el-table-column>
           <el-table-column label="委外商" min-width="120" prop="outsourcer_name" />
-          <el-table-column label="操作" min-width="380">
+          <el-table-column label="操作" min-width="300">
             <template #default="{ row }">
-              <div style="display: flex; gap: 4px; white-space: nowrap">
-                <el-button v-if="row.process_status !== '已完工' && row.process_status !== '待排产'" size="small" type="warning" @click="openIssueByRow(row)">发料</el-button>
-                <el-button v-if="row.process_status !== '已完工' && row.process_status !== '待排产'" size="small" type="danger" @click="openCancelIssueByRow(row)">取消发料</el-button>
-                <el-button v-if="row.process_status === '待发料' || row.process_status === '已发料' || row.process_status === '加工中'" size="small" type="success" @click="openFinishByRow(row)">完工</el-button>
-                <el-button v-if="row.process_status !== '待排产'" size="small" type="info" @click="handleRevertByRow(row)">反退</el-button>
+              <div style="display: flex; gap: 8px; white-space: nowrap">
+                <el-button v-if="row.process_status !== '已完工' && row.process_status !== '待排产'" link type="warning" @click="openIssueByRow(row)">发料</el-button>
+                <el-button v-if="row.process_status !== '已完工' && row.process_status !== '待排产'" link type="danger" @click="openCancelIssueByRow(row)">取消发料</el-button>
+                <el-button v-if="row.process_status === '待发料' || row.process_status === '已发料' || row.process_status === '加工中'" link type="success" @click="openFinishByRow(row)">完工</el-button>
+                <el-button v-if="row.process_status !== '待排产'" link type="info" @click="handleRevertByRow(row)">反退</el-button>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="入库" width="160">
+          <el-table-column label="入库" width="150">
             <template #default="{ row }">
-              <div style="display: flex; gap: 4px; white-space: nowrap">
-                <el-button v-if="row._isFirst && row.status !== '已关闭'" size="small" type="success" @click="openReceiptByRow(row)">入库</el-button>
-                <el-button v-if="row._isFirst && row.last_receipt_id && row.status !== '已关闭'" size="small" type="danger" @click="handleCancelReceiptByRow(row)">取消入库</el-button>
-                <el-button v-if="row._isFirst && row.status === '已关闭'" size="small" type="info" @click="handleUncloseByRow(row)">取消关闭</el-button>
+              <div style="display: flex; gap: 8px; white-space: nowrap">
+                <el-button v-if="row._isFirst && row.status !== '已关闭'" link type="success" @click="openReceiptByRow(row)">入库</el-button>
+                <el-button v-if="row._isFirst && row.last_receipt_id && row.status !== '已关闭'" link type="danger" @click="handleCancelReceiptByRow(row)">取消入库</el-button>
+                <el-button v-if="row._isFirst && row.status === '已关闭'" link type="info" @click="handleUncloseByRow(row)">取消关闭</el-button>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="详情" width="80">
+          <el-table-column label="详情" width="70">
             <template #default="{ row }">
-              <el-button v-if="row._isFirst" size="small" type="primary" @click="openDetailByRow(row)">详情</el-button>
+              <el-button v-if="row._isFirst" link type="primary" @click="openDetailByRow(row)">详情</el-button>
             </template>
           </el-table-column>
           <el-table-column label="关闭" width="60">
             <template #default="{ row }">
-              <el-button v-if="row._isFirst && row.status !== '已关闭'" size="small" type="info" @click="handleCloseByRow(row)">关闭</el-button>
+              <el-button v-if="row._isFirst && row.status !== '已关闭'" link type="info" @click="handleCloseByRow(row)">关闭</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -156,7 +156,7 @@
         <el-table-column label="批次号" min-width="130" prop="batch_no" />
         <el-table-column label="数量" width="80" align="right" prop="quantity" />
         <el-table-column label="操作" width="80">
-          <template #default="{ row }"><el-button size="small" type="danger" @click="doCancelIssue(row)">取消</el-button></template>
+          <template #default="{ row }"><el-button link type="danger" @click="doCancelIssue(row)">取消</el-button></template>
         </el-table-column>
       </el-table>
       <div v-if="!cancelIssueList.length" style="text-align: center; color: #909399; padding: 20px">无发料记录</div>

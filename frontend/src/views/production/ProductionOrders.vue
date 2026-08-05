@@ -49,10 +49,10 @@
         <el-table-column prop="due_date" label="交期" width="110" sortable />
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <div style="display: flex; gap: 4px; white-space: nowrap">
+            <div style="display: flex; gap: 8px; white-space: nowrap">
               <template v-if="row.status === '待确认'">
                 <el-dropdown @command="(cmd) => handleSetType(row, cmd)">
-                  <el-button type="warning" size="small">确认备货方式<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+                  <el-button link type="warning">确认备货方式<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item command="自产">🏭 自产</el-dropdown-item>
@@ -61,24 +61,24 @@
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
-                <el-button type="primary" size="small" @click="openDetail(row)">查看</el-button>
-                <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+                <el-button link type="primary" @click="openDetail(row)">查看</el-button>
+                <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
               </template>
               <template v-else-if="row.status === '待排产'">
-                <el-button type="primary" size="small" @click="openDetail(row)">维护</el-button>
-                <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
+                <el-button link type="primary" @click="openDetail(row)">维护</el-button>
+                <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
               </template>
               <template v-else-if="row.status === '待采购' || row.status === '采购中'">
-                <el-button type="primary" size="small" @click="openDetail(row)">详情</el-button>
-                <el-button v-if="row.status === '待采购'" type="success" size="small" @click="handleToPurchase(row)">推采购需求</el-button>
+                <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+                <el-button v-if="row.status === '待采购'" link type="success" @click="handleToPurchase(row)">推采购需求</el-button>
               </template>
               <template v-else-if="row.status === '已排产' || row.status === '生产中'">
-                <el-button type="primary" size="small" @click="openDetail(row, 'view')">详情</el-button>
-                <el-button type="success" size="small" @click="goWorkspace">工作台</el-button>
-                <el-button type="warning" link size="small" @click="handleUnrelease(row)">反派产</el-button>
+                <el-button link type="primary" @click="openDetail(row, 'view')">详情</el-button>
+                <el-button link type="success" @click="goWorkspace">工作台</el-button>
+                <el-button link type="warning" @click="handleUnrelease(row)">反派产</el-button>
               </template>
               <template v-else>
-                <el-button type="primary" size="small" @click="openDetail(row, 'view')">详情</el-button>
+                <el-button link type="primary" @click="openDetail(row, 'view')">详情</el-button>
               </template>
             </div>
           </template>
