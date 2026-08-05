@@ -33,6 +33,12 @@
           <span>预警提醒设置</span>
         </el-menu-item>
 
+        <!-- 通知查询（1级菜单，管理端全量验证用） -->
+        <el-menu-item index="/system/notifications" v-if="hasPerm('menu:system:notifications')">
+          <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-inbox-in"/></svg>
+          <span>通知查询</span>
+        </el-menu-item>
+
         <!-- 系统管理 -->
         <el-sub-menu index="system" v-if="hasPerm('menu:system:users') || hasPerm('menu:system:roles') || hasPerm('menu:system:wecom')">
           <template #title>
@@ -133,6 +139,33 @@
           <span style="margin-left: 10px; font-size: 14px; color: #606266">{{ pageTitle }}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 12px">
+          <!-- 站内通知铃铛 -->
+          <el-popover placement="bottom-end" :width="380" trigger="click" @show="fetchNotifs">
+            <template #reference>
+              <el-badge :value="unreadCount" :hidden="unreadCount === 0" :max="99" class="bell-badge">
+                <el-button text class="bell-btn" :class="{ 'bell-ring': unreadCount > 0 }">
+                  <svg width="18" height="18" style="vertical-align: middle"><use href="#icon-bell"/></svg>
+                </el-button>
+              </el-badge>
+            </template>
+            <div style="max-height: 420px; overflow-y: auto">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px">
+                <span style="font-weight: 600; font-size: 14px">通知</span>
+                <el-button link type="primary" @click="markAllRead">全部已读</el-button>
+              </div>
+              <div v-if="notifs.length === 0" style="text-align: center; color: #909399; padding: 24px 0">暂无通知</div>
+              <div v-for="n in notifs" :key="n.id" @click="openNotif(n)"
+                   style="padding: 8px 6px; border-bottom: 1px solid #f0f0f0; cursor: pointer; border-radius: 4px"
+                   :style="{ background: n.read_status === 0 ? '#f5f7fa' : 'transparent' }">
+                <div style="display: flex; justify-content: space-between; align-items: center">
+                  <span style="font-size: 13px; font-weight: 600; color: #303133">{{ n.title }}</span>
+                  <el-tag v-if="n.read_status === 0" size="small" type="danger">新</el-tag>
+                </div>
+                <div style="font-size: 12px; color: #606266; margin-top: 2px; line-height: 1.4">{{ n.content }}</div>
+                <div style="font-size: 12px; color: #909399; margin-top: 2px">{{ n.created_at }}</div>
+              </div>
+            </div>
+          </el-popover>
           <el-tag type="info" size="small">{{ user?.role === 'admin' ? '管理员' : '操作员' }}</el-tag>
           <span style="font-size: 13px">{{ user?.display_name || user?.username }}</span>
           <el-button @click="logout" type="danger" size="small" plain>退出</el-button>
@@ -150,9 +183,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import MatsuAssistant from './MatsuAssistant.vue'
+import { notificationApi } from '../api/foundation'
 
 const route = useRoute()
 const router = useRouter()
@@ -161,10 +196,67 @@ const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 const perms = ref(JSON.parse(localStorage.getItem('permissions') || '[]'))
 function hasPerm(code) { return perms.value.includes(code) }
 
+// ============ 站内通知铃铛 ============
+const unreadCount = ref(0)
+const notifs = ref([])
+let notifTimer = null
+
+async function fetchUnread() {
+  if (!user.value?.id) return
+  try {
+    const r = await notificationApi.unreadCount()
+    unreadCount.value = r.count || 0
+  } catch {}
+}
+
+async function fetchNotifs() {
+  try {
+    notifs.value = await notificationApi.latest({ limit: 10, only_unread: true }) || []
+  } catch {}
+}
+
+async function markAllRead() {
+  try {
+    await notificationApi.readAll()
+    unreadCount.value = 0
+    notifs.value = []  // 全部已读 → 弹框不再显示
+    ElMessage.success('已全部标记为已读')
+  } catch {}
+}
+
+const DOC_ROUTES = {
+  so_order: '/sales/orders',
+  mo_production: '/production/orders',
+  ar_account: '/sales/ar',
+  ap_account: '/purchase/ap',
+}
+
+async function openNotif(n) {
+  if (n.read_status === 0) {
+    try {
+      await notificationApi.markRead(n.id)
+      n.read_status = 1
+      // 已读 → 从弹框列表移除（弹框只显示未读）
+      notifs.value = notifs.value.filter(x => x.id !== n.id)
+      if (unreadCount.value > 0) unreadCount.value -= 1
+    } catch {}
+  }
+  const target = DOC_ROUTES[n.doc_type]
+  if (target) router.push(target)
+}
+
 onMounted(() => {
   if (!user.value?.id) {
     router.push('/login')
+    return
   }
+  fetchUnread()
+  // 每 60 秒刷新未读数
+  notifTimer = setInterval(fetchUnread, 60000)
+})
+
+onUnmounted(() => {
+  if (notifTimer) clearInterval(notifTimer)
 })
 
 const pageTitle = computed(() => {
@@ -205,6 +297,7 @@ const pageTitle = computed(() => {
     '/system/bot': 'Agent设置',
     '/system/bot-chat': 'AI 助手',
     '/system/reminders': '预警提醒设置',
+    '/system/notifications': '通知查询',
   }
   if (path.startsWith('/production/detail')) return '生产订单详情'
   return titles[path] || 'MTS'
@@ -245,6 +338,31 @@ function logout() {
 }
 .el-main {
   font-size: 11px;
+}
+/* 通知铃铛：无提醒静态灰 / 有提醒红色动态闪烁 + 红点 */
+.bell-btn {
+  color: #909399;
+  padding: 3px;
+  display: inline-flex;
+  margin-right: 24px; /* 与右侧操作员/退出拉开距离，铃铛视觉靠左 */
+}
+.bell-ring {
+  color: #f56c6c;
+  animation: bell-flash 1.2s ease-in-out infinite;
+}
+/* 红点数字：小一号、垂直对齐铃铛中线（top 定位代替 translateY） */
+.bell-badge :deep(.el-badge__content) {
+  font-size: 10px;
+  height: 15px;
+  line-height: 15px;
+  min-width: 15px;
+  padding: 0 4px;
+  top: 5px;              /* 铃铛18px+padding3px，中线≈12px，badge中心=top+7.5 */
+  transform: translate(40%, 0);
+}
+@keyframes bell-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
 .el-main :deep(*) {
   font-size: 11px;

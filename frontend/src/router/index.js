@@ -58,6 +58,7 @@ const routes = [
       { path: 'system/bot', name: 'BotConfig', component: () => import('../views/system/BotConfig.vue'), meta: { perm: 'menu:system:bot' } },
       { path: 'system/bot-chat', name: 'BotChat', component: () => import('../views/system/BotChat.vue'), meta: { perm: 'menu:system:bot-chat' } },
       { path: 'system/reminders', name: 'Reminders', component: () => import('../views/system/Reminders.vue'), meta: { perm: 'menu:system:reminders' } },
+      { path: 'system/notifications', name: 'Notifications', component: () => import('../views/system/Notifications.vue'), meta: { perm: 'menu:system:notifications' } },
     ],
   },
 ]

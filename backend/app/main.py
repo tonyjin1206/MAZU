@@ -62,6 +62,7 @@ def _seed_rbac(db):
         {"code": "menu:system:bot", "name": "Agent设置", "module": "系统管理", "description": ""},
         {"code": "menu:system:bot-chat", "name": "AI 助手", "module": "系统管理", "description": ""},
         {"code": "menu:system:reminders", "name": "预警提醒设置", "module": "系统管理", "description": ""},
+        {"code": "menu:system:notifications", "name": "通知查询", "module": "系统管理", "description": "管理端全量通知查询（测试验证用）"},
     ]
 
     # 插入权限（不存在则创建）
@@ -178,6 +179,83 @@ def _seed_currencies(db):
         print(f"✅ 已预置 {added} 个常用币种")
 
 
+# ====== 默认提醒规则种子数据 ======
+
+DEFAULT_REMINDER_RULES = [
+    {
+        "code": "SO_APPROVED",
+        "name": "销售订单审核提醒",
+        "trigger_type": "event",
+        "title_template": "销售订单 {order_no} 已审核，请安排排产",
+        "content_template": "订单 {order_no}（客户 {customer_name}）已审核通过，生成 {mo_count} 个生产订单，请及时排产。",
+        "target_roles": ["production_manager"],
+        "channel": ["inapp"],
+    },
+    {
+        "code": "MO_PLANNED",
+        "name": "排产备料提醒",
+        "trigger_type": "event",
+        "title_template": "生产订单 {order_no} 已排产，请关注备料",
+        "content_template": "生产订单 {order_no}（产品 {product_name}，数量 {quantity}）已排产，请确认原料备货。",
+        "target_roles": ["purchase_manager"],
+        "channel": ["inapp"],
+    },
+    {
+        "code": "MO_OUTSOURCED",
+        "name": "转外购提醒",
+        "trigger_type": "event",
+        "title_template": "生产订单 {order_no} 已转外购，请安排采购",
+        "content_template": "生产订单 {order_no}（产品 {product_name}）已确认为外购，请及时安排采购。",
+        "target_roles": ["purchase_manager"],
+        "channel": ["inapp", "wecom"],
+    },
+    {
+        "code": "AR_CREATED",
+        "name": "应收生成提醒",
+        "trigger_type": "event",
+        "title_template": "应收 {ar_no} 已生成，请跟进回款/入账",
+        "content_template": "应收 {ar_no}（客户 {customer_name}）已生成，金额 {amount}，到期日 {due_date}。销售请跟进回款，财务请及时入账。",
+        "target_roles": ["sales_manager", "finance_manager"],
+        "channel": ["inapp", "wecom"],
+    },
+    {
+        "code": "AR_DUE",
+        "name": "应收到期预警",
+        "trigger_type": "schedule",
+        "title_template": "应收 {ar_no} 将于 {due_date} 到期",
+        "content_template": "应收 {ar_no}（客户 {customer_name}）余额 {balance}，将于 {due_date} 到期，请跟进回款。",
+        "target_roles": ["sales_manager"],
+        "channel": ["inapp"],
+        "advance_days": 7,
+    },
+    {
+        "code": "AP_DUE",
+        "name": "应付到期预警",
+        "trigger_type": "schedule",
+        "title_template": "应付 {ap_no} 将于 {due_date} 到期",
+        "content_template": "应付 {ap_no}（供应商 {supplier_name}）余额 {balance}，将于 {due_date} 到期，请安排付款。",
+        "target_roles": ["finance_manager"],
+        "channel": ["inapp"],
+        "advance_days": 7,
+    },
+]
+
+
+def _seed_reminder_rules(db):
+    """预置默认提醒规则（幂等：code 已存在则跳过；已存在仅补缺失字段）"""
+    from app.models.system_config import ReminderRule
+    added = 0
+    for rd in DEFAULT_REMINDER_RULES:
+        existing = db.query(ReminderRule).filter(ReminderRule.code == rd["code"]).first()
+        if existing:
+            continue
+        db.add(ReminderRule(**rd))
+        added += 1
+    if added:
+        db.commit()
+        print(f"✅ 已预置 {added} 条默认提醒规则")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期"""
@@ -187,6 +265,7 @@ async def lifespan(app: FastAPI):
     try:
         _seed_rbac(db)
         _seed_currencies(db)
+        _seed_reminder_rules(db)
     finally:
         db.close()
     # 每日汇率定时任务（每天 09:00 从腾讯财经拉取一次，失败静默次日重试）
@@ -256,6 +335,8 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router, prefix="/api", tags=["驾驶舱"])
     from app.routers.system_config import router as system_config_router
     app.include_router(system_config_router, prefix="/api")
+    from app.routers.notification import router as notification_router
+    app.include_router(notification_router, prefix="/api")
     from app.routers.bot_chat import router as bot_chat_router
     app.include_router(bot_chat_router, prefix="/api")
 

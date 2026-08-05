@@ -401,6 +401,13 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db),
         db.flush()  # 立即写入，确保下一个编号的 MAX 查询能识别
         mo_nos.append(prod.order_no)
     db.commit()
+    # 埋点：提醒生产经理排产（规则 SO_APPROVED，可配置）
+    from app.services.reminder import notify
+    notify(db, "SO_APPROVED", "so_order", order.id, order.order_no, {
+        "order_no": order.order_no,
+        "customer_name": (order.customer.name_cn if order.customer else "") or "",
+        "mo_count": len(mo_nos),
+    })
     return {"message": f"订单已审核，已生成{len(mo_nos)}个生产订单", "production_order_nos": mo_nos}
 
 
@@ -1111,6 +1118,14 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     db.add(ar)
 
     db.commit()
+    # 埋点：应收生成 → 提醒销售催收 + 财务入账（规则 AR_CREATED，可配置；红字应收不触发）
+    from app.services.reminder import notify
+    notify(db, "AR_CREATED", "ar_account", ar.id, ar.ar_no, {
+        "ar_no": ar.ar_no,
+        "customer_name": (order.customer.name_cn if order.customer else "") or "",
+        "amount": ar.amount,
+        "due_date": str(due_date),
+    })
     return {"id": invoice.id, "invoice_no": data["invoice_no"], "ar_no": ar_no_str, "message": "开票成功，应收已生成"}
 
 

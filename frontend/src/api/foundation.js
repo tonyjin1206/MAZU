@@ -24,6 +24,22 @@ export const systemConfigApi = {
     delete: (id) => request.delete(`/system/reminders/${id}`),
     logs: (params) => request.get('/system/reminder-logs', { params }),
   },
+  reminderRules: {
+    list: () => request.get('/system/reminder-rules'),
+    create: (data) => request.post('/system/reminder-rules', data),
+    update: (id, data) => request.put(`/system/reminder-rules/${id}`, data),
+    delete: (id) => request.delete(`/system/reminder-rules/${id}`),
+  },
+}
+
+// 站内通知 API
+export const notificationApi = {
+  list: (params) => request.get('/notifications', { params }),
+  unreadCount: () => request.get('/notifications/unread-count'),
+  latest: (params) => request.get('/notifications/latest', { params }),
+  markRead: (id) => request.put(`/notifications/${id}/read`, { read_status: 1 }),
+  readAll: () => request.put('/notifications/read-all'),
+  adminQuery: (params) => request.get('/notifications/admin-query', { params }),
 }
 
 // 认证相关

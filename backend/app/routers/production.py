@@ -300,6 +300,13 @@ def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db),
         prod.status = "待排产"
 
     db.commit()
+    # 埋点：转外购 → 提醒采购经理安排采购（规则 MO_OUTSOURCED，可配置）
+    if ptype == "外购":
+        from app.services.reminder import notify
+        notify(db, "MO_OUTSOURCED", "mo_production", prod.id, prod.order_no, {
+            "order_no": prod.order_no,
+            "product_name": (prod.product.name_cn if prod.product else "") or "",
+        })
     return {"message": f"备货方式已确认为「{ptype}」", "production_type": ptype, "status": prod.status}
 
 
@@ -471,6 +478,13 @@ def release_production_new(prod_id: int, db: Session = Depends(get_db), current_
     if prod.sales_order_id:
         _sync_sales_order_status(prod.sales_order_id, db)
     db.commit()
+    # 埋点：提醒采购经理关注备料（规则 MO_PLANNED，可配置）
+    from app.services.reminder import notify
+    notify(db, "MO_PLANNED", "mo_production", prod.id, prod.order_no, {
+        "order_no": prod.order_no,
+        "product_name": (prod.product.name_cn if prod.product else "") or "",
+        "quantity": prod.quantity,
+    })
     return {"message": "派产成功，生产订单已转为已排产状态"}
 
 

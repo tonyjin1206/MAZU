@@ -64,11 +64,12 @@ def setup_db():
             conn.execute(text(f"DELETE FROM {table.name}"))
         conn.execute(text("PRAGMA foreign_keys=ON"))
         conn.commit()
-    from app.main import _seed_rbac, _seed_currencies
+    from app.main import _seed_rbac, _seed_currencies, _seed_reminder_rules
     db = SessionLocal()
     try:
         _seed_currencies(db)
         _seed_rbac(db)
+        _seed_reminder_rules(db)
     finally:
         db.close()
     yield

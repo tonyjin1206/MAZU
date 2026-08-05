@@ -9,7 +9,7 @@ from app.models.auth import User
 from app.utils.auth import get_current_user, get_current_admin
 from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
-    ReminderConfig, ReminderLog,
+    ReminderConfig, ReminderLog, ReminderRule,
 )
 from app.utils.crypto import encrypt, decrypt, is_ciphertext
 from app.schemas.system_config import (
@@ -18,6 +18,7 @@ from app.schemas.system_config import (
     DEFAULT_SYSTEM_PROMPT,
     ReminderConfigCreate, ReminderConfigUpdate, ReminderConfigOut,
     ReminderLogOut, REMINDER_TYPES,
+    ReminderRuleCreate, ReminderRuleUpdate, ReminderRuleOut,
 )
 
 router = APIRouter(prefix="/system", tags=["系统配置"])
@@ -275,3 +276,65 @@ def list_reminder_logs(
         ReminderLog.pushed_at.desc()
     ).offset((page - 1) * page_size).limit(page_size).all()
     return [ReminderLogOut.model_validate(r) for r in items]
+
+
+# ==================== 提醒规则（D8：规则配置化） ====================
+
+@router.get("/reminder-rules", response_model=list[ReminderRuleOut])
+def list_reminder_rules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """提醒规则列表（按提醒点编码排序）"""
+    items = db.query(ReminderRule).order_by(ReminderRule.code).all()
+    return [ReminderRuleOut.model_validate(r) for r in items]
+
+
+@router.post("/reminder-rules", response_model=ReminderRuleOut)
+def create_reminder_rule(
+    data: ReminderRuleCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """新建提醒规则（code 必须对应代码埋点，不可凭空造触发逻辑 — D8 边界）"""
+    existing = db.query(ReminderRule).filter(ReminderRule.code == data.code).first()
+    if existing:
+        raise HTTPException(400, f"提醒点 {data.code} 已存在规则")
+    rule = ReminderRule(**data.model_dump())
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return ReminderRuleOut.model_validate(rule)
+
+
+@router.put("/reminder-rules/{rule_id}", response_model=ReminderRuleOut)
+def update_reminder_rule(
+    rule_id: int,
+    data: ReminderRuleUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """更新提醒规则（内容/周期/方式/角色/去重窗口全可配）"""
+    rule = db.query(ReminderRule).filter(ReminderRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(404, "提醒规则不存在")
+    update_data = data.model_dump(exclude_unset=True)
+    for k, v in update_data.items():
+        setattr(rule, k, v)
+    db.commit()
+    db.refresh(rule)
+    return ReminderRuleOut.model_validate(rule)
+
+
+@router.delete("/reminder-rules/{rule_id}")
+def delete_reminder_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    rule = db.query(ReminderRule).filter(ReminderRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(404, "提醒规则不存在")
+    db.delete(rule)
+    db.commit()
+    return {"message": "已删除"}
