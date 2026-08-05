@@ -252,6 +252,14 @@ const page = ref(1)
 const pageSize = ref(20)
 const editDialog = ref(false)
 const selectInvoiceDialog = ref(false)
+
+// script 内金额格式化（$fm 仅模板可用，script 里用本地实现）
+const fmtMoney = (val) => {
+  if (val === null || val === undefined || val === '') return '¥0.00'
+  const n = typeof val === 'string' ? parseFloat(val) : val
+  if (isNaN(n)) return '¥0.00'
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 const currentDeclId = ref(null)
 const currentDeclNo = ref('')
 const currentDecl = ref(null)
@@ -560,7 +568,7 @@ async function confirmSelectReturn() {
   const rd = selectedReturn.value
   if (!rd) return
   await ElMessageBox.confirm(
-    `确认冲减退货单 ${rd.return_no}？将生成负数明细行（冲减出口额 ${$fm(Math.abs(rd.taxable_amount))}），申报表出口金额自动重算。`,
+    `确认冲减退货单 ${rd.return_no}？将生成负数明细行（冲减出口额 ${fmtMoney(Math.abs(rd.taxable_amount))}），申报表出口金额自动重算。`,
     '退货冲减确认', { type: 'warning', confirmButtonText: '确认冲减', cancelButtonText: '再想想' }
   )
   saving.value = true

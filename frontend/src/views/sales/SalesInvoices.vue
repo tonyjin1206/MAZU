@@ -168,6 +168,14 @@ const dialogVisible = ref(false)
 const editMode = ref(false)
 const submitting = ref(false)
 const formRef = ref(null)
+
+// script 内金额格式化（$fm 仅模板可用，script 里用本地实现）
+const fmtMoney = (val) => {
+  if (val === null || val === undefined || val === '') return '¥0.00'
+  const n = typeof val === 'string' ? parseFloat(val) : val
+  if (isNaN(n)) return '¥0.00'
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 const page = ref(1)
 const pageSize = ref(20)
 const total = ref(0)
@@ -350,7 +358,7 @@ function openRedReverse(row) {
 async function handleRedReverse() {
   if (!redForm.invoice_no) { ElMessage.warning('请输入红字发票号'); return }
   await ElMessageBox.confirm(
-    `确认全额红冲发票 ${redForm.orig_invoice_no}？红字金额 ${$fm(-redForm.orig_total)}，原发票将标记「已红冲」并自动生成等额红字应收。`,
+    `确认全额红冲发票 ${redForm.orig_invoice_no}？红字金额 ${fmtMoney(-redForm.orig_total)}，原发票将标记「已红冲」并自动生成等额红字应收。`,
     '红冲确认', { type: 'warning', confirmButtonText: '确认红冲', cancelButtonText: '再想想' }
   )
   redLoading.value = true

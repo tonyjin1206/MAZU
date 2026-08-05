@@ -137,6 +137,14 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
 
+// script 内金额格式化（$fm 仅模板可用，script 里用本地实现）
+const fmtMoney = (val) => {
+  if (val === null || val === undefined || val === '') return '¥0.00'
+  const n = typeof val === 'string' ? parseFloat(val) : val
+  if (isNaN(n)) return '¥0.00'
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 // 列筛选
 const dateFilters = ref([])
 const productFilters = ref([])
@@ -289,7 +297,7 @@ async function openReturn(row) {
     const od = await salesApi.orders.get(row.order_id, row.order_id)
     const invoiced = od.invoiced_amount || 0
     if (invoiced > 0) {
-      returnInvoiceHint.value = `该订单已开票 ${$fm(invoiced)}：退货涉及已开票部分时，请到「销售发票」列表全额红冲对应发票并补开新票（未开票部分无需处理）。`
+      returnInvoiceHint.value = `该订单已开票 ${fmtMoney(invoiced)}：退货涉及已开票部分时，请到「销售发票」列表全额红冲对应发票并补开新票（未开票部分无需处理）。`
     }
   } catch { /* 忽略提示加载失败 */ }
   returnVisible.value = true
@@ -308,7 +316,7 @@ async function handleReturn() {
     })
     let msg = res.message || '退货成功'
     if (res.invoice_status && res.invoice_status.invoiced_amount > 0) {
-      msg += `（该订单已开票 ${$fm(res.invoice_status.invoiced_amount)}，已红冲 ${$fm(res.invoice_status.red_reversed_amount)}，涉及已开票部分请做全额红冲）`
+      msg += `（该订单已开票 ${fmtMoney(res.invoice_status.invoiced_amount)}，已红冲 ${fmtMoney(res.invoice_status.red_reversed_amount)}，涉及已开票部分请做全额红冲）`
     }
     ElMessage.success(msg, 6000)
     returnVisible.value = false
