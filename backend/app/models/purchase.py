@@ -174,6 +174,9 @@ class Payment(Base):
     payment_method = Column(String(32), default="银行转账", comment="付款方式")
     remark = Column(Text)
     operator = Column(String(32))
+    reviewed = Column(Integer, default=0, comment="审核锁定: 1=已审核(财务确认,业务全部锁定)")
+    reviewed_by = Column(String(32), comment="审核人")
+    reviewed_at = Column(DateTime, comment="审核时间")
     created_at = Column(DateTime, default=func.now())
 
 

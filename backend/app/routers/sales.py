@@ -1,6 +1,6 @@
 """销售模块 API 路由 — 报价→订单→生产驱动→发货(批次)→报关→发票→应收→收款"""
 
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
@@ -1283,26 +1283,97 @@ def list_ar(
 
 @router.get("/ar/collection-detail", tags=["销售管理"])
 def list_ar_collection_detail(db: Session = Depends(get_db)):
-    """应收账款收付款明细 — 应收与收款配对，按应收日期排序"""
-    from app.models.sales import Collection, CollectionAllocation
-    rows = db.query(AccountsReceivable, Collection, CollectionAllocation).outerjoin(
-        CollectionAllocation, CollectionAllocation.ar_account_id == AccountsReceivable.id
-    ).outerjoin(Collection, Collection.id == CollectionAllocation.collection_id
-    ).order_by(AccountsReceivable.id).all()
-    result, seen = [], set()
-    for ar, coll, ca in rows:
-        key = f"{ar.id}-{ca.id if ca else 0}"
-        if key in seen: continue
-        seen.add(key)
-        cname = db.query(Customer.name_cn).filter(Customer.id == ar.customer_id).scalar() or ""
-        result.append({"customer_name": cname,
+    """应收账款明细 — 以应收单为行：核销/收款/转移汇总金额 + 行级流水（详情弹窗用）
+
+    每行 = 一张应收单（ar_id 唯一）。汇总字段：
+      transfer_amount    核销转移累计（source 转出为负 / target 转入为正）
+      transfer_from      转移来源单据号（逗号拼接）
+      collection_amount  收款净额（收款核销 + 退款核销，不含转移）
+      余额 = ar_amount - transfer_amount - collection_amount 恒成立
+    flows 为该应收的行级流水（收款/退款核销 + 核销转移），详情弹窗展示。
+    """
+    from app.models.sales import Collection, CollectionAllocation, ArAdjustment
+    from app.models.foundation import Customer
+
+    ars = db.query(AccountsReceivable).all()
+    colls = {c.id: c for c in db.query(Collection).all()}
+    allocs = db.query(CollectionAllocation).all()
+    adjs = db.query(ArAdjustment).all()
+
+    cname_cache: dict = {}
+
+    def _cname(cid):
+        if cid not in cname_cache:
+            cname_cache[cid] = db.query(Customer.name_cn).filter(Customer.id == cid).scalar() or ""
+        return cname_cache[cid]
+
+    alloc_by_ar: dict = {}
+    for ca in allocs:
+        alloc_by_ar.setdefault(ca.ar_account_id, []).append(ca)
+    adj_by_ar: dict = {}
+    for adj in adjs:
+        adj_by_ar.setdefault(adj.source_ar_id, []).append(adj)
+        adj_by_ar.setdefault(adj.target_ar_id, []).append(adj)
+
+    ar_no_cache = {ar.id: ar.ar_no or "" for ar in ars}
+    result = []
+    for ar in ars:
+        ar_adjs = adj_by_ar.get(ar.id, [])
+        transfer_amount = 0.0
+        transfer_from = []
+        flows = []
+        # 核销转移流水（source 转出负向 / target 转入正向）
+        for adj in ar_adjs:
+            is_source = adj.source_ar_id == ar.id
+            other_id = adj.target_ar_id if is_source else adj.source_ar_id
+            other_no = ar_no_cache.get(other_id) or ""
+            amt = abs(adj.amount or 0)
+            transfer_amount += (-amt if is_source else amt)
+            if other_no and other_no not in transfer_from:
+                transfer_from.append(other_no)
+            flows.append({
+                "cr_date": str(adj.created_at)[:10] if adj.created_at else "",
+                "collection_no": "核销转移",
+                "collection_id": None,
+                "collected_amount": -amt if is_source else amt,
+                "flow_type": "核销转移",
+                "adj_id": adj.id,
+                "adj_direction": "source" if is_source else "target",
+                "other_ar_no": other_no,
+                "remark": (adj.remark or "") or "",
+            })
+        # 收款/退款核销流水
+        collection_nos = []
+        for ca in alloc_by_ar.get(ar.id, []):
+            coll = colls.get(ca.collection_id)
+            if coll and coll.collection_no and coll.collection_no not in collection_nos:
+                collection_nos.append(coll.collection_no)
+            flows.append({
+                "cr_date": str(coll.collection_date) if coll and coll.collection_date else "",
+                "collection_no": coll.collection_no if coll else "",
+                "collection_id": coll.id if coll else None,
+                "collected_amount": ca.allocated_amount or 0,
+                "flow_type": "退款核销" if (coll and (coll.amount or 0) < 0) else "收款核销",
+                "adj_id": None,
+                "adj_direction": "",
+                "other_ar_no": "",
+                "remark": (coll.remark if coll and coll.remark else "") or "",
+            })
+        # 收款净额（含收款核销 + 退款核销，不含转移）→ 余额 = 应收 - 核销转移 - 收款 恒成立
+        collection_amount = (ar.collected_amount or 0) - transfer_amount
+        flows.sort(key=lambda f: f["cr_date"])
+        result.append({
+            "customer_name": _cname(ar.customer_id),
             "ar_date": str(ar.created_at)[:10] if ar.created_at else "",
             "ar_no": ar.ar_no or "", "ar_id": ar.id, "customer_id": ar.customer_id,
             "ar_amount": ar.amount or 0,
-            "cr_date": str(coll.collection_date) if coll and coll.collection_date else "",
-            "collection_no": coll.collection_no if coll else "",
-            "collection_id": coll.id if coll else None,
-            "collected_amount": ca.allocated_amount if ca else 0,
+            "ar_collected": ar.collected_amount or 0,
+            "transfer_amount": round(transfer_amount, 2),
+            "transfer_from": ", ".join(transfer_from),
+            "transfer_count": len(ar_adjs),
+            "collection_amount": round(collection_amount, 2),
+            "collection_nos": ", ".join(collection_nos),
+            "flows": flows,
         })
     result.sort(key=lambda r: r["ar_date"])
     return {"items": result}
@@ -1436,6 +1507,31 @@ def transfer_ar(data: dict, db: Session = Depends(get_db), current_user: User = 
             "amount": amount, "message": f"核销转移成功：{source.ar_no} → {target.ar_no}（{amount:.2f}）"}
 
 
+@router.post("/ar/transfer/{adj_id}/cancel", tags=["销售管理"])
+def cancel_transfer_ar(adj_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """撤销核销转移 — 回滚转移账务（source 已退回加、target 已收回减）并删除调整记录"""
+    adj = db.query(ArAdjustment).filter(ArAdjustment.id == adj_id).first()
+    if not adj:
+        raise HTTPException(404, "核销转移记录不存在")
+    source = db.query(AccountsReceivable).filter(AccountsReceivable.id == adj.source_ar_id).first()
+    target = db.query(AccountsReceivable).filter(AccountsReceivable.id == adj.target_ar_id).first()
+    if not source or not target:
+        raise HTTPException(400, "关联应收记录不存在，无法撤销")
+    amt = adj.amount or 0
+    if (target.collected_amount or 0) < amt - 0.01:
+        raise HTTPException(400, f"目标应收已收 {target.collected_amount:.2f} 不足回退 {amt:.2f}，无法撤销（先撤销后续收款）")
+    # 回滚账务：balance = amount - collected 两端公式恢复
+    source.collected_amount = (source.collected_amount or 0) + amt
+    target.collected_amount = (target.collected_amount or 0) - amt
+    source.balance = source.amount - source.collected_amount
+    target.balance = target.amount - target.collected_amount
+    source.status = "已收款" if abs(source.balance or 0) < 0.01 else ("部分收款" if (source.collected_amount or 0) != 0 else "未收款")
+    target.status = "已收款" if abs(target.balance or 0) < 0.01 else ("部分收款" if (target.collected_amount or 0) != 0 else "未收款")
+    db.delete(adj)
+    db.commit()
+    return {"message": f"已撤销核销转移：{source.ar_no} → {target.ar_no}（{amt:.2f}）"}
+
+
 # ==================== 收款单管理 ====================
 
 @router.get("/collections", tags=["销售管理"])
@@ -1466,6 +1562,9 @@ def list_collections(
             "payment_method": c.payment_method,
             "remark": c.remark or "",
             "operator": c.operator or "",
+            "reviewed": c.reviewed or 0,
+            "reviewed_by": c.reviewed_by or "",
+            "reviewed_at": str(c.reviewed_at)[:19] if c.reviewed_at else "",
             "allocated_amount": sum(a.allocated_amount or 0 for a in allocs),
             "created_at": str(c.created_at) if c.created_at else "",
         })
@@ -1494,6 +1593,9 @@ def get_collection(collection_id: int, db: Session = Depends(get_db), current_us
         "currency_id": c.currency_id, "exchange_rate": c.exchange_rate,
         "payment_method": c.payment_method, "remark": c.remark or "",
         "operator": c.operator or "",
+        "reviewed": c.reviewed or 0,
+        "reviewed_by": c.reviewed_by or "",
+        "reviewed_at": str(c.reviewed_at)[:19] if c.reviewed_at else "",
         "created_at": str(c.created_at) if c.created_at else "",
         "allocations": [{
             "id": a.id, "ar_account_id": a.ar_account_id,
@@ -1508,6 +1610,8 @@ def update_collection(collection_id: int, data: dict, db: Session = Depends(get_
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
+    if c.reviewed:
+        raise HTTPException(400, "已审核收款单不可修改（财务确认，业务已锁定），请先取消审核")
     for field in ["payment_method", "remark", "collection_date"]:
         if field in data:
             val = data[field]
@@ -1518,11 +1622,43 @@ def update_collection(collection_id: int, data: dict, db: Session = Depends(get_
     return {"message": "收款单已更新"}
 
 
+@router.post("/collections/{collection_id}/review", tags=["销售管理"])
+def review_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """收款单审核 — 财务确认标记，审核后业务全部锁定（改/删禁止）"""
+    c = db.query(Collection).filter(Collection.id == collection_id).first()
+    if not c:
+        raise HTTPException(404, "收款单不存在")
+    if c.reviewed:
+        raise HTTPException(400, "该收款单已审核")
+    c.reviewed = 1
+    c.reviewed_by = current_user.display_name or current_user.username
+    c.reviewed_at = datetime.now()
+    db.commit()
+    return {"message": f"收款单已审核（{c.reviewed_by}，财务确认，业务锁定）"}
+
+
+@router.post("/collections/{collection_id}/unreview", tags=["销售管理"])
+def unreview_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """取消收款单审核 — 解除业务锁定"""
+    c = db.query(Collection).filter(Collection.id == collection_id).first()
+    if not c:
+        raise HTTPException(404, "收款单不存在")
+    if not c.reviewed:
+        raise HTTPException(400, "该收款单未审核")
+    c.reviewed = 0
+    c.reviewed_by = None
+    c.reviewed_at = None
+    db.commit()
+    return {"message": "已取消审核，业务解锁"}
+
+
 @router.delete("/collections/{collection_id}", tags=["销售管理"])
 def delete_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
+    if c.reviewed:
+        raise HTTPException(400, "已审核收款单不可删除（财务确认，业务已锁定），请先取消审核")
 
     # 获取核销记录并回滚应收
     allocs = db.query(CollectionAllocation).filter(CollectionAllocation.collection_id == c.id).all()

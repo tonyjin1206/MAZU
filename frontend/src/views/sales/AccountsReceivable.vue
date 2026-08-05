@@ -46,25 +46,50 @@
         <el-table-column prop="ar_date" label="应收日期" width="110" />
         <el-table-column prop="ar_no" label="应收单号" width="160" />
         <el-table-column label="应收金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ar_amount) }}</template></el-table-column>
-        <el-table-column prop="cr_date" label="收款日期" width="110" />
-        <el-table-column prop="collection_no" label="收款单号" width="160" />
-        <el-table-column label="收款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
-        <el-table-column label="余额" width="110" align="right">
+        <el-table-column label="收款单号" width="180">
           <template #default="{ row }">
-            <span :style="{ color: (row.ar_amount - row.collected_amount) < 0 ? '#f56c6c' : '#67c23a' }">{{ $fm(row.ar_amount - row.collected_amount) }}</span>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px">
+              <el-tag v-for="no in (row.collection_nos || '').split(',').map(s => s.trim()).filter(Boolean)" :key="no" size="small" type="info">{{ no }}</el-tag>
+              <span v-if="!(row.collection_nos || '').trim()" style="color: #909399">-</span>
+            </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="核销转移金额" width="110" align="right">
           <template #default="{ row }">
+            <span :style="{ color: (row.transfer_amount || 0) < 0 ? '#f56c6c' : '' }">{{ $fm(row.transfer_amount) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="转移来源单据号" width="180">
+          <template #default="{ row }">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px">
+              <el-tag v-for="no in (row.transfer_from || '').split(',').map(s => s.trim()).filter(Boolean)" :key="no" size="small" type="danger">{{ no }}</el-tag>
+              <span v-if="!(row.transfer_from || '').trim()" style="color: #909399">-</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="收款金额" width="120" align="right">
+          <template #default="{ row }">
+            <span :style="{ color: (row.collection_amount || 0) < 0 ? '#f56c6c' : '' }">{{ $fm(row.collection_amount) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="余额" width="110" align="right">
+          <template #default="{ row }">
+            <span :style="{ color: (row.ar_amount - (row.transfer_amount || 0) - (row.collection_amount || 0)) < 0 ? '#f56c6c' : '#67c23a' }">{{ $fm(row.ar_amount - (row.transfer_amount || 0) - (row.collection_amount || 0)) }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="240" align="center" fixed="right">
+          <template #default="{ row }">
+            <!-- 红字应收（应退客户）：有负余额才可退款/转移，结清后隐藏 -->
             <template v-if="row.ar_amount < 0">
-              <!-- 红字应收（应退客户）：退款 / 核销转移 -->
-              <el-button type="warning" size="small" @click="openRefund(row)">退款</el-button>
-              <el-button type="danger" size="small" @click="openTransfer(row)">核销转移</el-button>
+              <el-button v-if="(row.ar_amount - (row.ar_collected || 0)) < -0.01" link type="warning" @click="openRefund(row)">退款</el-button>
+              <el-button v-if="(row.ar_amount - (row.ar_collected || 0)) < -0.01" link type="danger" @click="openTransfer(row)">核销转移</el-button>
             </template>
+            <!-- 正应收：余额 > 0 始终可收款（核销转移后仍有余额也不隐藏） -->
             <template v-else>
-              <el-button v-if="!row.collection_no" type="primary" size="small" @click="openCollectionByDetail(row)">收款</el-button>
-              <el-button v-else type="success" size="small" @click="viewCollection(row)">查看收款单</el-button>
+              <el-button v-if="(row.ar_amount - (row.ar_collected || 0)) > 0.01" link type="primary" @click="openCollectionByDetail(row)">收款</el-button>
             </template>
+            <el-button v-if="row.transfer_count" link type="warning" @click="openCancelTransfer(row)">撤销转移</el-button>
+            <el-button link type="primary" @click="openArDetail(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -147,6 +172,69 @@
       </template>
     </el-dialog>
 
+    <!-- 应收详情弹窗（点击「详情」） -->
+    <el-dialog v-model="arDetailVisible" :title="`应收详情 — ${arDetail?.ar_no || ''}`" width="780px">
+      <template v-if="arDetail">
+        <el-descriptions :column="3" border style="margin-bottom: 10px">
+          <el-descriptions-item label="客户" span="2">{{ arDetail.customer_name }}</el-descriptions-item>
+          <el-descriptions-item label="应收日期">{{ arDetail.ar_date || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="应收金额">
+            <span :style="{ color: arDetail.ar_amount < 0 ? '#f56c6c' : '' }">{{ $fm(arDetail.ar_amount) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="累计已收">
+            <span :style="{ color: arDetail.ar_collected < 0 ? '#f56c6c' : '' }">{{ $fm(arDetail.ar_collected) }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="余额">
+            <span :style="{ color: arDetail.balance < 0 ? '#f56c6c' : '#67c23a', fontWeight: 'bold' }">{{ $fm(arDetail.balance) }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="arDetailFlows" stripe size="small" style="width: 100%">
+          <el-table-column prop="cr_date" label="流水日期" width="110" />
+          <el-table-column prop="collection_no" label="收款单号" width="160" />
+          <el-table-column label="金额" width="110" align="right">
+            <template #default="{ row }">
+              <span :style="{ color: row.collected_amount < 0 ? '#f56c6c' : '' }">{{ $fm(row.collected_amount) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="140">
+            <template #default="{ row }">{{ row.remark || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" align="center">
+            <template #default="{ row }">
+              <el-button v-if="row.collection_id" link type="success" @click="viewCollection(row)">查看</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </template>
+    </el-dialog>
+
+    <!-- 多笔核销转移：选择要撤销的转移（主表操作列「撤销转移」） -->
+    <el-dialog v-model="cancelTransferVisible" title="选择要撤销的核销转移" width="640px">
+      <el-table :data="cancelTransferList" stripe size="small" style="width: 100%">
+        <el-table-column prop="cr_date" label="日期" width="110" />
+        <el-table-column label="方向" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.adj_direction === 'source'" type="danger" size="small">转出</el-tag>
+            <el-tag v-else type="success" size="small">转入</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="对方应收" width="160">
+          <template #default="{ row }">{{ row.other_ar_no || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="金额" width="110" align="right">
+          <template #default="{ row }">{{ $fm(row.collected_amount) }}</template>
+        </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="100">
+          <template #default="{ row }">{{ row.remark || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90" align="center">
+          <template #default="{ row }">
+            <el-button link type="warning" @click="confirmCancelTransfer(row)">撤销</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
     <!-- 查看收款单弹窗 -->
     <el-dialog v-model="collectionDetailVisible" title="收款单详情" width="600px">
       <el-descriptions :column="2" border v-if="collectionDetail">
@@ -170,7 +258,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { salesApi } from '../../api/business'
 
 const loading = ref(false)
@@ -180,12 +268,25 @@ const searchKeyword = ref('')
 const dialogVisible = ref(false)
 const submitting = ref(false)
 
+// script 内金额格式化（$fm 仅模板可用，script 里用本地实现）
+const fmtMoney = (val) => {
+  if (val === null || val === undefined || val === '') return '¥0.00'
+  const n = typeof val === 'string' ? parseFloat(val) : val
+  if (isNaN(n)) return '¥0.00'
+  return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 const cdLoading = ref(false)
 const cdList = ref([])
 const cdFilter = ref('')
 
 const collectionDetailVisible = ref(false)
 const collectionDetail = ref(null)
+
+// 应收详情弹窗
+const arDetailVisible = ref(false)
+const arDetail = ref(null)
+const arDetailFlows = ref([])
 
 const form = reactive({
   ar_id: null, customer_id: null, customer_name: '', amount: 0,
@@ -234,12 +335,14 @@ function summaryTotal({ columns }) {
 }
 
 function cdTotal({ columns }) {
+  // 明细每行 = 一张应收单（后端已聚合），直接全行合计
   const sums = []
   columns.forEach((col, i) => {
     if (i === 0) { sums[i] = '合计'; return }
     if (col.label === '应收金额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.ar_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
-    else if (col.label === '收款金额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.collected_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
-    else if (col.label === '余额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.ar_amount || 0) - (r.collected_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    else if (col.label === '核销转移金额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.transfer_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    else if (col.label === '收款金额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.collection_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
+    else if (col.label === '余额') sums[i] = '¥' + collectionDetailList.value.reduce((s, r) => s + (r.ar_amount || 0) - (r.transfer_amount || 0) - (r.collection_amount || 0), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })
     else sums[i] = ''
   })
   return sums
@@ -317,8 +420,8 @@ function openCollectionByDetail(row) {
   form.customer_name = row.customer_name
   form.customer_id = row.customer_id
   form.amount = row.ar_amount
-  form.collected_amount = row.collected_amount || 0
-  form.balance = (row.ar_amount || 0) - (row.collected_amount || 0)
+  form.collected_amount = row.ar_collected || 0
+  form.balance = (row.ar_amount || 0) - (row.ar_collected || 0)
   form.collection_amount = form.balance
   form.collection_date = new Date().toISOString().slice(0, 10)
   form.payment_method = '银行转账'
@@ -337,6 +440,20 @@ async function viewCollection(row) {
   }
 }
 
+// 应收详情弹窗：应收汇总信息 + 该应收行级流水（收款/退款核销 + 核销转移）
+function openArDetail(row) {
+  arDetail.value = {
+    ar_no: row.ar_no || '',
+    customer_name: row.customer_name,
+    ar_date: row.ar_date || '',
+    ar_amount: row.ar_amount || 0,
+    ar_collected: row.ar_collected || 0,
+    balance: (row.ar_amount || 0) - (row.ar_collected || 0),
+  }
+  arDetailFlows.value = row.flows || []
+  arDetailVisible.value = true
+}
+
 // ===== 退款（红字应收 → 负数收款单） =====
 const refundVisible = ref(false)
 const refundLoading = ref(false)
@@ -346,7 +463,7 @@ const refundForm = reactive({
 })
 
 function openRefund(row) {
-  const balance = (row.ar_amount || 0) - (row.collected_amount || 0)
+  const balance = (row.ar_amount || 0) - (row.ar_collected || 0)
   refundForm.ar_id = row.ar_id
   refundForm.ar_no = row.ar_no || ''
   refundForm.customer_id = row.customer_id
@@ -371,7 +488,7 @@ async function handleRefund() {
       payment_method: refundForm.payment_method, remark: refundForm.remark,
       ar_account_id: refundForm.ar_id,
     })
-    ElMessage.success(`退款登记成功（${$fm(amount)}）`)
+    ElMessage.success(`退款登记成功（${fmtMoney(amount)}）`)
     refundVisible.value = false
     fetchData(); fetchCD()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退款失败') } finally { refundLoading.value = false }
@@ -387,12 +504,12 @@ const transferForm = reactive({
 })
 
 async function openTransfer(row) {
-  const balance = (row.ar_amount || 0) - (row.collected_amount || 0)
+  const balance = (row.ar_amount || 0) - (row.ar_collected || 0)
   transferForm.source_ar_id = row.ar_id
   transferForm.source_ar_no = row.ar_no || ''
   transferForm.max_amount = Math.abs(balance)
   transferForm.target_ar_id = null
-  transferForm.amount = Math.min(transferForm.max_amount, 1)
+  transferForm.amount = transferForm.max_amount
   transferForm.remark = ''
   transferVisible.value = true
   // 加载同客户正余额应收作为目标
@@ -420,6 +537,35 @@ async function handleTransfer() {
     transferVisible.value = false
     fetchData(); fetchCD()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '核销转移失败') } finally { transferLoading.value = false }
+}
+
+// ===== 撤销核销转移（主表操作列，针对应收单；多笔转移时弹窗选择） =====
+const cancelTransferVisible = ref(false)
+const cancelTransferList = ref([])
+
+function openCancelTransfer(row) {
+  const flows = (row.flows || []).filter(f => f.flow_type === '核销转移')
+  if (flows.length <= 1) {
+    if (flows[0]) confirmCancelTransfer(flows[0])
+  } else {
+    cancelTransferList.value = flows
+    cancelTransferVisible.value = true
+  }
+}
+
+function confirmCancelTransfer(flow) {
+  const dirText = flow.adj_direction === 'source' ? `转出至 ${flow.other_ar_no || ''}` : `来源 ${flow.other_ar_no || ''}`
+  ElMessageBox.confirm(
+    `确认撤销该笔核销转移（${fmtMoney(Math.abs(flow.collected_amount || 0))}，${dirText}）？源应收负余额将恢复，目标应收已收回退。`,
+    '撤销核销转移', { confirmButtonText: '确认撤销', cancelButtonText: '取消', type: 'warning' }
+  ).then(async () => {
+    try {
+      const res = await salesApi.ar.cancelTransfer(flow.adj_id)
+      ElMessage.success(res.message || '已撤销核销转移')
+      cancelTransferVisible.value = false
+      fetchData(); fetchCD()
+    } catch (e) { ElMessage.error(e.response?.data?.detail || '撤销失败') }
+  }).catch(() => {})
 }
 
 onMounted(() => {

@@ -24,5 +24,7 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8788,
         reload=not is_production,
+        # dev 排除 DB/缓存文件，避免每次写库（SQLite wal）触发全量 reload
+        reload_excludes=["data/*", "*.db", "*.db-wal", "*.db-shm", ".pytest_cache/*"] if not is_production else None,
         log_level="info",
     )

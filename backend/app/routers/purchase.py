@@ -1260,6 +1260,9 @@ def list_payments(
             "payment_method": p.payment_method,
             "remark": p.remark or "",
             "operator": p.operator or "",
+            "reviewed": p.reviewed or 0,
+            "reviewed_by": p.reviewed_by or "",
+            "reviewed_at": str(p.reviewed_at)[:19] if p.reviewed_at else "",
             "allocated_amount": sum(a.allocated_amount or 0 for a in allocs),
             "created_at": str(p.created_at) if p.created_at else "",
         })
@@ -1284,6 +1287,9 @@ def get_payment(payment_id: int, db: Session = Depends(get_db), current_user: Us
         "currency_id": p.currency_id, "exchange_rate": p.exchange_rate,
         "payment_method": p.payment_method, "remark": p.remark or "",
         "operator": p.operator or "",
+        "reviewed": p.reviewed or 0,
+        "reviewed_by": p.reviewed_by or "",
+        "reviewed_at": str(p.reviewed_at)[:19] if p.reviewed_at else "",
         "created_at": str(p.created_at) if p.created_at else "",
         "allocations": [{
             "id": a.id, "ap_account_id": a.ap_account_id,
@@ -1298,6 +1304,8 @@ def update_payment(payment_id: int, data: dict, db: Session = Depends(get_db), c
     p = db.query(Payment).filter(Payment.id == payment_id).first()
     if not p:
         raise HTTPException(404, "付款单不存在")
+    if p.reviewed:
+        raise HTTPException(400, "已审核付款单不可修改（财务确认，业务已锁定），请先取消审核")
     for field in ["payment_method", "remark", "payment_date"]:
         if field in data:
             val = data[field]
@@ -1308,11 +1316,43 @@ def update_payment(payment_id: int, data: dict, db: Session = Depends(get_db), c
     return {"message": "付款单已更新"}
 
 
+@router.post("/payments/{payment_id}/review", tags=["采购管理"])
+def review_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """付款单审核 — 财务确认标记，审核后业务全部锁定（改/删禁止）"""
+    p = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(404, "付款单不存在")
+    if p.reviewed:
+        raise HTTPException(400, "该付款单已审核")
+    p.reviewed = 1
+    p.reviewed_by = current_user.display_name or current_user.username
+    p.reviewed_at = datetime.now()
+    db.commit()
+    return {"message": f"付款单已审核（{p.reviewed_by}，财务确认，业务锁定）"}
+
+
+@router.post("/payments/{payment_id}/unreview", tags=["采购管理"])
+def unreview_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """取消付款单审核 — 解除业务锁定"""
+    p = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(404, "付款单不存在")
+    if not p.reviewed:
+        raise HTTPException(400, "该付款单未审核")
+    p.reviewed = 0
+    p.reviewed_by = None
+    p.reviewed_at = None
+    db.commit()
+    return {"message": "已取消审核，业务解锁"}
+
+
 @router.delete("/payments/{payment_id}", tags=["采购管理"])
 def delete_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     p = db.query(Payment).filter(Payment.id == payment_id).first()
     if not p:
         raise HTTPException(404, "付款单不存在")
+    if p.reviewed:
+        raise HTTPException(400, "已审核付款单不可删除（财务确认，业务已锁定），请先取消审核")
     allocs = db.query(PaymentAllocation).filter(PaymentAllocation.payment_id == p.id).all()
     for alloc in allocs:
         ap = db.query(AccountsPayable).filter(AccountsPayable.id == alloc.ap_account_id).first()
@@ -1358,6 +1398,7 @@ def list_ap(
         result.append({
             "id": ap.id, "ap_no": ap.ap_no or "",
             "source_type": ap.source_type,
+            "source_id": ap.source_id,
             "supplier_id": ap.supplier_id,
             "supplier_name": supplier.name if supplier else "",
             "amount": ap.amount, "paid_amount": ap.paid_amount,
@@ -1371,25 +1412,57 @@ def list_ap(
 
 @router.get("/ap/payment-detail", tags=["采购管理"])
 def list_ap_payment_detail(db: Session = Depends(get_db)):
+    """应付账款明细 — 以应付单为行：付款汇总金额 + 行级流水（详情弹窗用）
+
+    每行 = 一张应付单（ap_id 唯一）。汇总字段：
+      payment_nos   付款单号（逗号拼接，前端 tag 展示）
+      paid_amount   已付金额（付款核销累计）
+      余额 = ap_amount - paid_amount 恒成立
+    flows 为该应付的行级付款核销流水，详情弹窗展示。
+    """
     from app.models.purchase import Payment, PaymentAllocation
-    rows = db.query(AccountsPayable, Payment, PaymentAllocation).outerjoin(
-        PaymentAllocation, PaymentAllocation.ap_account_id == AccountsPayable.id
-    ).outerjoin(Payment, Payment.id == PaymentAllocation.payment_id
-    ).order_by(AccountsPayable.id).all()
-    result, seen = [], set()
-    for ap, pm, pa in rows:
-        key = f"{ap.id}-{pa.id if pa else 0}"
-        if key in seen: continue
-        seen.add(key)
-        sname = db.query(Supplier.name).filter(Supplier.id == ap.supplier_id).scalar() or ""
-        result.append({"supplier_name": sname,
+    from app.models.foundation import Supplier
+
+    aps = db.query(AccountsPayable).all()
+    pms = {p.id: p for p in db.query(Payment).all()}
+    allocs = db.query(PaymentAllocation).all()
+
+    sname_cache: dict = {}
+
+    def _sname(sid):
+        if sid not in sname_cache:
+            sname_cache[sid] = db.query(Supplier.name).filter(Supplier.id == sid).scalar() or ""
+        return sname_cache[sid]
+
+    alloc_by_ap: dict = {}
+    for pa in allocs:
+        alloc_by_ap.setdefault(pa.ap_account_id, []).append(pa)
+
+    result = []
+    for ap in aps:
+        payment_nos = []
+        flows = []
+        for pa in alloc_by_ap.get(ap.id, []):
+            pm = pms.get(pa.payment_id)
+            if pm and pm.payment_no and pm.payment_no not in payment_nos:
+                payment_nos.append(pm.payment_no)
+            flows.append({
+                "pm_date": str(pm.payment_date) if pm and pm.payment_date else "",
+                "payment_no": pm.payment_no if pm else "",
+                "payment_id": pm.id if pm else None,
+                "allocated_amount": pa.allocated_amount or 0,
+                "remark": (pm.remark if pm and pm.remark else "") or "",
+            })
+        flows.sort(key=lambda f: f["pm_date"])
+        result.append({
+            "supplier_name": _sname(ap.supplier_id),
             "ap_date": str(ap.created_at)[:10] if ap.created_at else "",
             "ap_no": ap.ap_no or "", "ap_id": ap.id, "supplier_id": ap.supplier_id,
             "ap_amount": ap.amount or 0,
-            "pm_date": str(pm.payment_date) if pm and pm.payment_date else "",
-            "payment_no": pm.payment_no if pm else "",
-            "payment_id": pm.id if pm else None,
-            "paid_amount": pa.allocated_amount if pa else 0,
+            "paid_amount": ap.paid_amount or 0,
+            "payment_nos": ", ".join(payment_nos),
+            "payment_count": len(alloc_by_ap.get(ap.id, [])),
+            "flows": flows,
         })
     result.sort(key=lambda r: r["ap_date"])
     return {"items": result}

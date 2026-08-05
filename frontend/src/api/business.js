@@ -34,6 +34,8 @@ export const purchaseApi = {
     create: (data) => request.post('/purchase/payments', data),
     update: (id, data) => request.put(`/purchase/payments/${id}`, data),
     delete: (id) => request.delete(`/purchase/payments/${id}`),
+    review: (id) => request.post(`/purchase/payments/${id}/review`),
+    unreview: (id) => request.post(`/purchase/payments/${id}/unreview`),
   },
   ap: {
     list: (params) => request.get('/purchase/ap', { params }),
@@ -79,6 +81,7 @@ export const salesApi = {
     list: (params) => request.get('/sales/ar', { params }),
     collectionDetail: (params) => request.get('/sales/ar/collection-detail', { params }),
     transfer: (data) => request.post('/sales/ar/transfer', data),
+    cancelTransfer: (adjId) => request.post(`/sales/ar/transfer/${adjId}/cancel`),
   },
   collections: {
     list: (params) => request.get('/sales/collections', { params }),
@@ -86,6 +89,8 @@ export const salesApi = {
     create: (data) => request.post('/sales/collections', data),
     update: (id, data) => request.put(`/sales/collections/${id}`, data),
     delete: (id) => request.delete(`/sales/collections/${id}`),
+    review: (id) => request.post(`/sales/collections/${id}/review`),
+    unreview: (id) => request.post(`/sales/collections/${id}/unreview`),
   },
 }
 

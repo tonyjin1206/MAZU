@@ -26,6 +26,7 @@
           <template #default="{ row }">
             <span>{{ row.collection_no }}</span>
             <el-tag v-if="row.amount < 0" type="danger" size="small" style="margin-left: 4px">退款</el-tag>
+            <el-tag v-if="row.reviewed" type="success" size="small" style="margin-left: 4px">已审核</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="customer_name" label="客户" min-width="150" sortable column-key="customer_name" :filters="customerFilters" :filter-method="filterCustomer" />
@@ -39,11 +40,18 @@
         <el-table-column prop="payment_method" label="付款方式" width="100" sortable />
         <el-table-column prop="operator" label="操作人" width="90" sortable />
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable />
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <!-- 已审核 = 财务确认，业务全部锁定：只能取消审核 -->
+            <template v-if="row.reviewed">
+              <el-button link type="warning" @click="handleUnreview(row)">取消审核</el-button>
+            </template>
+            <template v-else>
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button link type="success" @click="handleReview(row)">审核</el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -197,12 +205,41 @@ function openEdit(row) {
 async function submitEdit() {
   submitting.value = true
   try {
-    await salesApi.collections.update(editForm.id, editForm.id)
+    await salesApi.collections.update(editForm.id, {
+      collection_date: editForm.collection_date,
+      payment_method: editForm.payment_method,
+      remark: editForm.remark || '',
+    })
     ElMessage.success('修改成功')
     editVisible.value = false
     fetchList()
-  } catch { ElMessage.error('修改失败') }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '修改失败') }
   finally { submitting.value = false }
+}
+
+// ===== 审核锁定（财务确认标记，审核后业务全部锁定） =====
+async function handleReview(row) {
+  await ElMessageBox.confirm(
+    `审核收款单 ${row.collection_no}？审核后该单据不可修改/删除（财务确认，业务锁定），只能取消审核。`,
+    '收款单审核', { type: 'warning', confirmButtonText: '确认审核', cancelButtonText: '取消' }
+  )
+  try {
+    const res = await salesApi.collections.review(row.id)
+    ElMessage.success(res.message || '审核成功')
+    fetchList()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
+}
+
+async function handleUnreview(row) {
+  await ElMessageBox.confirm(
+    `取消审核收款单 ${row.collection_no}？取消后单据恢复可编辑/删除。`,
+    '取消审核', { type: 'warning', confirmButtonText: '确认取消审核', cancelButtonText: '取消' }
+  )
+  try {
+    const res = await salesApi.collections.unreview(row.id)
+    ElMessage.success(res.message || '已取消审核')
+    fetchList()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
 
 async function handleDelete(row) {

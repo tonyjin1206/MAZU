@@ -353,6 +353,147 @@ class TestSalesReturnRedReverse:
         }, h)
         assert cross.status_code == 400 and "跨客户" in cross.text, cross.text
 
+        # ===== 明细子表（collection-detail）必须反映转移汇总与行级流水 =====
+        cd_items = api(client, "GET", "/api/sales/ar/collection-detail", None, h).json()["items"]
+        red_row = next(r for r in cd_items if r["ar_id"] == red_ar2["id"])
+        tar_row = next(r for r in cd_items if r["ar_id"] == ar2b["id"])
+        # 每行 = 一张应收单（汇总字段）
+        assert abs(red_row["transfer_amount"] - (-move_amt)) < 0.01, red_row["transfer_amount"]
+        assert abs(tar_row["transfer_amount"] - move_amt) < 0.01, tar_row["transfer_amount"]
+        assert tar_row["transfer_count"] == 1 and red_row["transfer_count"] == 1
+        # 两端都无真实收款核销（只有转移）→ 收款净额为 0
+        assert abs(red_row["collection_amount"]) < 0.01 and abs(tar_row["collection_amount"]) < 0.01
+        assert abs(red_row["ar_collected"] - (-move_amt)) < 0.01, red_row["ar_collected"]
+        # 余额 = 应收 - 核销转移 - 收款 恒成立
+        for row, ar in ((red_row, red_ar2), (tar_row, ar2b)):
+            assert abs((row["ar_amount"] - row["transfer_amount"] - row["collection_amount"]) - ar["balance"]) < 0.01, row
+        # 行级流水（详情弹窗用）：转移流水方向/金额/adj 关联
+        adj_src = next(f for f in red_row["flows"] if f["flow_type"] == "核销转移")
+        adj_tgt = next(f for f in tar_row["flows"] if f["flow_type"] == "核销转移")
+        assert adj_src["collected_amount"] == -move_amt and adj_src["adj_direction"] == "source", adj_src
+        assert adj_tgt["collected_amount"] == move_amt and adj_tgt["adj_direction"] == "target", adj_tgt
+        assert adj_src["adj_id"] == adj_tgt["adj_id"] == tr.json()["id"], "转移流水应关联同一 adj"
+        assert adj_tgt["other_ar_no"] == red_ar2["ar_no"], adj_tgt
+
+        # ===== 撤销核销转移：账务回滚 + 流水消失 + 重复撤销 404 =====
+        cc = api(client, "POST", f"/api/sales/ar/transfer/{tr.json()['id']}/cancel", None, h)
+        assert cc.status_code == 200, cc.text
+        red_ar3 = self._find_ar(client, h, is_red=1)
+        ar2c = self._find_ar(client, h, invoice_id=inv2["id"])
+        assert abs(red_ar3["balance"] - (-total)) < 0.01, red_ar3["balance"]
+        assert abs(ar2c["balance"] - total2) < 0.01, ar2c["balance"]
+        cd_items2 = api(client, "GET", "/api/sales/ar/collection-detail", None, h).json()["items"]
+        assert not any(f.get("flow_type") == "核销转移" for r in cd_items2 for f in r.get("flows", [])), "撤销后转移流水应消失"
+        assert next(r for r in cd_items2 if r["ar_id"] == red_ar2["id"])["transfer_count"] == 0
+        cc2 = api(client, "POST", f"/api/sales/ar/transfer/{tr.json()['id']}/cancel", None, h)
+        assert cc2.status_code == 404, cc2.text
+
+    # ======================== 收款单审核锁定 ========================
+
+    def test_collection_review_lock(self, client, auth_headers, foundation):
+        api, h, f = self._api, auth_headers, foundation
+        pid = f["prods"]["纯棉坯布"]["id"]
+        wh_id = self._make_test_warehouse(client, h, "A7")
+        _seed_inventory(pid, wh_id, "BATCH-A7", 100)
+        so_id, _, unit_price = self._make_order_and_delivery(client, h, f, "A7", wh_id)
+        total = round(100 * unit_price, 2)
+        inv = self._make_invoice(client, h, so_id, total, no="INV-A7")
+        ar = self._find_ar(client, h, invoice_id=inv["id"])
+
+        # 收款 500 → 收款单
+        cc = api(client, "POST", "/api/sales/collections", {
+            "customer_id": f["cust"][0], "amount": 500, "amount_fc": 500,
+            "collection_date": "2026-08-05", "payment_method": "银行转账",
+            "remark": "审核锁定测试", "ar_account_id": ar["id"],
+        }, h)
+        assert cc.status_code == 200, cc.text
+        col_id = cc.json()["id"]
+
+        # 审核 → 列表标记 reviewed + 审核人；重复审核拦截
+        rv = api(client, "POST", f"/api/sales/collections/{col_id}/review", None, h)
+        assert rv.status_code == 200, rv.text
+        items = api(client, "GET", "/api/sales/collections?page_size=100", None, h).json()["items"]
+        row = next(c for c in items if c["id"] == col_id)
+        assert row["reviewed"] == 1 and row["reviewed_by"], row
+        rv2 = api(client, "POST", f"/api/sales/collections/{col_id}/review", None, h)
+        assert rv2.status_code == 400, rv2.text
+
+        # 审核后修改/删除 → 400（业务锁定）
+        up = api(client, "PUT", f"/api/sales/collections/{col_id}", {"remark": "x"}, h)
+        assert up.status_code == 400 and "已审核" in up.text, up.text
+        dl = api(client, "DELETE", f"/api/sales/collections/{col_id}", None, h)
+        assert dl.status_code == 400 and "已审核" in dl.text, dl.text
+
+        # 取消审核 → 修改/删除放行；删除后应收回滚
+        ur = api(client, "POST", f"/api/sales/collections/{col_id}/unreview", None, h)
+        assert ur.status_code == 200, ur.text
+        ur2 = api(client, "POST", f"/api/sales/collections/{col_id}/unreview", None, h)
+        assert ur2.status_code == 400, ur2.text
+        up2 = api(client, "PUT", f"/api/sales/collections/{col_id}", {"remark": "y"}, h)
+        assert up2.status_code == 200, up2.text
+        dl2 = api(client, "DELETE", f"/api/sales/collections/{col_id}", None, h)
+        assert dl2.status_code == 200, dl2.text
+        ar2 = self._find_ar(client, h, invoice_id=inv["id"])
+        assert abs(ar2["collected_amount"] - 0) < 0.01, ar2
+        assert abs(ar2["balance"] - total) < 0.01, ar2["balance"]
+
+    # ======================== 付款单审核锁定 ========================
+
+    def test_payment_review_lock(self, client, auth_headers, foundation):
+        api, h, f = self._api, auth_headers, foundation
+        # 采购订单 → 审批 → 采购发票（生成应付）→ 付款
+        po = api(client, "POST", "/api/purchase/orders", {
+            "supplier_id": f["sup"], "remark": "审核锁定测试",
+            "items": [{"material_id": f["mats"]["纯棉经纱"], "quantity": 10, "unit_price": 5}],
+        }, h)
+        assert po.status_code == 200, po.text
+        po_id = po.json()["id"]
+        api(client, "POST", f"/api/purchase/orders/{po_id}/approve", {}, h)
+        inv = api(client, "POST", "/api/purchase/invoices", {
+            "order_id": po_id, "supplier_id": f["sup"], "invoice_no": "PINV-A7",
+            "invoice_date": "2026-08-05", "invoice_type": "增值税专用发票",
+            "amount": 50, "amount_fc": 50, "tax_amount": 6.5, "remark": "",
+        }, h)
+        assert inv.status_code == 200, inv.text
+        inv_id = inv.json()["id"]
+        ap = next(a for a in api(client, "GET", "/api/purchase/ap?page_size=100", None, h).json()["items"]
+                  if a["source_type"] == "purchase_invoice" and a["source_id"] == inv_id)
+
+        pm = api(client, "POST", "/api/purchase/payments", {
+            "supplier_id": f["sup"], "amount": 30, "amount_fc": 30,
+            "payment_date": "2026-08-05", "payment_method": "银行转账",
+            "remark": "审核锁定测试", "ap_account_ids": ap["id"],
+        }, h)
+        assert pm.status_code == 200, pm.text
+        pm_id = pm.json()["id"]
+
+        # 审核 → 列表标记 reviewed；重复审核拦截
+        rv = api(client, "POST", f"/api/purchase/payments/{pm_id}/review", None, h)
+        assert rv.status_code == 200, rv.text
+        items = api(client, "GET", "/api/purchase/payments?page_size=100", None, h).json()["items"]
+        row = next(p for p in items if p["id"] == pm_id)
+        assert row["reviewed"] == 1 and row["reviewed_by"], row
+        rv2 = api(client, "POST", f"/api/purchase/payments/{pm_id}/review", None, h)
+        assert rv2.status_code == 400, rv2.text
+
+        # 审核后修改/删除 → 400（业务锁定）
+        up = api(client, "PUT", f"/api/purchase/payments/{pm_id}", {"remark": "x"}, h)
+        assert up.status_code == 400 and "已审核" in up.text, up.text
+        dl = api(client, "DELETE", f"/api/purchase/payments/{pm_id}", None, h)
+        assert dl.status_code == 400 and "已审核" in dl.text, dl.text
+
+        # 取消审核 → 修改/删除放行；删除后应付回滚
+        ur = api(client, "POST", f"/api/purchase/payments/{pm_id}/unreview", None, h)
+        assert ur.status_code == 200, ur.text
+        up2 = api(client, "PUT", f"/api/purchase/payments/{pm_id}", {"remark": "y"}, h)
+        assert up2.status_code == 200, up2.text
+        dl2 = api(client, "DELETE", f"/api/purchase/payments/{pm_id}", None, h)
+        assert dl2.status_code == 200, dl2.text
+        ap2 = next(a for a in api(client, "GET", "/api/purchase/ap?page_size=100", None, h).json()["items"]
+                   if a["source_type"] == "purchase_invoice" and a["source_id"] == inv_id)
+        assert abs(ap2["paid_amount"] - 0) < 0.01, ap2
+        assert abs(ap2["balance"] - 56.5) < 0.01, ap2["balance"]
+
     # ======================== 场景(4) 已报税退货 → 负数申报 ========================
 
     def test_scene4_declared_return_negative_declaration(self, client, auth_headers, foundation):

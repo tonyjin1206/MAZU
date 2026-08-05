@@ -46,16 +46,23 @@
         <el-table-column prop="ap_date" label="应付日期" width="110" />
         <el-table-column prop="ap_no" label="应付单号" width="160" />
         <el-table-column label="应付金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.ap_amount) }}</template></el-table-column>
-        <el-table-column prop="pm_date" label="付款日期" width="110" />
-        <el-table-column prop="payment_no" label="付款单号" width="160" />
+        <el-table-column label="付款单号" width="180">
+          <template #default="{ row }">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px">
+              <el-tag v-for="no in (row.payment_nos || '').split(',').map(s => s.trim()).filter(Boolean)" :key="no" size="small" type="info">{{ no }}</el-tag>
+              <span v-if="!(row.payment_nos || '').trim()" style="color: #909399">-</span>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="付款金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
         <el-table-column label="余额" width="110" align="right">
-          <template #default="{ row }"><span :style="{ color: (row.ap_amount - row.paid_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ap_amount - row.paid_amount) }}</span></template>
+          <template #default="{ row }"><span :style="{ color: (row.ap_amount - (row.paid_amount || 0)) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ap_amount - (row.paid_amount || 0)) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="120" align="center" fixed="right">
+        <el-table-column label="操作" width="140" align="center" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="!row.payment_no" type="primary" size="small" @click="openPaymentByDetail(row)">付款</el-button>
-            <el-button v-else type="success" size="small" @click="viewPayment(row)">查看付款单</el-button>
+            <!-- 余额 > 0 始终可付款（部分付款后也不隐藏），操作只对应应付单 -->
+            <el-button v-if="(row.ap_amount - (row.paid_amount || 0)) > 0.01" link type="primary" @click="openPaymentByDetail(row)">付款</el-button>
+            <el-button link type="primary" @click="openApDetail(row)">详情</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -82,6 +89,36 @@
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="submitting" @click="handleSubmit">确认付款</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 应付详情弹窗（点击「详情」） -->
+    <el-dialog v-model="apDetailVisible" :title="`应付详情 — ${apDetail?.ap_no || ''}`" width="720px">
+      <template v-if="apDetail">
+        <el-descriptions :column="3" border style="margin-bottom: 10px">
+          <el-descriptions-item label="供应商" span="2">{{ apDetail.supplier_name }}</el-descriptions-item>
+          <el-descriptions-item label="应付日期">{{ apDetail.ap_date || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="应付金额">{{ $fm(apDetail.ap_amount) }}</el-descriptions-item>
+          <el-descriptions-item label="已付金额">{{ $fm(apDetail.paid_amount) }}</el-descriptions-item>
+          <el-descriptions-item label="余额">
+            <span :style="{ color: apDetail.balance > 0 ? '#e6a23c' : '#67c23a', fontWeight: 'bold' }">{{ $fm(apDetail.balance) }}</span>
+          </el-descriptions-item>
+        </el-descriptions>
+        <el-table :data="apDetailFlows" stripe size="small" style="width: 100%">
+          <el-table-column prop="pm_date" label="付款日期" width="110" />
+          <el-table-column prop="payment_no" label="付款单号" width="160" />
+          <el-table-column label="金额" width="110" align="right">
+            <template #default="{ row }">{{ $fm(row.allocated_amount) }}</template>
+          </el-table-column>
+          <el-table-column prop="remark" label="备注" min-width="140">
+            <template #default="{ row }">{{ row.remark || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="90" align="center">
+            <template #default="{ row }">
+              <el-button v-if="row.payment_id" link type="success" @click="viewPayment(row)">查看</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </template>
     </el-dialog>
 
@@ -124,6 +161,11 @@ const pdList = ref([])
 
 const paymentDetailVisible = ref(false)
 const paymentDetail = ref(null)
+
+// 应付详情弹窗
+const apDetailVisible = ref(false)
+const apDetail = ref(null)
+const apDetailFlows = ref([])
 
 const form = reactive({
   ap_id: null, supplier_name: '', supplier_id: null,
@@ -177,6 +219,7 @@ function summaryTotal({ columns }) {
 }
 
 function pdTotal({ columns }) {
+  // 明细每行 = 一张应付单（后端已聚合），直接全行合计
   const sums = []
   columns.forEach((col, i) => {
     if (i === 0) { sums[i] = '合计'; return }
@@ -271,6 +314,20 @@ function openPaymentByDetail(row) {
   form.payment_method = '银行转账'
   form.remark = ''
   dialogVisible.value = true
+}
+
+// 应付详情弹窗：应付汇总信息 + 该应付行级付款核销流水
+function openApDetail(row) {
+  apDetail.value = {
+    ap_no: row.ap_no || '',
+    supplier_name: row.supplier_name,
+    ap_date: row.ap_date || '',
+    ap_amount: row.ap_amount || 0,
+    paid_amount: row.paid_amount || 0,
+    balance: (row.ap_amount || 0) - (row.paid_amount || 0),
+  }
+  apDetailFlows.value = row.flows || []
+  apDetailVisible.value = true
 }
 
 async function viewPayment(row) {

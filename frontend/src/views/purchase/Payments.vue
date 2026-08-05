@@ -19,7 +19,12 @@
 
     <el-card>
       <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="payment_no" label="付款单号" width="160" sortable />
+        <el-table-column prop="payment_no" label="付款单号" width="160" sortable>
+          <template #default="{ row }">
+            <span>{{ row.payment_no }}</span>
+            <el-tag v-if="row.reviewed" type="success" size="small" style="margin-left: 4px">已审核</el-tag>
+          </template>
+        </el-table-column>
         <el-table-column prop="supplier_name" label="供应商" min-width="150" column-key="supplier_name" :filters="supplierFilters" :filter-method="filterSupplier" sortable />
         <el-table-column prop="payment_date" label="付款日期" width="120" column-key="payment_date" :filters="dateFilters" :filter-method="filterDate" sortable />
         <el-table-column label="金额" width="120" align="right" sortable><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
@@ -27,11 +32,18 @@
         <el-table-column prop="payment_method" label="付款方式" width="100" sortable />
         <el-table-column prop="operator" label="操作人" width="90" sortable />
         <el-table-column prop="remark" label="备注" min-width="140" show-overflow-tooltip sortable />
-        <el-table-column label="操作" width="160" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <!-- 已审核 = 财务确认，业务全部锁定：只能取消审核 -->
+            <template v-if="row.reviewed">
+              <el-button link type="warning" @click="handleUnreview(row)">取消审核</el-button>
+            </template>
+            <template v-else>
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button link type="success" @click="handleReview(row)">审核</el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -181,13 +193,41 @@ function openEdit(row) {
 async function submitEdit() {
   submitting.value = true
   try {
-    await purchaseApi.payments.update(editForm.id, editForm.id)
+    await purchaseApi.payments.update(editForm.id, {
+      payment_date: editForm.payment_date,
+      payment_method: editForm.payment_method,
+      remark: editForm.remark || '',
+    })
     ElMessage.success('修改成功')
     editVisible.value = false
     fetchList()
-  } catch {
-    ElMessage.error('修改失败')
-  } finally { submitting.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '修改失败') }
+  finally { submitting.value = false }
+}
+
+// ===== 审核锁定（财务确认标记，审核后业务全部锁定） =====
+async function handleReview(row) {
+  await ElMessageBox.confirm(
+    `审核付款单 ${row.payment_no}？审核后该单据不可修改/删除（财务确认，业务锁定），只能取消审核。`,
+    '付款单审核', { type: 'warning', confirmButtonText: '确认审核', cancelButtonText: '取消' }
+  )
+  try {
+    const res = await purchaseApi.payments.review(row.id)
+    ElMessage.success(res.message || '审核成功')
+    fetchList()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
+}
+
+async function handleUnreview(row) {
+  await ElMessageBox.confirm(
+    `取消审核付款单 ${row.payment_no}？取消后单据恢复可编辑/删除。`,
+    '取消审核', { type: 'warning', confirmButtonText: '确认取消审核', cancelButtonText: '取消' }
+  )
+  try {
+    const res = await purchaseApi.payments.unreview(row.id)
+    ElMessage.success(res.message || '已取消审核')
+    fetchList()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
 
 async function handleDelete(row) {
