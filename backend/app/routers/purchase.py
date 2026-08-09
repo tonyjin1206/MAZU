@@ -253,7 +253,7 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
                 quantity=qty, unit_price=unit_price_fc,
                 total_amount=line_total,
                 tax_rate=order.tax_rate or 13,
-                total_amount_excl_tax=round(line_total / (1 + (order.tax_rate or 13) / 100), 2),
+                total_amount_excl_tax=round(line_total / (1 + (order.tax_rate or 13) / 100), 6),
             )
             db.add(new_item)
             total_fc += line_total
@@ -261,8 +261,8 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
         tax_rate = (order.tax_rate or 13) / 100
         order.total_amount_fc = total_fc
         order.total_amount = total_fc
-        order.total_amount_excl_tax = round(total_fc / (1 + tax_rate), 2)
-        order.tax_amount = round(total_fc - order.total_amount_excl_tax, 2)
+        order.total_amount_excl_tax = round(total_fc / (1 + tax_rate), 6)
+        order.tax_amount = round(total_fc - order.total_amount_excl_tax, 6)
     db.commit()
     return {"message": "采购订单已更新"}
 
@@ -309,7 +309,7 @@ def create_order(
             unit_price_local=unit_price_fc * (data.exchange_rate or 1),
             total_amount=line_total_fc,
             tax_rate=data.tax_rate,
-            total_amount_excl_tax=round(line_total_fc / (1 + data.tax_rate / 100), 2),
+            total_amount_excl_tax=round(line_total_fc / (1 + data.tax_rate / 100), 6),
             remark=item_data.remark,
         )
         db.add(item)
@@ -318,8 +318,8 @@ def create_order(
     tax_rate = data.tax_rate / 100
     order.total_amount_fc = total_fc
     order.total_amount = total_fc * (data.exchange_rate or 1)
-    order.total_amount_excl_tax = round(order.total_amount / (1 + tax_rate), 2)
-    order.tax_amount = round(order.total_amount - order.total_amount_excl_tax, 2)
+    order.total_amount_excl_tax = round(order.total_amount / (1 + tax_rate), 6)
+    order.tax_amount = round(order.total_amount - order.total_amount_excl_tax, 6)
     db.commit()
     db.refresh(order)
     return {"id": order.id, "order_no": order.order_no, "message": "采购订单创建成功"}
@@ -646,7 +646,7 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
                 unit_price_local=unit_price * (order.exchange_rate or 1),
                 total_amount=line_total,
                 tax_rate=po.tax_rate,
-                total_amount_excl_tax=round(line_total / (1 + po.tax_rate / 100), 2),
+                total_amount_excl_tax=round(line_total / (1 + po.tax_rate / 100), 6),
                 remark=f"销售订单 {order.order_no}",
             )
             db.add(item)

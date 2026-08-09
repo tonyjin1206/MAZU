@@ -77,11 +77,12 @@ def _recalc_order_totals(order):
     total_amount_fc = round(sum((i.total_amount or 0) for i in active_items), 2)
     exchange_rate = order.exchange_rate or 1
     order.total_amount = total_amount_fc
-    order.total_amount_local = round(total_amount_fc * exchange_rate, 2)
-    order.tax_amount = round(sum((i.tax_amount or 0) for i in active_items) * exchange_rate, 2)
-    order.total_amount_excl_tax = round(sum((i.total_amount_excl_tax or 0) for i in active_items), 2)
+    # 汇率/不含税换算保留 6 位精度参与计算，显示时前端 2 位
+    order.total_amount_local = round(total_amount_fc * exchange_rate, 6)
+    order.tax_amount = round(sum((i.tax_amount or 0) for i in active_items) * exchange_rate, 6)
+    order.total_amount_excl_tax = round(sum((i.total_amount_excl_tax or 0) for i in active_items), 6)
     order.total_amount_excl_tax_local = round(
-        sum((i.total_amount_excl_tax or 0) for i in active_items) * exchange_rate, 2)
+        sum((i.total_amount_excl_tax or 0) for i in active_items) * exchange_rate, 6)
 
 @router.post("/orders", tags=["销售管理"])
 def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -139,9 +140,9 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
         item_price_safe = float(item.get("unit_price", 0) or 0)
         item_total_safe = float(item.get("total_amount", 0) or 0) or (item_qty_safe * item_price_safe)
         item_local = item_total_safe * exchange_rate
-        tax_amount_local += round(item_local * float(item.get("tax_rate", 13) or 13) / (100 + float(item.get("tax_rate", 13) or 13)), 2)
-    total_excl_tax_fc = round(total_amount_fc - tax_amount_local / exchange_rate, 2)
-    total_excl_tax_local = round(total_amount_local - tax_amount_local, 2)
+        tax_amount_local += round(item_local * float(item.get("tax_rate", 13) or 13) / (100 + float(item.get("tax_rate", 13) or 13)), 6)
+    total_excl_tax_fc = round(total_amount_fc - tax_amount_local / exchange_rate, 6)
+    total_excl_tax_local = round(total_amount_local - tax_amount_local, 6)
 
     order = SalesOrder(
         order_no=order_no,
@@ -172,18 +173,18 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
         item_total_raw = float(item.get("total_amount", 0) or 0)
         item_total = item_total_raw if item_total_raw else (item_qty * item_price)
         item_tax_rate_val = float(item.get("tax_rate", 13) or 13)
-        item_excl = round(item_total / (1 + item_tax_rate_val / 100), 2)
-        item_tax = round(item_total - item_excl, 2)
+        item_excl = round(item_total / (1 + item_tax_rate_val / 100), 6)
+        item_tax = round(item_total - item_excl, 6)
         so_item = SalesOrderItem(
             order_id=order.id,
             product_id=item["product_id"],
             quantity=item_qty,
             unit_price=item_price,
-            unit_price_local=round(item_price * exchange_rate, 2),
+            unit_price_local=round(item_price * exchange_rate, 6),
             total_amount=item_total,
-            total_amount_local=round(item_total * exchange_rate, 2),
+            total_amount_local=round(item_total * exchange_rate, 6),
             total_amount_excl_tax=item_excl,
-            total_amount_excl_tax_local=round(item_excl * exchange_rate, 2),
+            total_amount_excl_tax_local=round(item_excl * exchange_rate, 6),
             tax_rate=item.get("tax_rate", 13),
             tax_amount=item_tax,
             hs_code_id=item.get("hs_code_id"),
