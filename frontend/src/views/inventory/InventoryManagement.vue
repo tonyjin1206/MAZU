@@ -347,7 +347,7 @@ function onTabChange(tab) {
 
 // ===== 流水合计行 =====
 const fmt = (v) => (v ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-const fqt = (v) => (v ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+const fqt = (v) => (v ?? 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 function getTransSummary({ columns, data }) {
   const sums = []
   columns.forEach((column, index) => {

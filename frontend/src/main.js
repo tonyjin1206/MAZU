@@ -33,10 +33,10 @@ app.config.globalProperties.$fm = (val) => {
   return '¥' + n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 app.config.globalProperties.$fq = (val) => {
-  if (val === null || val === undefined || val === '') return '0.0000'
+  if (val === null || val === undefined || val === '') return '0.00'
   const n = typeof val === 'string' ? parseFloat(val) : val
-  if (isNaN(n)) return '0.0000'
-  return n.toLocaleString('zh-CN', { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+  if (isNaN(n)) return '0.00'
+  return n.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 // 全局权限检查方法
