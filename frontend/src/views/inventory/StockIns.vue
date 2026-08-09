@@ -87,11 +87,7 @@
         <el-form-item label="本次入库" required>
           <el-input-number v-model="receiveForm.quantity_now" :min="0.01" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="入库仓库" required>
-          <el-select v-model="receiveForm.warehouse_id" placeholder="选择仓库" filterable style="width: 100%">
-            <el-option v-for="w in warehouseList" :key="w.id" :label="`${w.code || ''} ${w.name}`" :value="w.id" />
-          </el-select>
-        </el-form-item>
+        <el-form-item label="入库仓库"><el-input :model-value="receiveForm.warehouse_name || '成品仓库（自动）'" readonly /></el-form-item>
         <div style="color: #909399; font-size: 12px">可分批入库，收满自动完成；未收满时由人工点「确认完成」判定结束。</div>
       </el-form>
       <template #footer>
@@ -211,12 +207,10 @@ function openReceive(row) {
 
 async function handleReceive() {
   if (!receiveForm.quantity_now || receiveForm.quantity_now <= 0) { ElMessage.warning('请输入本次入库数量'); return }
-  if (!receiveForm.warehouse_id) { ElMessage.warning('请选择入库仓库'); return }
   submitting.value = true
   try {
     const res = await request.post(`/stock-in/${receiveForm.id}/receive`, {
       quantity: parseFloat(receiveForm.quantity_now) || 0,
-      warehouse_id: receiveForm.warehouse_id,
     })
     ElMessage.success(res.message || '入库成功')
     receiveVisible.value = false

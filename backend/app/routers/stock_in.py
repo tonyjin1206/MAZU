@@ -145,8 +145,17 @@ def receive_stock_in(
     if qty <= 0:
         raise HTTPException(400, "入库数量必须大于 0")
     warehouse_id = data.get("warehouse_id")
+    # 仓库自动匹配：成品单→成品仓库，材料单→原辅料仓库（前端不再选择）
     if not warehouse_id:
-        raise HTTPException(400, "请选择入库仓库")
+        is_material = sin.material_id is not None
+        target_type = "原辅料仓库" if is_material else "成品仓库"
+        auto_wh = db.query(Warehouse).filter(
+            Warehouse.wh_type == target_type,
+            Warehouse.is_active == 1,
+        ).first()
+        if not auto_wh:
+            raise HTTPException(400, f"系统未找到「{target_type}」，请先在基础档案→仓库维护类型")
+        warehouse_id = auto_wh.id
 
     operator = current_user.display_name or current_user.username
 
