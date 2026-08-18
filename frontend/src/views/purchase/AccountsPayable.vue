@@ -93,7 +93,7 @@
       </el-descriptions>
       <el-divider>核销明细</el-divider>
       <el-table :data="paymentDetail?.allocations || []" stripe size="small" v-if="paymentDetail?.allocations?.length">
-        <el-table-column prop="ap_no" label="应付单号" width="160" />
+        <el-table-column prop="ap_no" label="应付单号" width="160" sortable />
         <el-table-column label="核销金额" width="120"><template #default="{ row }">{{ $fm(row.allocated_amount) }}</template></el-table-column>
       </el-table>
       <span v-else style="color: #909399">无核销明细</span>

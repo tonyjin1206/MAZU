@@ -161,15 +161,17 @@ def receive_stock_in(
 
     # 生成入库单号（每次收货唯一，短格式 RE-260801-01）
     from app.models.inventory import WarehouseInventory as _WI
+    date_str = date.today().strftime('%y%m%d')
     _today_receipt = (
         db.query(func.max(_WI.receipt_no))
-        .filter(_WI.receipt_no.like(f"RE-{date.today().strftime('%y%m%d')}%"))
+        .filter(_WI.receipt_no.like(f"RE-{date_str}%"))
         .scalar()
     )
     _seq = 1
     if _today_receipt:
-        _seq = int(_today_receipt.rsplit("-", 1)[1]) + 1
-    receipt_no = f"RE-{date.today().strftime('%y%m%d')}{_seq:02d}"
+        _core = _today_receipt[len("RE-") + len(date_str):]
+        _seq = (int(_core) if _core.isdigit() else 1) + 1
+    receipt_no = f"RE-{date_str}{_seq:02d}"
 
     # 库存批次号：优先用销售明细批次号（唯一贯穿全程）；无销售关联（采购备货）才生成 FG/RM 批次
     is_material = sin.material_id is not None
@@ -284,6 +286,8 @@ def complete_stock_in(
         raise HTTPException(404, "待入库单不存在")
     if sin.status not in ("待入库", "部分入库"):
         raise HTTPException(400, f"当前状态「{sin.status}」不能确认完成")
+    if (sin.received_qty or 0) <= 0:
+        raise HTTPException(400, "还没有入库记录，不能确认完成")
     sin.status = "已入库"
     _after_complete(db, sin)
     db.commit()

@@ -4,7 +4,7 @@
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <div style="font-weight: 600">参数设置</div>
-          <el-button type="primary" @click="openCreate">{{ activeGroup === 'material_category' ? '新增大类' : (activeGroup === 'warehouse' ? '新增仓库' : '新增参数') }}</el-button>
+          <el-button type="primary" @click="openCreate">{{ activeGroup === 'process' ? '新增工序' : (activeGroup === 'material_category' ? '新增大类' : (activeGroup === 'warehouse' ? '新增仓库' : '新增参数')) }}</el-button>
         </div>
       </template>
       <el-tabs v-model="activeGroup" @tab-change="onTabChange">
@@ -31,17 +31,18 @@
             <span v-else style="font-weight: 600">{{ row.label }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="param_key" label="编号" width="90" align="center" />
+        <el-table-column prop="param_key" label="编号" width="90" align="center" sortable />
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-switch :model-value="row.is_active === 1" size="small" @change="(v) => toggleActive(row, v)" />
+            <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">{{ row.is_active === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column label="操作" width="290" fixed="right">
           <template #default="{ row }">
             <el-button v-if="!row.is_sub" link type="primary" size="small" @click="openCreateSub(row)">+ 新增小类</el-button>
             <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button link :type="row.is_active === 1 ? 'warning' : 'success'" size="small" @click="toggleActiveButton(row)">{{ row.is_active === 1 ? '停用' : '启用' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -51,9 +52,9 @@
         v-else-if="activeGroup === 'warehouse'"
         :data="warehouseList" v-loading="loading" stripe border size="small" style="width: 100%"
       >
-        <el-table-column prop="code" label="编码" width="100" align="center" />
-        <el-table-column prop="name" label="仓库名称" min-width="160" />
-        <el-table-column prop="wh_type" label="类型" width="120" align="center">
+        <el-table-column prop="code" label="编码" width="100" align="center" sortable />
+        <el-table-column prop="name" label="仓库名称" min-width="160" sortable />
+        <el-table-column prop="wh_type" label="类型" width="120" align="center" sortable>
           <template #default="{ row }">
             <el-tag :type="row.wh_type === '成品仓库' ? 'primary' : 'warning'" size="small">{{ row.wh_type }}</el-tag>
           </template>
@@ -68,6 +69,27 @@
             <el-button link type="primary" size="small" @click="openWarehouseEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleWarehouseDelete(row)">删除</el-button>
             <el-button link :type="row.is_active === 1 ? 'warning' : 'success'" size="small" @click="toggleWarehouse(row)">{{ row.is_active === 1 ? '停用' : '启用' }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <!-- 加工工序：委外加工工序维护（坯布/染色/底布复合等） -->
+      <el-table
+        v-else-if="activeGroup === 'process'"
+        :data="processList" v-loading="loading" stripe border size="small" style="width: 100%"
+      >
+        <el-table-column prop="code" label="编码" width="110" align="center" sortable />
+        <el-table-column prop="name" label="工序名称" min-width="160" sortable />
+        <el-table-column label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">{{ row.is_active === 1 ? '启用' : '停用' }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="primary" size="small" @click="openProcessEdit(row)">编辑</el-button>
+            <el-button link type="danger" size="small" @click="handleProcessDelete(row)">删除</el-button>
+            <el-button link :type="row.is_active === 1 ? 'warning' : 'success'" size="small" @click="toggleProcess(row)">{{ row.is_active === 1 ? '停用' : '启用' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -94,13 +116,14 @@
         </el-table-column>
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-switch :model-value="row.is_active === 1" size="small" @change="(v) => toggleActive(row, v)" />
+            <el-tag :type="row.is_active === 1 ? 'success' : 'info'" size="small">{{ row.is_active === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openEdit(row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button link :type="row.is_active === 1 ? 'warning' : 'success'" size="small" @click="toggleActiveButton(row)">{{ row.is_active === 1 ? '停用' : '启用' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -163,6 +186,20 @@
         <el-button type="primary" :loading="saving" @click="handleWarehouseSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 新增/编辑工序弹窗 -->
+    <el-dialog v-model="processDialogVisible" :title="processEditId ? '编辑工序' : '新增工序'" width="420px" destroy-on-close>
+      <el-form :model="processForm" label-width="110px" ref="processFormRef" :rules="processRules">
+        <el-form-item label="工序名称" prop="name">
+          <el-input v-model="processForm.name" placeholder="如：坯布、染色、底布复合" />
+        </el-form-item>
+        <div style="color: #909399; font-size: 12px; line-height: 1.5">编码自动生成（GX000001、GX000002…），委外加工时从工序列表里选择。</div>
+      </el-form>
+      <template #footer>
+        <el-button @click="processDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="handleProcessSave">保存</el-button>
+      </template>
+    </el-dialog>
     
     <!-- 列排序弹窗 -->
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
@@ -198,6 +235,7 @@ const GROUP_LABELS = {
   payment_method: '付款方式',
   country: '国家',
   warehouse: '仓库',
+  process: '加工工序',
 }
 
 function groupLabel(g) { return GROUP_LABELS[g] || g }
@@ -260,6 +298,7 @@ async function loadGroup() {
   if (!activeGroup.value) return
   if (activeGroup.value === 'material_category') { loadMaterialTree(); return }
   if (activeGroup.value === 'warehouse') { loadWarehouses(); return }
+  if (activeGroup.value === 'process') { loadProcesses(); return }
   loading.value = true
   try {
     const res = await request.get(`/foundation/params/group/${activeGroup.value}`)
@@ -345,6 +384,85 @@ async function handleWarehouseDelete(row) {
   }
 }
 
+// ===== 加工工序（参数设置内维护，编码自动 GX+6位流水）=====
+const processList = ref([])
+const processDialogVisible = ref(false)
+const processEditId = ref(null)
+const processFormRef = ref(null)
+const processForm = reactive({ code: '', name: '' })
+const processRules = { name: [{ required: true, message: '请输入工序名称', trigger: 'blur' }] }
+
+async function loadProcesses() {
+  loading.value = true
+  try {
+    const res = await request.get('/foundation/processes', { params: { page: 1, page_size: 100 } })
+    processList.value = res.items || []
+  } catch { processList.value = [] } finally { loading.value = false }
+}
+
+function nextProcessCode() {
+  let max = 0
+  for (const p of processList.value) {
+    const m = String(p.code || '').match(/^GX(\d+)$/)
+    if (m) max = Math.max(max, parseInt(m[1], 10))
+  }
+  return 'GX' + String(max + 1).padStart(6, '0')
+}
+
+function openProcessCreate() {
+  processEditId.value = null
+  Object.assign(processForm, { code: '', name: '' })
+  processDialogVisible.value = true
+}
+
+function openProcessEdit(row) {
+  processEditId.value = row.id
+  Object.assign(processForm, { code: row.code || '', name: row.name })
+  processDialogVisible.value = true
+}
+
+async function handleProcessSave() {
+  const valid = await processFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  saving.value = true
+  try {
+    const payload = { ...processForm }
+    if (processEditId.value) {
+      await request.put(`/foundation/processes/${processEditId.value}`, payload)
+      ElMessage.success('已保存')
+    } else {
+      await request.post('/foundation/processes', { ...payload, code: nextProcessCode() })
+      ElMessage.success('已新增')
+    }
+    processDialogVisible.value = false
+    loadProcesses()
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
+  } finally { saving.value = false }
+}
+
+async function toggleProcess(row) {
+  const next = row.is_active === 1 ? 0 : 1
+  try {
+    await request.put(`/foundation/processes/${row.id}`, { is_active: next })
+    row.is_active = next
+    ElMessage.success(next ? '已启用' : '已停用')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '操作失败')
+  }
+}
+
+async function handleProcessDelete(row) {
+  await ElMessageBox.confirm(`确定删除工序「${row.name}」？<br><span style="color:#e6a23c;font-size:12px">有产品工艺引用该工序时不能删除，只能停用。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
+  try {
+    await request.delete(`/foundation/processes/${row.id}`)
+    ElMessage.success('已删除')
+    loadProcesses()
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败')
+  }
+}
+
 async function loadGroups() {
   try { groups.value = await request.get('/foundation/params/groups') || [] } catch { groups.value = [] }
   if (!activeGroup.value && groups.value.length) {
@@ -379,6 +497,7 @@ function regenerateKey() {
 function openCreate() {
   editId.value = null
   if (activeGroup.value === 'warehouse') { openWarehouseCreate(); return }
+  if (activeGroup.value === 'process') { openProcessCreate(); return }
   if (activeGroup.value === 'material_category') {
     Object.assign(form, { group_name: 'material_main_category', param_label: '', param_key: nextParamKey(), parent_key: '', sort_order: (materialTree.value.length || 0) + 1, remark: '' })
     loadMainCategories()
@@ -454,6 +573,10 @@ async function toggleActive(row, v) {
     row.is_active = v ? 1 : 0
     ElMessage.success(v ? '已启用' : '已停用')
   } catch { }
+}
+
+function toggleActiveButton(row) {
+  toggleActive(row, row.is_active === 1 ? 0 : 1)
 }
 
 async function handleDelete(row) {

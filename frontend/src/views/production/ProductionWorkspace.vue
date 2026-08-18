@@ -32,8 +32,8 @@
           <el-table-column label="订单号" min-width="140">
             <template #default="{ row }"><span style="white-space: nowrap">{{ row.order_no }}</span></template>
           </el-table-column>
-          <el-table-column label="产品" min-width="120" prop="product_name" />
-          <el-table-column label="数量" width="70" align="right" prop="quantity" />
+          <el-table-column label="产品" min-width="120" prop="product_name" sortable />
+          <el-table-column label="数量" width="70" align="right" prop="quantity" sortable />
           <el-table-column label="订单状态" width="80">
             <template #default="{ row }"><el-tag :type="orderStatusType(row.status)" size="small">{{ row.status }}</el-tag></template>
           </el-table-column>
@@ -47,12 +47,12 @@
               <el-progress :percentage="row.progress" :stroke-width="14" :color="progressColor(row.progress)" />
             </template>
           </el-table-column>
-          <el-table-column label="序号" width="50" align="center" prop="seq" />
-          <el-table-column label="工序" min-width="120" prop="process_name" />
+          <el-table-column label="序号" width="50" align="center" prop="seq" sortable />
+          <el-table-column label="工序" min-width="120" prop="process_name" sortable />
           <el-table-column label="工序状态" width="90">
             <template #default="{ row }"><el-tag :type="tagType(row.process_status)" size="small">{{ row.process_status }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="委外商" min-width="120" prop="outsourcer_name" />
+          <el-table-column label="委外商" min-width="120" prop="outsourcer_name" sortable />
           <el-table-column label="操作" min-width="380">
             <template #default="{ row }">
               <div style="display: flex; gap: 4px; white-space: nowrap">
@@ -133,7 +133,7 @@
         <el-table-column width="50">
           <template #default="{ row }"><el-checkbox v-model="row._selected" @change="recalcBatchPicker" /></template>
         </el-table-column>
-        <el-table-column label="批次号" min-width="140" prop="batch_no" />
+        <el-table-column label="批次号" min-width="140" prop="batch_no" sortable />
         <el-table-column label="库存数量" width="100" align="right">
           <template #default="{ row }"><span style="white-space: nowrap">{{ $fq(row.quantity) }}</span></template>
         </el-table-column>
@@ -151,10 +151,10 @@
     <!-- 取消发料弹窗 -->
     <el-dialog v-model="cancelIssueVisible" title="取消发料" width="650px">
       <el-table :data="cancelIssueList" border size="small" max-height="300" style="table-layout: auto">
-        <el-table-column label="发料单号" min-width="140" prop="issue_no" />
-        <el-table-column label="物料" min-width="140" prop="material_name" />
-        <el-table-column label="批次号" min-width="130" prop="batch_no" />
-        <el-table-column label="数量" width="80" align="right" prop="quantity" />
+        <el-table-column label="发料单号" min-width="140" prop="issue_no" sortable />
+        <el-table-column label="物料" min-width="140" prop="material_name" sortable />
+        <el-table-column label="批次号" min-width="130" prop="batch_no" sortable />
+        <el-table-column label="数量" width="80" align="right" prop="quantity" sortable />
         <el-table-column label="操作" width="80">
           <template #default="{ row }"><el-button size="small" type="danger" @click="doCancelIssue(row)">取消</el-button></template>
         </el-table-column>
@@ -166,16 +166,16 @@
     <el-dialog v-model="cancelReceiptVisible" title="取消入库 - 选择要取消的入库单" width="700px">
       <el-table :data="cancelReceiptList" border size="small" max-height="350" style="table-layout: auto" @selection-change="onCancelReceiptSelect">
         <el-table-column type="selection" width="45" />
-        <el-table-column label="入库单号" min-width="140" prop="receipt_no" />
-        <el-table-column label="批次号" width="120" prop="batch_no" />
-        <el-table-column label="数量" width="70" align="right" prop="quantity" />
+        <el-table-column label="入库单号" min-width="140" prop="receipt_no" sortable />
+        <el-table-column label="批次号" width="120" prop="batch_no" sortable />
+        <el-table-column label="数量" width="70" align="right" prop="quantity" sortable />
         <el-table-column label="材料成本" width="90" align="right">
           <template #default="{ row }">{{ $fm(row.material_cost) }}</template>
         </el-table-column>
         <el-table-column label="加工费" width="80" align="right">
           <template #default="{ row }">{{ $fm(row.process_cost) }}</template>
         </el-table-column>
-        <el-table-column label="日期" width="100" prop="receipt_date" />
+        <el-table-column label="日期" width="100" prop="receipt_date" sortable />
       </el-table>
       <div v-if="!cancelReceiptList.length" style="text-align: center; color: #909399; padding: 20px">无入库记录</div>
       <template #footer>

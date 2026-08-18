@@ -1699,8 +1699,8 @@ def update_order_item(
     if "quantity" not in data:
         raise HTTPException(400, "请提供要变更的数量或停售标记")
     new_qty = float(data["quantity"])
-    if new_qty < 0:
-        raise HTTPException(400, "数量不能为负")
+    if new_qty <= 0:
+        raise HTTPException(400, "数量必须大于0")
     if item.production_status == "已入库":
         raise HTTPException(400, "该明细行已完成入库，不能变更数量（客户要改请新建订单）")
     # 已通知但下游单据未处理 → 先退下游

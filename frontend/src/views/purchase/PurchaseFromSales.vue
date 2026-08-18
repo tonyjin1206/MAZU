@@ -72,8 +72,8 @@
         <el-table-column label="物料名称" min-width="140">
           <template #default="{ row }">{{ row.name }}</template>
         </el-table-column>
-        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="unit" label="单位" width="60" align="center" />
+        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip sortable />
+        <el-table-column prop="unit" label="单位" width="60" align="center" sortable />
         <el-table-column label="需求数量" width="95" align="right">
           <template #default="{ row }">{{ fmtQty(row.need_qty) }}</template>
         </el-table-column>
@@ -116,11 +116,11 @@
         <el-button type="primary" @click="searchSuppliers">搜索</el-button>
       </div>
       <el-table :data="pickerSupplierList" height="420" border size="small" highlight-current-row @row-click="pickSupplier">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="country" label="国家/地区" width="110" />
-        <el-table-column prop="contact_person" label="联系人" width="100" />
-        <el-table-column prop="phone" label="电话" width="120" show-overflow-tooltip />
+        <el-table-column prop="code" label="编码" width="120" sortable />
+        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
+        <el-table-column prop="country" label="国家/地区" width="110" sortable />
+        <el-table-column prop="contact_person" label="联系人" width="100" sortable />
+        <el-table-column prop="phone" label="电话" width="120" show-overflow-tooltip sortable />
       </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination v-model:current-page="supplierPage" v-model:page-size="supplierPageSize" :total="supplierTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchSuppliers" />

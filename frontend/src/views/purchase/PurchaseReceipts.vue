@@ -143,14 +143,14 @@
         <!-- 入库明细 -->
         <el-form-item label="入库明细">
           <el-table :data="receiptForm.items" border size="small" style="width: 100%">
-            <el-table-column prop="material_name" label="物料名称" width="150" />
-            <el-table-column prop="material_code" label="编码" width="100" />
-            <el-table-column prop="unit" label="单位" width="70" />
+            <el-table-column prop="material_name" label="物料名称" width="150" sortable />
+            <el-table-column prop="material_code" label="编码" width="100" sortable />
+            <el-table-column prop="unit" label="单位" width="70" sortable />
             <el-table-column label="入库数量" width="100" align="right"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
             <el-table-column label="单价" width="100" align="right"><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
-            <el-table-column prop="batch_no" label="批次号" width="140" />
-            <el-table-column prop="order_quantity" label="订单数量" width="100" align="right" />
-            <el-table-column prop="received_quantity" label="已入库" width="100" align="right" />
+            <el-table-column prop="batch_no" label="批次号" width="140" sortable />
+            <el-table-column prop="order_quantity" label="订单数量" width="100" align="right" sortable />
+            <el-table-column prop="received_quantity" label="已入库" width="100" align="right" sortable />
             <el-table-column label="本次入库" width="130">
               <template #default="{ row, $index }">
                 <el-input type="number"

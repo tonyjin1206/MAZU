@@ -47,9 +47,9 @@
         <el-card>
           <template #header><div style="display: flex; justify-content: flex-end; gap: 8px"><span style="flex: 1; font-weight: 600; font-size: 14px; color: #e6a23c">应收账款账龄</span></div></template>
           <el-table :data="arAging" stripe border size="small" style="width: 100%" max-height="240" @row-click="drillAR">
-            <el-table-column prop="customer_name" label="客户" min-width="100" show-overflow-tooltip />
+            <el-table-column prop="customer_name" label="客户" min-width="100" show-overflow-tooltip sortable />
             <el-table-column label="余额" width="100" align="right"><template #default="{ row }"><span :style="{ color: row.overdue_days > 0 ? '#f56c6c' : '#67c23a' }">{{ $fm(row.balance) }}</span></template></el-table-column>
-            <el-table-column prop="due_date" label="到期日" width="90" />
+            <el-table-column prop="due_date" label="到期日" width="90" sortable />
             <el-table-column label="逾期" width="60" align="center"><template #default="{ row }"><span :style="{ color: row.overdue_days > 0 ? '#f56c6c' : '#909399' }">{{ row.overdue_days > 0 ? row.overdue_days + '天' : '-' }}</span></template></el-table-column>
           </el-table>
         </el-card>
@@ -58,9 +58,9 @@
         <el-card>
           <template #header><div style="display: flex; justify-content: flex-end; gap: 8px"><span style="flex: 1; font-weight: 600; font-size: 14px; color: #409eff">应付账款账龄</span></div></template>
           <el-table :data="apAging" stripe border size="small" style="width: 100%" max-height="240" @row-click="drillAP">
-            <el-table-column prop="supplier_name" label="供应商" min-width="100" show-overflow-tooltip />
+            <el-table-column prop="supplier_name" label="供应商" min-width="100" show-overflow-tooltip sortable />
             <el-table-column label="余额" width="100" align="right"><template #default="{ row }"><span :style="{ color: row.overdue_days > 0 ? '#f56c6c' : '#67c23a' }">{{ $fm(row.balance) }}</span></template></el-table-column>
-            <el-table-column prop="due_date" label="到期日" width="90" />
+            <el-table-column prop="due_date" label="到期日" width="90" sortable />
             <el-table-column label="逾期" width="60" align="center"><template #default="{ row }"><span :style="{ color: row.overdue_days > 0 ? '#f56c6c' : '#909399' }">{{ row.overdue_days > 0 ? row.overdue_days + '天' : '-' }}</span></template></el-table-column>
           </el-table>
         </el-card>
@@ -71,8 +71,8 @@
       <template #header><div style="display: flex; justify-content: flex-end; gap: 8px"><span style="flex: 1; font-weight: 600; font-size: 14px; color: #67c23a">销售毛利（按实际出库）</span></div></template>
       <el-table :data="profitList" stripe border size="small" style="width: 100%" @row-click="openProfitDetail">
         <el-table-column label="订单号" width="150"><template #default="{ row }"><el-button link type="primary" size="small" @click.stop="openOrderDetail(row.order_no)">{{ row.order_no }}</el-button></template></el-table-column>
-        <el-table-column prop="customer_name" label="客户" min-width="100" show-overflow-tooltip />
-        <el-table-column prop="product_name" label="产品" min-width="120" />
+        <el-table-column prop="customer_name" label="客户" min-width="100" show-overflow-tooltip sortable />
+        <el-table-column prop="product_name" label="产品" min-width="120" sortable />
         <el-table-column label="数量" width="70" align="right"><template #default="{ row }">{{ $fq(row.qty) }}</template></el-table-column>
         <el-table-column label="收入" width="110" align="right"><template #default="{ row }">{{ $fm(row.revenue) }}</template></el-table-column>
         <el-table-column label="成本" width="110" align="right"><template #default="{ row }" :style="{ color: '#f56c6c' }">{{ $fm(row.cost) }}</template></el-table-column>
@@ -91,7 +91,7 @@
         </el-descriptions>
         <el-table :data="profitDetail.detail" border stripe size="small" style="width: 100%">
           <el-table-column label="销售订单" width="120"><template #default="{ row }"><el-button link type="primary" size="small" @click="openOrderDetail(row.order_no)">{{ row.order_no }}</el-button></template></el-table-column>
-          <el-table-column prop="customer_name" label="客户" min-width="100" show-overflow-tooltip />
+          <el-table-column prop="customer_name" label="客户" min-width="100" show-overflow-tooltip sortable />
           <el-table-column label="数量" width="70" align="right"><template #default="{ row }">{{ $fq(row.qty) }}</template></el-table-column>
           <el-table-column label="销售发票号" width="120"><template #default="{ row }"><el-button v-if="row.invoice_no" link type="primary" size="small" @click="openInvoiceDetail(row.invoice_no)">{{ row.invoice_no }}</el-button></template></el-table-column>
           <el-table-column label="销售单价" width="90" align="right"><template #default="{ row }">{{ $fm(row.unit_price) }}</template></el-table-column>
@@ -168,33 +168,33 @@
           <el-button :type="netCashActiveTab === 'payments' ? 'primary' : 'default'" size="small" @click="netCashActiveTab = 'payments'">付款明细</el-button>
         </div>
         <el-table v-show="netCashActiveTab === 'collections'" :data="netCashDetail.collections" border stripe size="small" style="width: 100%">
-          <el-table-column prop="doc_no" label="收款单号" width="180" />
+          <el-table-column prop="doc_no" label="收款单号" width="180" sortable />
           <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-          <el-table-column prop="date" label="日期" width="100" />
-          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="date" label="日期" width="100" sortable />
+          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip sortable />
         </el-table>
         <el-table v-show="netCashActiveTab === 'payments'" :data="netCashDetail.payments" border stripe size="small" style="width: 100%">
-          <el-table-column prop="doc_no" label="付款单号" width="180" />
+          <el-table-column prop="doc_no" label="付款单号" width="180" sortable />
           <el-table-column label="金额" width="120" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
-          <el-table-column prop="date" label="日期" width="100" />
-          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="date" label="日期" width="100" sortable />
+          <el-table-column prop="remark" label="备注" min-width="120" show-overflow-tooltip sortable />
         </el-table>
       </div>
     </el-dialog>
 
     <el-dialog v-model="arDetailVisible" :title="arDetailTitle" width="970px">
       <el-table :data="arDetailItems" border stripe size="small" style="width: 100%">
-        <el-table-column prop="ar_no" label="应收单号" width="160" />
-        <el-table-column label="单据日期" width="100" prop="invoice_date" />
-        <el-table-column label="结算方式" width="80" prop="payment_terms" />
-        <el-table-column label="账期" width="60" prop="account_period" />
+        <el-table-column prop="ar_no" label="应收单号" width="160" sortable />
+        <el-table-column label="单据日期" width="100" prop="invoice_date" sortable />
+        <el-table-column label="结算方式" width="80" prop="payment_terms" sortable />
+        <el-table-column label="账期" width="60" prop="account_period" sortable />
         <el-table-column label="金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
         <el-table-column label="已收" width="110" align="right"><template #default="{ row }">{{ $fm(row.collected_amount) }}</template></el-table-column>
         <el-table-column label="余额" width="110" align="right">
           <template #default="{ row }"><span style="color: #e6a23c; font-weight: bold">{{ $fm(row.balance) }}</span></template>
         </el-table-column>
-        <el-table-column prop="due_date" label="到期日" width="100" />
-        <el-table-column prop="status" label="状态" width="80" align="center">
+        <el-table-column prop="due_date" label="到期日" width="100" sortable />
+        <el-table-column prop="status" label="状态" width="80" align="center" sortable>
           <template #default="{ row }"><el-tag :type="row.status === '已收款' ? 'success' : 'danger'" size="small">{{ row.status }}</el-tag></template>
         </el-table-column>
       </el-table>
@@ -202,17 +202,17 @@
 
     <el-dialog v-model="apDetailVisible" :title="apDetailTitle" width="970px">
       <el-table :data="apDetailItems" border stripe size="small" style="width: 100%">
-        <el-table-column prop="ap_no" label="应付单号" width="160" />
-        <el-table-column label="单据日期" width="100" prop="invoice_date" />
-        <el-table-column label="结算方式" width="80" prop="payment_terms" />
-        <el-table-column label="账期" width="60" prop="account_period" />
+        <el-table-column prop="ap_no" label="应付单号" width="160" sortable />
+        <el-table-column label="单据日期" width="100" prop="invoice_date" sortable />
+        <el-table-column label="结算方式" width="80" prop="payment_terms" sortable />
+        <el-table-column label="账期" width="60" prop="account_period" sortable />
         <el-table-column label="金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
         <el-table-column label="已付" width="110" align="right"><template #default="{ row }">{{ $fm(row.paid_amount) }}</template></el-table-column>
         <el-table-column label="余额" width="110" align="right">
           <template #default="{ row }"><span style="color: #f56c6c; font-weight: bold">{{ $fm(row.balance) }}</span></template>
         </el-table-column>
-        <el-table-column prop="due_date" label="到期日" width="100" />
-        <el-table-column prop="status" label="状态" width="80" align="center">
+        <el-table-column prop="due_date" label="到期日" width="100" sortable />
+        <el-table-column prop="status" label="状态" width="80" align="center" sortable>
           <template #default="{ row }"><el-tag :type="row.status === '已付款' ? 'success' : 'danger'" size="small">{{ row.status }}</el-tag></template>
         </el-table-column>
       </el-table>

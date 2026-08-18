@@ -87,7 +87,14 @@ def list_params_by_group(group_name: str, db: Session = Depends(get_db)):
 
 # ==================== 注册所有基础档案 CRUD ====================
 
-register_crud(router, Process,        ProcessCreate,    ProcessUpdate,    ProcessOut,    "processes",   "基础档案-工序",   search_fields=["code", "name"])
+def _process_delete_guard(db: Session, item: Process):
+    """工序删除保护：被产品工艺引用的工序不能删，只能停用"""
+    from app.models.foundation import ProductProcess
+    if db.query(ProductProcess).filter(ProductProcess.process_id == item.id).first():
+        raise HTTPException(400, "该工序已被产品工艺引用，不能删除，只能停用")
+
+
+register_crud(router, Process,        ProcessCreate,    ProcessUpdate,    ProcessOut,    "processes",   "基础档案-工序",   search_fields=["code", "name"], delete_guard=_process_delete_guard)
 register_crud(router, Department,     DepartmentCreate, None,             DepartmentOut, "departments", "基础档案-部门",   search_fields=["code", "name"])
 register_crud(router, Employee,       EmployeeCreate,   None,             EmployeeOut,   "employees",   "基础档案-人员",   search_fields=["code", "name"])
 def _warehouse_delete_guard(db: Session, item: Warehouse):
@@ -828,7 +835,7 @@ def processes_select(
     query = db.query(Process).filter(Process.is_active == 1)
     if keyword:
         query = query.filter(Process.name.like(f"%{keyword}%") | Process.code.like(f"%{keyword}%"))
-    items = query.order_by(Process.id.desc()).limit(100).all()
+    items = query.order_by(Process.code.asc()).limit(100).all()
     return [{"id": p.id, "code": p.code, "name": p.name, "unit_price": p.unit_price} for p in items]
 
 
@@ -842,7 +849,7 @@ def warehouses_select(
     query = db.query(Warehouse).filter(Warehouse.is_active == 1)
     if keyword:
         query = query.filter(Warehouse.name.like(f"%{keyword}%") | Warehouse.code.like(f"%{keyword}%"))
-    items = query.order_by(Warehouse.id.desc()).limit(100).all()
+    items = query.order_by(Warehouse.code.asc()).limit(100).all()
     return [{"id": w.id, "code": w.code, "name": w.name, "wh_type": w.wh_type} for w in items]
 
 
@@ -878,7 +885,7 @@ def customers_select(
             Customer.name_cn.like(f"%{keyword}%")
             | Customer.code.like(f"%{keyword}%")
         )
-    items = query.order_by(Customer.id.desc()).limit(100).all()
+    items = query.order_by(Customer.code.asc()).limit(100).all()
     return [{"id": c.id, "code": c.code, "name": c.name_cn, "payment_terms": c.payment_terms} for c in items]
 
 
@@ -892,7 +899,7 @@ def suppliers_select(
     query = db.query(Supplier).filter(Supplier.is_active == 1)
     if keyword:
         query = query.filter(Supplier.name.like(f"%{keyword}%") | Supplier.code.like(f"%{keyword}%"))
-    items = query.order_by(Supplier.id.desc()).limit(100).all()
+    items = query.order_by(Supplier.code.asc()).limit(100).all()
     return [{"id": s.id, "code": s.code, "name": s.name, "payment_terms": s.payment_terms} for s in items]
 
 
@@ -909,7 +916,7 @@ def products_select(
             Product.name_cn.like(f"%{keyword}%")
             | Product.code.like(f"%{keyword}%")
         )
-    items = query.order_by(Product.id.desc()).limit(100).all()
+    items = query.order_by(Product.code.asc()).limit(100).all()
     return [{"id": p.id, "code": p.code, "name": p.name_cn, "spec": p.spec or "", "model": p.model or "", "unit": p.unit, "sale_price": p.sale_price} for p in items]
 
 
@@ -923,7 +930,7 @@ def materials_select(
     query = db.query(Material).filter(Material.is_active == 1)
     if keyword:
         query = query.filter(Material.name.like(f"%{keyword}%") | Material.code.like(f"%{keyword}%"))
-    items = query.order_by(Material.id.desc()).limit(100).all()
+    items = query.order_by(Material.code.asc()).limit(100).all()
     return [{"id": m.id, "code": m.code, "name": m.name, "spec": m.spec, "model": m.model, "unit": m.unit, "purchase_price": m.purchase_price} for m in items]
 
 
@@ -1040,7 +1047,16 @@ def list_product_process_templates(
         .order_by(ProductProcess.seq)
         .all()
     )
-    return [ProductProcessTemplateOut.model_validate(i) for i in items]
+    supplier_ids = {i.default_supplier_id for i in items if i.default_supplier_id}
+    suppliers = {}
+    if supplier_ids:
+        suppliers = {s.id: s.name for s in db.query(Supplier).filter(Supplier.id.in_(supplier_ids)).all()}
+    result = []
+    for i in items:
+        out = ProductProcessTemplateOut.model_validate(i)
+        out.supplier_name = suppliers.get(i.default_supplier_id, "") if i.default_supplier_id else ""
+        result.append(out)
+    return result
 
 
 @router.put("/products/{product_id}/processes", response_model=list[ProductProcessTemplateOut], tags=["基础档案-产品工艺路线"])
@@ -1062,6 +1078,7 @@ def batch_save_product_process_templates(
             process_id=t.process_id,
             seq=t.seq,
             default_outsourcer_id=t.default_outsourcer_id,
+            default_supplier_id=t.default_supplier_id,
             default_unit_price=t.default_unit_price or 0,
         )
         db.add(item)

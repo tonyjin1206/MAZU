@@ -153,12 +153,12 @@
     <!-- 选择进项发票弹窗 -->
     <el-dialog v-model="selectInvoiceDialog" title="选择进项发票" width="700px" destroy-on-close>
       <el-table :data="filteredInvoiceList" stripe border size="small" highlight-current-row @current-change="onInvoiceSelect">
-        <el-table-column prop="invoice_no" label="发票号" width="160" />
-        <el-table-column prop="supplier_name" label="供应商" width="150" />
+        <el-table-column prop="invoice_no" label="发票号" width="160" sortable />
+        <el-table-column prop="supplier_name" label="供应商" width="150" sortable />
         <el-table-column label="金额" width="110" align="right"><template #default="{ row }">{{ $fm(row.amount) }}</template></el-table-column>
         <el-table-column label="税额" width="90" align="right"><template #default="{ row }">{{ $fm(row.tax_amount) }}</template></el-table-column>
         <el-table-column label="价税合计" width="110" align="right"><template #default="{ row }">{{ $fm(row.total_amount) }}</template></el-table-column>
-        <el-table-column prop="invoice_date" label="开票日期" width="100" />
+        <el-table-column prop="invoice_date" label="开票日期" width="100" sortable />
         <el-table-column label="状态" width="90">
           <template #default="{ row }">
             <el-tag v-if="row._disabled" type="info" size="small">已关联</el-tag>

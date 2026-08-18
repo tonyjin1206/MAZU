@@ -40,20 +40,20 @@
           <div style="margin-top: 20px">
             <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #303133">材料出库清单</div>
             <el-table :data="issueItems" border size="small" max-height="300" style="width: 100%">
-              <el-table-column label="物料名称" min-width="130" prop="material_name" />
-              <el-table-column label="规格" width="120" prop="material_spec" show-overflow-tooltip />
-              <el-table-column label="型号" width="100" prop="material_model" />
+              <el-table-column label="物料名称" min-width="130" prop="material_name" sortable />
+              <el-table-column label="规格" width="120" prop="material_spec" show-overflow-tooltip sortable />
+              <el-table-column label="型号" width="100" prop="material_model" sortable />
               <el-table-column label="数量" width="100" align="right">
                 <template #default="{ row }">{{ $fq(row.quantity) }}</template>
               </el-table-column>
-              <el-table-column label="单价" width="100" align="right" prop="unit_price">
+              <el-table-column label="单价" width="100" align="right" prop="unit_price" sortable>
                 <template #default="{ row }">{{ $fm(row.unit_price || 0) }}</template>
               </el-table-column>
               <el-table-column label="金额" width="110" align="right">
                 <template #default="{ row }">{{ $fm((row.quantity || 0) * (row.unit_price || 0)) }}</template>
               </el-table-column>
-              <el-table-column label="批次号" width="130" prop="batch_no" />
-              <el-table-column label="发料日期" width="100" prop="issue_date" />
+              <el-table-column label="批次号" width="130" prop="batch_no" sortable />
+              <el-table-column label="发料日期" width="100" prop="issue_date" sortable />
             </el-table>
           </div>
 
@@ -61,9 +61,9 @@
           <div style="margin-top: 20px">
             <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px; color: #303133">完工入库清单</div>
             <el-table :data="receiptItems" border size="small" max-height="300" style="width: 100%">
-              <el-table-column label="产品名称" min-width="130" prop="product_name" />
-              <el-table-column label="规格" width="120" prop="product_spec" show-overflow-tooltip />
-              <el-table-column label="型号" width="100" prop="product_model" />
+              <el-table-column label="产品名称" min-width="130" prop="product_name" sortable />
+              <el-table-column label="规格" width="120" prop="product_spec" show-overflow-tooltip sortable />
+              <el-table-column label="型号" width="100" prop="product_model" sortable />
               <el-table-column label="数量" width="100" align="right">
                 <template #default="{ row }">{{ $fq(row.quantity) }}</template>
               </el-table-column>
@@ -79,9 +79,9 @@
               <el-table-column label="合计金额" width="110" align="right">
                 <template #default="{ row }">{{ $fm((row.material_cost || 0) + (row.process_cost || 0)) }}</template>
               </el-table-column>
-              <el-table-column label="仓库" width="100" prop="warehouse_name" />
-              <el-table-column label="批次号" width="130" prop="batch_no" />
-              <el-table-column label="入库日期" width="100" prop="receipt_date" />
+              <el-table-column label="仓库" width="100" prop="warehouse_name" sortable />
+              <el-table-column label="批次号" width="130" prop="batch_no" sortable />
+              <el-table-column label="入库日期" width="100" prop="receipt_date" sortable />
             </el-table>
           </div>
         </el-tab-pane>
@@ -123,14 +123,14 @@
                   <el-tag :type="row.type === 'outsource_out' ? 'warning' : 'success'" size="small">{{ row.type_label }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="单号" min-width="140" prop="trans_no" />
-              <el-table-column label="批次号" min-width="130" prop="batch_no" />
-              <el-table-column label="数量" width="80" align="right" prop="quantity" />
+              <el-table-column label="单号" min-width="140" prop="trans_no" sortable />
+              <el-table-column label="批次号" min-width="130" prop="batch_no" sortable />
+              <el-table-column label="数量" width="80" align="right" prop="quantity" sortable />
               <el-table-column label="金额" width="100" align="right">
                 <template #default="{ row }">{{ $fm(row.amount) }}</template>
               </el-table-column>
-              <el-table-column label="日期" width="140" prop="date" />
-              <el-table-column label="操作人" width="80" prop="operator" />
+              <el-table-column label="日期" width="140" prop="date" sortable />
+              <el-table-column label="操作人" width="80" prop="operator" sortable />
             </el-table>
             <div v-if="matDetailSummary" style="margin-top: 12px; padding: 12px; background: #f5f7fa; border-radius: 4px; display: flex; gap: 30px; font-size: 13px">
               <div>发料：<b>{{ $fq(matDetailSummary.out_qty) }}</b> / <b>{{ $fm(matDetailSummary.out_amount) }}</b></div>
@@ -143,7 +143,7 @@
         <el-tab-pane label="工艺路线" name="processes">
           <el-button v-if="order.status === '待排产'" size="small" @click="addProcessRow" style="margin-bottom: 8px">+ 添加工序</el-button>
           <el-table :data="processes" border size="small" max-height="400">
-            <el-table-column label="序号" width="50" align="center" prop="seq" />
+            <el-table-column label="序号" width="50" align="center" prop="seq" sortable />
             <el-table-column label="工序" min-width="140">
               <template #default="{ row }">
                 <el-select v-model="row.process_id" placeholder="选择" filterable size="small" style="width: 100%" :disabled="order.status !== '待排产'">

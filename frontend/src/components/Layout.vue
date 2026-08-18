@@ -37,7 +37,6 @@
           <el-menu-item index="/foundation/materials">原辅材料</el-menu-item>
           <el-menu-item index="/foundation/products">产品档案</el-menu-item>
           <el-menu-item index="/foundation/bom">BOM管理</el-menu-item>
-          <el-menu-item index="/foundation/processes">工序管理</el-menu-item>
           <el-menu-item index="/foundation/hs-codes">HS编码/退税率</el-menu-item>
           <el-menu-item index="/foundation/params">参数设置</el-menu-item>
         </el-sub-menu>
@@ -138,7 +137,6 @@ const pageTitle = computed(() => {
     '/foundation/customers': '客户管理',
     '/foundation/suppliers': '供应商管理',
     '/foundation/hs-codes': 'HS编码/退税率管理',
-    '/foundation/processes': '工序管理',
     '/purchase/from-sales': '销售订单转采购',
     '/purchase/orders': '采购订单',
     '/purchase/invoices': '采购发票',

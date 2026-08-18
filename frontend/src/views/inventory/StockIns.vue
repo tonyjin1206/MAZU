@@ -57,7 +57,7 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === '待入库' || row.status === '部分入库'" link type="primary" size="small" @click="openReceive(row)">入库</el-button>
-            <el-button v-if="row.status === '待入库' || row.status === '部分入库'" link type="success" size="small" @click="handleComplete(row)">确认完成</el-button>
+            <el-button v-if="row.status === '部分入库'" link type="success" size="small" @click="handleComplete(row)">确认完成</el-button>
             <el-button v-if="row.status === '已入库' || row.status === '部分入库'" link type="danger" size="small" @click="openReturn(row)">退回</el-button>
           </template>
         </el-table-column>
@@ -71,10 +71,10 @@
         <span style="font-weight: 600">收货明细</span>
       </template>
       <el-table :data="detailList" v-loading="detailLoading" stripe border size="small" show-summary :summary-method="detailSummary">
-        <el-table-column prop="in_date" label="入库日期" width="120" />
-        <el-table-column prop="warehouse" label="仓库" width="110" />
-        <el-table-column prop="receipt_no" label="入库单号" minWidth="160" />
-        <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" />
+        <el-table-column prop="in_date" label="入库日期" width="120" sortable />
+        <el-table-column prop="warehouse" label="仓库" width="110" sortable />
+        <el-table-column prop="receipt_no" label="入库单号" minWidth="160" sortable />
+        <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" sortable />
       </el-table>
       </el-card>
 
@@ -85,7 +85,7 @@
         <el-form-item label="产品"><el-input :model-value="`${receiveForm.product_code || ''} ${receiveForm.product_name || ''}`" readonly /></el-form-item>
         <el-form-item label="应入数量"><span>{{ receiveForm.quantity }}</span> <span style="margin-left: 20px; color: #909399">已入：{{ receiveForm.received_qty }}</span></el-form-item>
         <el-form-item label="本次入库" required>
-          <el-input-number v-model="receiveForm.quantity_now" :min="0.01" style="width: 100%" />
+          <el-input-number v-model="receiveForm.quantity_now" :min="0" style="width: 100%" />
         </el-form-item>
         <el-form-item label="入库仓库"><el-input :model-value="receiveForm.warehouse_name || '成品仓库（自动）'" readonly /></el-form-item>
         <div style="color: #909399; font-size: 12px">可分批入库，收满自动完成；未收满时由人工点「确认完成」判定结束。</div>
@@ -206,7 +206,7 @@ function openReceive(row) {
 }
 
 async function handleReceive() {
-  if (!receiveForm.quantity_now || receiveForm.quantity_now <= 0) { ElMessage.warning('请输入本次入库数量'); return }
+  if (!receiveForm.quantity_now || receiveForm.quantity_now <= 0) { ElMessage.warning('入库数量必须大于 0'); return }
   submitting.value = true
   try {
     const res = await request.post(`/stock-in/${receiveForm.id}/receive`, {

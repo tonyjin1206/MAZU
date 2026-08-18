@@ -91,10 +91,10 @@
     <!-- 批次收货记录弹窗（点击批次行穿透） -->
     <el-dialog v-model="batchReceiptVisible" :title="'批次收货记录 — ' + (batchReceiptBatch || '')" width="640px" destroy-on-close>
       <el-table :data="batchReceiptList" border stripe size="small" show-summary :summary-method="batchReceiptSummary">
-        <el-table-column prop="in_date" label="入库日期" width="120" />
-        <el-table-column prop="warehouse" label="仓库" width="120" />
-        <el-table-column prop="receipt_no" label="入库单号" min-width="140" />
-        <el-table-column prop="quantity" label="本次数量" width="100" align="right" />
+        <el-table-column prop="in_date" label="入库日期" width="120" sortable />
+        <el-table-column prop="warehouse" label="仓库" width="120" sortable />
+        <el-table-column prop="receipt_no" label="入库单号" min-width="140" sortable />
+        <el-table-column prop="quantity" label="本次数量" width="100" align="right" sortable />
       </el-table>
       <div style="color: #909399; font-size: 12px; margin-top: 8px">点击上方批次行查看该批次的每次入库记录</div>
     </el-dialog>

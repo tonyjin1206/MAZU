@@ -21,7 +21,7 @@ def _paginate(db: Session, model, page: int = 1, page_size: int = 50, **filters)
             if column is not None:
                 query = query.filter(column == value)
     total = query.count()
-    items = query.order_by(model.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    items = query.order_by(model.id.asc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
@@ -90,7 +90,7 @@ def register_crud(
             query = query.filter(model.is_active == is_active)
 
         total = query.count()
-        items = query.order_by(model.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        items = query.order_by(model.id.asc()).offset((page - 1) * page_size).limit(page_size).all()
         return {
             "total": total,
             "page": page,

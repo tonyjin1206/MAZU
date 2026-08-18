@@ -256,11 +256,11 @@
         <el-button type="primary" @click="searchSuppliers">搜索</el-button>
       </div>
       <el-table :data="pickerSupplierList" height="420" border size="small" highlight-current-row @row-click="pickSupplier">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="country" label="国家/地区" width="110" />
-        <el-table-column prop="contact_person" label="联系人" width="100" />
-        <el-table-column prop="phone" label="电话" width="120" show-overflow-tooltip />
+        <el-table-column prop="code" label="编码" width="120" sortable />
+        <el-table-column prop="name" label="名称" min-width="160" show-overflow-tooltip sortable />
+        <el-table-column prop="country" label="国家/地区" width="110" sortable />
+        <el-table-column prop="contact_person" label="联系人" width="100" sortable />
+        <el-table-column prop="phone" label="电话" width="120" show-overflow-tooltip sortable />
       </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination v-model:current-page="supplierPage" v-model:page-size="supplierPageSize" :total="supplierTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchSuppliers" />
@@ -278,19 +278,19 @@
         <el-button type="primary" @click="searchPicker">搜索</el-button>
       </div>
       <el-table v-if="pickerTab === 'material'" :data="pickerMaterialList" height="380" border size="small" highlight-current-row @row-click="pickMaterial">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="spec" label="规格" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="unit" label="单位" width="70" />
-        <el-table-column prop="purchase_price" label="采购价" width="100" align="right" />
+        <el-table-column prop="code" label="编码" width="120" sortable />
+        <el-table-column prop="name" label="名称" min-width="150" show-overflow-tooltip sortable />
+        <el-table-column prop="spec" label="规格" min-width="130" show-overflow-tooltip sortable />
+        <el-table-column prop="unit" label="单位" width="70" sortable />
+        <el-table-column prop="purchase_price" label="采购价" width="100" align="right" sortable />
       </el-table>
       <el-table v-else :data="pickerProductList" height="380" border size="small" highlight-current-row @row-click="pickProduct">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name_cn" label="品名（公司）" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="name_en" label="品名（客户）" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="unit" label="单位" width="70" />
-        <el-table-column prop="estimated_cost" label="参考成本" width="100" align="right" />
+        <el-table-column prop="code" label="编码" width="120" sortable />
+        <el-table-column prop="name_cn" label="品名（公司）" min-width="140" show-overflow-tooltip sortable />
+        <el-table-column prop="name_en" label="品名（客户）" min-width="130" show-overflow-tooltip sortable />
+        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip sortable />
+        <el-table-column prop="unit" label="单位" width="70" sortable />
+        <el-table-column prop="estimated_cost" label="参考成本" width="100" align="right" sortable />
       </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination v-model:current-page="materialPage" v-model:page-size="materialPageSize" :total="materialTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchPicker" />
@@ -731,6 +731,7 @@ function buildItemsPayload() {
 async function handleSubmit() {
   if (!orderForm.supplier_id) { ElMessage.warning('请选择供应商'); return }
   if (orderForm.items.length === 0) { ElMessage.warning('请添加至少一条物料明细'); return }
+  if (orderForm.items.some(item => !(parseFloat(item.quantity) > 0))) { ElMessage.warning('明细数量必须大于 0'); return }
   submitting.value = true
   try {
     const payload = {
@@ -750,6 +751,7 @@ async function handleSubmit() {
 async function handleUpdate() {
   if (!orderForm.supplier_id) { ElMessage.warning('请选择供应商'); return }
   if (orderForm.items.length === 0) { ElMessage.warning('请添加至少一条物料明细'); return }
+  if (orderForm.items.some(item => !(parseFloat(item.quantity) > 0))) { ElMessage.warning('明细数量必须大于 0'); return }
   submitting.value = true
   try {
     const payload = {

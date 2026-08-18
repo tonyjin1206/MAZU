@@ -44,11 +44,11 @@
     <!-- 选候选单弹窗 -->
     <el-dialog v-model="createVisible" title="开票 - 选择完工入库单" width="800px">
       <el-table :data="candidates" v-loading="candLoading" border size="small" @row-click="openInvoiceForm">
-        <el-table-column prop="receipt_no" label="入库单号" width="160" />
-        <el-table-column prop="order_no" label="生产订单" width="160" />
-        <el-table-column prop="product_name" label="产品" min-width="120" />
+        <el-table-column prop="receipt_no" label="入库单号" width="160" sortable />
+        <el-table-column prop="order_no" label="生产订单" width="160" sortable />
+        <el-table-column prop="product_name" label="产品" min-width="120" sortable />
         <el-table-column label="加工费" width="100" align="right"><template #default="{ row }">{{ $fm(row.process_fee) }}</template></el-table-column>
-        <el-table-column prop="supplier_name" label="销售方" min-width="120" />
+        <el-table-column prop="supplier_name" label="销售方" min-width="120" sortable />
       </el-table>
       <div v-if="!candidates.length && !candLoading" style="text-align: center; color: #909399; padding: 20px">无可开票的完工入库记录</div>
       <template #footer><el-button @click="createVisible = false">取消</el-button></template>

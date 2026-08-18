@@ -1,41 +1,77 @@
 <template>
-  <div style="display: flex; gap: 12px">
-    <!-- 左侧：产品列表 -->
-    <el-card style="width: 40%; flex-shrink: 0">
-      <template #header>
-        <div style="display: flex; justify-content: flex-end; gap: 8px">
-          <el-button type="primary" @click="fetchProducts">刷新</el-button>
-        </div>
-      </template>
-      <el-input v-model="productKeyword" placeholder="按编码/名称搜索" clearable style="margin-bottom: 8px" @input="filterProducts" />
-      <el-table :data="filteredProducts" v-loading="productLoading" stripe border size="small" style="width: 100%" highlight-current-row @row-click="onProductClick" max-height="550">
+  <div>
+    <!-- 顶部：全部产品列表 -->
+    <el-card style="margin-bottom: 12px">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
+        <el-input v-model="productKeyword" placeholder="按编码/名称搜索" clearable style="flex: 1" />
+        <el-button @click="fetchProducts">刷新</el-button>
+      </div>
+      <el-table
+        ref="productTableRef"
+        :data="filteredProducts"
+        v-loading="productLoading"
+        stripe
+        border
+        size="small"
+        style="width: 100%"
+        :height="tableHeight"
+        highlight-current-row
+        :row-key="row => row.id"
+        @row-click="onProductSelect"
+      >
         <el-table-column prop="code" label="编码" width="120" sortable />
         <el-table-column prop="name" label="名称" min-width="120" sortable />
-        <el-table-column label="规格" width="100" show-overflow-tooltip sortable><template #default="{ row }">{{ row.spec || '-' }}</template></el-table-column>
-        <el-table-column label="型号" width="100" show-overflow-tooltip sortable><template #default="{ row }">{{ row.model || '-' }}</template></el-table-column>
+        <el-table-column prop="spec" label="规格" min-width="100" show-overflow-tooltip sortable>
+          <template #default="{ row }">{{ row.spec || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="model" label="型号" min-width="100" show-overflow-tooltip sortable>
+          <template #default="{ row }">{{ row.model || '-' }}</template>
+        </el-table-column>
       </el-table>
     </el-card>
 
-    <!-- 右侧：BOM 明细 -->
-    <el-card style="flex: 1">
+    <!-- 上下区域分隔条：可拖动调整上面产品列表高度 -->
+    <div class="bom-divider" @mousedown="startDrag" title="拖动调整高度"></div>
+
+    <!-- 下面：组成材料 / 工艺流程 -->
+    <el-card>
       <template #header>
-        <div style="display: flex; justify-content: flex-end; gap: 8px">
-          <el-button type="primary" :disabled="!selectedProductId" @click="openDialog('create')">新增材料</el-button>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+          <el-tabs v-model="rightTab" class="header-tabs" size="small">
+            <el-tab-pane label="组成材料" name="bom" />
+            <el-tab-pane label="工艺流程" name="process" />
+          </el-tabs>
+          <el-button v-if="rightTab === 'bom'" type="primary" :disabled="!selectedProductId" @click="openDialog('create')">新增材料</el-button>
+          <el-button v-else type="primary" :disabled="!selectedProductId" @click="openProcessDialog">添加工序</el-button>
         </div>
       </template>
-      <div v-if="!selectedProductId" style="text-align: center; color: #909399; padding: 40px">请在左侧选择一个产品查看 BOM</div>
-      <el-table v-else :data="bomData" v-loading="bomLoading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="material_code" label="材料编码" width="120" />
-        <el-table-column prop="material_name" label="材料名称" min-width="140" />
-        <el-table-column prop="material_spec" label="规格" min-width="120" />
-        <el-table-column prop="material_unit" label="单位" width="70" align="center" />
+      <div v-if="!selectedProductId" style="text-align: center; color: #909399; padding: 40px">请先选择产品查看 BOM</div>
+      <el-table v-else-if="rightTab === 'bom'" :data="bomData" v-loading="bomLoading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="material_code" label="材料编码" width="120" sortable />
+        <el-table-column prop="material_name" label="材料名称" min-width="140" sortable />
+        <el-table-column prop="material_spec" label="规格" min-width="120" sortable />
+        <el-table-column prop="material_unit" label="单位" width="70" align="center" sortable />
         <el-table-column label="用量" width="80" align="center"><template #default="{ row }">{{ $fq(row.quantity) }}</template></el-table-column>
-        <el-table-column prop="loss_rate" label="损耗率(%)" width="100" align="center" />
-        <el-table-column prop="process_name" label="工序" width="120" />
+        <el-table-column prop="loss_rate" label="损耗率(%)" width="100" align="center" sortable />
+        <el-table-column prop="process_name" label="工序" width="120" sortable />
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openDialog('edit', row)">编辑</el-button>
             <el-button link type="danger" size="small" @click="handleDelete(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-table v-else :data="processData" v-loading="processLoading" stripe border size="small" style="width: 100%">
+        <el-table-column prop="process_code" label="工序编码" width="120" sortable />
+        <el-table-column prop="process_name" label="工序名称" min-width="140" sortable />
+        <el-table-column label="默认加工单价" width="120" align="center"><template #default="{ row }">{{ $fq(row.default_unit_price) }}</template></el-table-column>
+        <el-table-column prop="supplier_name" label="默认供应商" min-width="120" />
+        <el-table-column prop="seq" label="序号" width="70" align="center" sortable />
+        <el-table-column label="操作" width="170" fixed="right">
+          <template #default="{ row, $index }">
+            <el-button link type="primary" size="small" :disabled="$index === 0" @click="moveProcess($index, -1)">上移</el-button>
+            <el-button link type="primary" size="small" :disabled="$index === processData.length - 1" @click="moveProcess($index, 1)">下移</el-button>
+            <el-button link type="danger" size="small" @click="handleProcessDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -63,13 +99,37 @@
         <el-button type="primary" :loading="dialogLoading" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 添加工序弹窗 -->
+    <el-dialog v-model="processDialogVisible" title="添加工序" width="500px" @close="processDialogVisible = false">
+      <el-form :model="processForm" :rules="processFormRules" ref="processFormRef" label-width="110px">
+        <el-form-item label="工序" prop="process_id">
+          <el-select v-model="processForm.process_id" filterable placeholder="请选择工序" style="width: 100%">
+            <el-option v-for="p in processList" :key="p.id" :label="`${p.code} - ${p.name}`" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="默认加工单价" prop="default_unit_price">
+          <el-input-number v-model="processForm.default_unit_price" :precision="2" :min="0" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="默认供应商" prop="default_supplier_id">
+          <el-select v-model="processForm.default_supplier_id" filterable clearable placeholder="请选择默认供应商" style="width: 100%">
+            <el-option v-for="s in supplierList" :key="s.id" :label="`${s.code} - ${s.name}`" :value="s.id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="processDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="processDialogLoading" @click="handleProcessSave">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { foundationApi } from '../../api/foundation'
+import request from '../../api/request'
 
 const productKeyword = ref('')
 const selectedProductId = ref(null)
@@ -77,8 +137,39 @@ const productList = ref([])
 const productLoading = ref(false)
 const bomData = ref([])
 const bomLoading = ref(false)
+const processData = ref([])
+const processLoading = ref(false)
 const materialList = ref([])
 const processList = ref([])
+const supplierList = ref([])
+const rightTab = ref('bom')
+const topHeight = ref(parseInt(localStorage.getItem('mazu_bom_top_height') || '240'))
+const tableHeight = computed(() => Math.max(topHeight.value - 50, 100))
+
+const selectedProduct = ref(null)
+
+const productTableRef = ref(null)
+
+function startDrag(e) {
+  e.preventDefault()
+  const startY = e.clientY
+  const startH = topHeight.value
+  const onMove = (ev) => {
+    const h = Math.min(Math.max(startH + (ev.clientY - startY), 140), window.innerHeight - 320)
+    topHeight.value = h
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    localStorage.setItem('mazu_bom_top_height', String(topHeight.value))
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+}
 
 const filteredProducts = computed(() => {
   if (!productKeyword.value) return productList.value
@@ -90,10 +181,15 @@ const filteredProducts = computed(() => {
 })
 
 async function fetchProducts() {
+  productLoading.value = true
   try {
     const res = await foundationApi.products.select('')
     productList.value = Array.isArray(res) ? res : (res.items || res.data || [])
-  } catch {}
+    nextTick(() => {
+      productTableRef.value?.setCurrentRow(productList.value[0] || null)
+      onProductSelect(productList.value[0])
+    })
+  } catch {} finally { productLoading.value = false }
 }
 
 async function fetchBom() {
@@ -103,6 +199,24 @@ async function fetchBom() {
     const res = await foundationApi.getBomByProduct(selectedProductId.value)
     bomData.value = res.items || res.data || []
   } catch { ElMessage.error('加载 BOM 失败') } finally { bomLoading.value = false }
+}
+
+function findProcess(id) {
+  return processList.value.find(p => p.id === id)
+}
+
+async function fetchProcessTemplates() {
+  if (!selectedProductId.value) return
+  if (!processList.value.length) await fetchProcesses()
+  processLoading.value = true
+  try {
+    const res = await request.get(`/foundation/products/${selectedProductId.value}/processes`)
+    const items = Array.isArray(res) ? res : (res.items || res.data || [])
+    processData.value = items.map(row => {
+      const p = findProcess(row.process_id)
+      return { ...row, process_code: p?.code || '', process_name: p?.name || '' }
+    })
+  } catch { ElMessage.error('加载工艺流程失败') } finally { processLoading.value = false }
 }
 
 async function fetchMaterials() {
@@ -119,11 +233,20 @@ async function fetchProcesses() {
   } catch {}
 }
 
-function onProductClick(row) {
-  selectedProductId.value = row.id
-  fetchBom()
+async function fetchSupplierList() {
+  try {
+    const res = await request.get('/foundation/suppliers-select')
+    supplierList.value = Array.isArray(res) ? res : []
+  } catch {}
 }
-function filterProducts() {} // computed handles it
+
+function onProductSelect(row) {
+  if (!row) return
+  selectedProductId.value = row.id
+  selectedProduct.value = row
+  fetchBom()
+  fetchProcessTemplates()
+}
 
 const dialogVisible = ref(false)
 const dialogLoading = ref(false)
@@ -134,6 +257,74 @@ const form = reactive({ id: null, material_id: null, material_spec: '', quantity
 const formRules = {
   material_id: [{ required: true, message: '请选择材料', trigger: 'change' }],
   quantity: [{ required: true, message: '请输入用量', trigger: 'blur' }],
+}
+
+const processDialogVisible = ref(false)
+const processDialogLoading = ref(false)
+const processFormRef = ref(null)
+const processForm = reactive({ process_id: null, default_unit_price: 0, default_supplier_id: null })
+const processFormRules = {
+  process_id: [{ required: true, message: '请选择工序', trigger: 'change' }],
+}
+
+function openProcessDialog() {
+  Object.assign(processForm, { process_id: null, default_unit_price: 0, default_supplier_id: null })
+  processDialogVisible.value = true
+}
+
+async function handleProcessSave() {
+  const valid = await processFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  const p = processList.value.find(x => x.id === processForm.process_id)
+  if (!p) return
+  const maxSeq = processData.value.reduce((m, r) => Math.max(m, r.seq || 0), 0)
+  processData.value.push({
+    id: null,
+    process_id: p.id,
+    process_code: p.code,
+    process_name: p.name,
+    seq: maxSeq + 1,
+    default_unit_price: processForm.default_unit_price,
+    default_supplier_id: processForm.default_supplier_id,
+    supplier_name: supplierList.value.find(s => s.id === processForm.default_supplier_id)?.name || '',
+  })
+  processDialogVisible.value = false
+  saveProcessTemplates()
+}
+
+async function saveProcessTemplates() {
+  if (!selectedProductId.value) return
+  processLoading.value = true
+  try {
+    const payload = processData.value.map((row, i) => ({
+      process_id: row.process_id,
+      seq: i + 1,
+      default_unit_price: row.default_unit_price || 0,
+      default_supplier_id: row.default_supplier_id ?? null,
+    }))
+    await request.put(`/foundation/products/${selectedProductId.value}/processes`, payload)
+    ElMessage.success('保存成功')
+    await fetchProcessTemplates()
+  } catch { ElMessage.error('保存失败') } finally { processLoading.value = false }
+}
+
+function moveProcess(idx, dir) {
+  const target = idx + dir
+  if (target < 0 || target >= processData.value.length) return
+  const arr = processData.value
+  const tmp = arr[idx]
+  arr[idx] = arr[target]
+  arr[target] = tmp
+  arr.forEach((row, i) => { row.seq = i + 1 })
+  saveProcessTemplates()
+}
+
+async function handleProcessDelete(row) {
+  try {
+    await ElMessageBox.confirm('确认删除该工序？', '删除确认', { type: 'warning' })
+    processData.value = processData.value.filter(x => x !== row)
+    saveProcessTemplates()
+  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
 function onMaterialChange(id) {
@@ -177,8 +368,18 @@ async function handleDelete(row) {
   } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
 }
 
-onMounted(() => { fetchProducts(); fetchMaterials(); fetchProcesses() })
+onMounted(() => { fetchProducts(); fetchMaterials(); fetchProcesses(); fetchSupplierList() })
 </script>
 
 <style scoped>
+:deep(.header-tabs .el-tabs__header) { margin: 0; border-bottom: none; }
+:deep(.header-tabs .el-tabs__nav-wrap::after) { display: none; }
+.bom-divider {
+  height: 8px;
+  margin-bottom: 12px;
+  cursor: row-resize;
+  background: #dcdfe6;
+  border-radius: 2px;
+}
+.bom-divider:hover { background: #409eff; }
 </style>

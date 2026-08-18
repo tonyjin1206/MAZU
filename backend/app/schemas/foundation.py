@@ -502,6 +502,7 @@ class ProductProcessTemplateItem(BaseModel):
     process_id: int
     seq: int = 0
     default_outsourcer_id: int | None = None
+    default_supplier_id: int | None = None
     default_unit_price: float | None = None
 
 
@@ -512,6 +513,8 @@ class ProductProcessTemplateOut(BaseModel):
     process_id: int
     seq: int
     default_outsourcer_id: int | None
+    default_supplier_id: int | None = None
+    supplier_name: str = ""
     default_unit_price: float | None
     created_at: datetime
 

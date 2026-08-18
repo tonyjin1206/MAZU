@@ -107,6 +107,7 @@ class ProductProcess(Base):
     process_id = Column(Integer, ForeignKey("fd_process.id"), nullable=False)
     seq = Column(Integer, nullable=False, default=0, comment="工序序号")
     default_outsourcer_id = Column(Integer, ForeignKey("fd_outsourcer.id"), comment="默认委外商")
+    default_supplier_id = Column(Integer, comment="默认供应商(委外加工厂)")
     default_unit_price = Column(Float, default=0, comment="默认加工单价")
     created_at = Column(DateTime, default=func.now())
 

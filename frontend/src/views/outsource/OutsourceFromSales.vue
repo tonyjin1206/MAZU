@@ -72,8 +72,8 @@
         <el-table-column label="产品名称" min-width="140">
           <template #default="{ row }">{{ row.name }}</template>
         </el-table-column>
-        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip />
-        <el-table-column prop="unit" label="单位" width="60" align="center" />
+        <el-table-column prop="spec" label="规格" min-width="110" show-overflow-tooltip sortable />
+        <el-table-column prop="unit" label="单位" width="60" align="center" sortable />
         <el-table-column label="销售数量" width="95" align="right">
           <template #default="{ row }">{{ fmtQty(row.need_qty) }}</template>
         </el-table-column>

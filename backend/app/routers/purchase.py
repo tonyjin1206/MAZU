@@ -242,6 +242,8 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
         for item_data in data["items"]:
             unit_price_fc = float(item_data.get("unit_price", 0) or 0)
             qty = float(item_data.get("quantity", 1) or 1)
+            if qty <= 0:
+                raise HTTPException(400, "采购数量必须大于0")
             line_total = qty * unit_price_fc
             mid = item_data.get("material_id")
             pid = item_data.get("product_id")
@@ -297,6 +299,8 @@ def create_order(
     for item_data in data.items:
         if not item_data.material_id and not item_data.product_id:
             raise HTTPException(400, "采购明细必须选择材料或产品")
+        if item_data.quantity <= 0:
+            raise HTTPException(400, "采购数量必须大于0")
         unit_price_fc = item_data.unit_price
         line_total_fc = item_data.quantity * unit_price_fc
         item = PurchaseOrderItem(
@@ -834,6 +838,8 @@ def create_receipt(
         order_items_map[oi.material_id] = oi
 
     for item_data in data.items:
+        if item_data.quantity <= 0:
+            raise HTTPException(400, "收货数量必须大于0")
         # 产品类明细（转成品库入库）不能走采购入库
         if not item_data.material_id:
             raise HTTPException(400, "产品类采购明细请使用「转成品库入库」收货")

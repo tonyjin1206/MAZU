@@ -132,10 +132,10 @@
         选择仓库里已备货的批次（显示的是该产品的备货库存），认领后货就归本销售单，成本按该批次的进价归集。支持填数量部分认领。
       </div>
       <el-table :data="claimBatches" height="260" border size="small" highlight-current-row @row-click="pickClaimBatch">
-        <el-table-column prop="batch_no" label="批次号" width="150" />
-        <el-table-column prop="warehouse_name" label="仓库" min-width="110" />
-        <el-table-column prop="quantity" label="库存数" width="100" align="right" />
-        <el-table-column prop="unit_cost" label="进价" width="100" align="right" />
+        <el-table-column prop="batch_no" label="批次号" width="150" sortable />
+        <el-table-column prop="warehouse_name" label="仓库" min-width="110" sortable />
+        <el-table-column prop="quantity" label="库存数" width="100" align="right" sortable />
+        <el-table-column prop="unit_cost" label="进价" width="100" align="right" sortable />
       </el-table>
       <el-empty v-if="!claimBatches.length" description="没有可认领的备货批次（该产品无备货库存，或备货批次已被认领/锁定）" :image-size="60" style="padding: 0" />
       <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px">
@@ -309,11 +309,11 @@
         <el-button type="primary" @click="searchCustomers">搜索</el-button>
       </div>
       <el-table :data="pickerCustomerList" height="420" border size="small" highlight-current-row @row-click="pickCustomer">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name_cn" label="名称" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="name_en" label="英文名" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="country" label="国家/地区" width="110" />
-        <el-table-column prop="contact_person" label="联系人" width="100" />
+        <el-table-column prop="code" label="编码" width="120" sortable />
+        <el-table-column prop="name_cn" label="名称" min-width="150" show-overflow-tooltip sortable />
+        <el-table-column prop="name_en" label="英文名" min-width="160" show-overflow-tooltip sortable />
+        <el-table-column prop="country" label="国家/地区" width="110" sortable />
+        <el-table-column prop="contact_person" label="联系人" width="100" sortable />
       </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination v-model:current-page="customerPage" v-model:page-size="customerPageSize" :total="customerTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchCustomers" />
@@ -327,11 +327,11 @@
         <el-button type="primary" @click="searchProducts">搜索</el-button>
       </div>
       <el-table :data="pickerProductList" height="420" border size="small" highlight-current-row @row-click="pickProduct">
-        <el-table-column prop="code" label="编码" width="120" />
-        <el-table-column prop="name_cn" label="名称" min-width="140" show-overflow-tooltip />
-        <el-table-column prop="spec" label="规格" min-width="130" show-overflow-tooltip />
-        <el-table-column prop="unit" label="单位" width="70" />
-        <el-table-column prop="sale_price" label="销售价" width="100" align="right" />
+        <el-table-column prop="code" label="编码" width="120" sortable />
+        <el-table-column prop="name_cn" label="名称" min-width="140" show-overflow-tooltip sortable />
+        <el-table-column prop="spec" label="规格" min-width="130" show-overflow-tooltip sortable />
+        <el-table-column prop="unit" label="单位" width="70" sortable />
+        <el-table-column prop="sale_price" label="销售价" width="100" align="right" sortable />
       </el-table>
       <div style="margin-top: 10px; display: flex; justify-content: flex-end">
         <el-pagination v-model:current-page="productPage" v-model:page-size="productPageSize" :total="productTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchProducts" />
@@ -617,6 +617,7 @@ async function handleChange() {
   if (changeForm.stop_sale) {
     payload.stop_sale = true
   } else {
+    if (!(changeForm.quantity > 0)) { ElMessage.warning('数量必须大于 0'); return }
     payload.quantity = parseFloat(changeForm.quantity) || 0
   }
   try {
@@ -847,6 +848,7 @@ function calcTotals() {
 async function handleSubmit() {
   if (!orderForm.customer_id) { ElMessage.warning('请选择客户'); return }
   if (!orderForm.items.length) { ElMessage.warning('请添加明细'); return }
+  if (orderForm.items.some(item => !(parseFloat(item.quantity) > 0))) { ElMessage.warning('明细数量必须大于 0'); return }
   submitting.value = true
   try {
     const items = orderForm.items.map(item => ({
@@ -902,6 +904,7 @@ async function openEdit(row) {
 async function handleUpdate() {
   if (!orderForm.customer_id) { ElMessage.warning('请选择客户'); return }
   if (!orderForm.items.length) { ElMessage.warning('请添加明细'); return }
+  if (orderForm.items.some(item => !(parseFloat(item.quantity) > 0))) { ElMessage.warning('明细数量必须大于 0'); return }
   submitting.value = true
   try {
     const items = orderForm.items.map(item => ({
