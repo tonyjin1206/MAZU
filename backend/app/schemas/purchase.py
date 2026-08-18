@@ -1,7 +1,7 @@
 """采购模块 Schemas — 采购订单、入库、发票、应付"""
 
 from datetime import date, datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # ==================== 采购订单 ====================
@@ -50,8 +50,7 @@ class PurchaseOrderOut(BaseModel):
     created_by: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 采购订单明细 ====================
@@ -88,8 +87,7 @@ class PurchaseOrderItemOut(BaseModel):
     received_qty: float
     remark: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 采购入库单 ====================
@@ -128,8 +126,7 @@ class PurchaseReceiptOut(BaseModel):
     operator: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 采购入库明细 ====================
@@ -137,7 +134,8 @@ class PurchaseReceiptOut(BaseModel):
 class PurchaseReceiptItemCreate(BaseModel):
     receipt_id: int | None = None
     order_item_id: int | None = None
-    material_id: int
+    material_id: int | None = None
+    product_id: int | None = None
     quantity: float
     unit_price: float = 0
     batch_no: str = ""
@@ -157,16 +155,17 @@ class PurchaseReceiptItemOut(BaseModel):
     id: int
     receipt_id: int
     order_item_id: int | None
-    material_id: int
+    material_id: int | None
     material_name: str | None = None
     material_code: str | None = None
+    product_id: int | None = None
+    product_name: str | None = None
     quantity: float
     unit_price: float
     batch_no: str
     remark: str | None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 采购发票 ====================
@@ -211,8 +210,7 @@ class PurchaseInvoiceOut(BaseModel):
     remark: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 应付账款 ====================
@@ -255,8 +253,7 @@ class AccountsPayableOut(BaseModel):
     status: str
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 付款记录 ====================
@@ -302,8 +299,7 @@ class PaymentOut(BaseModel):
     operator: str | None
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ==================== 付款核销明细 ====================
@@ -322,5 +318,4 @@ class PaymentAllocationOut(BaseModel):
     allocated_amount: float
     created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

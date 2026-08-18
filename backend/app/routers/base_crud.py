@@ -1,7 +1,7 @@
 """基础档案 — 通用 CRUD 路由"""
 
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
 
@@ -121,13 +121,16 @@ def register_crud(
     @router.put(f"/{prefix}/{{item_id}}", response_model=out_schema, tags=[tag])
     def update_item(
         item_id: int,
-        data: UpdateSchema,
+        data: dict = Body(...),
         db: Session = Depends(get_db),
         current_user: User = Depends(get_current_user),
     ):
         item = _get_or_404(db, model, item_id)
-        update_data = data.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
+        # update_schema 为 None 的实体（Warehouse/Department/Employee/Currency/TradeTerm）：
+        # 直接接收 body 字典；有 schema 的走 schema 校验 + 只更新传入字段
+        if update_schema is not None:
+            data = update_schema.model_validate(data).model_dump(exclude_unset=True)
+        for key, value in data.items():
             setattr(item, key, value)
         db.commit()
         db.refresh(item)

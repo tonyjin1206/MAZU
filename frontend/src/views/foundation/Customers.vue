@@ -94,7 +94,7 @@
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.pageSize"
         :total="pagination.total"
-        :page-sizes="[50, 100, 200]"
+        :page-sizes="[20, 50, 100]"
         layout="total, sizes, prev, pager, next"
         @size-change="fetchData"
         @current-change="fetchData"
@@ -258,7 +258,7 @@ function formatTime(t) {
 
 const loading = ref(false)
 const tableData = ref([])
-const pagination = ref({ page: 1, pageSize: 100, total: 0 })
+const pagination = ref({ page: 1, pageSize: 20, total: 0 })
 
 const filteredList = computed(() => tableData.value)
 

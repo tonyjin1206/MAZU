@@ -5,16 +5,16 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.auth import User
-from app.models.foundation import Product, Material, Warehouse, Outsourcer, Process, Supplier
+from app.models.foundation import Product, Material, Warehouse, Process, Supplier
 from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionProcess, ProductionReceipt, ProcessingInvoice,
     MaterialIssueItem,
 )
 from app.models.inventory import WarehouseInventory, StockTransaction
-from app.models.purchase import AccountsPayable
+from app.models.purchase import AccountsPayable, PurchaseRequisition
 from app.utils.auth import get_current_user
 from app.utils.batch_no import generate_batch_no, generate_doc_no
-from sqlalchemy import func as sa_func
+from sqlalchemy import func as sa_func, or_
 
 
 def _recalc_material_cost(prod_id: int, db: Session):
@@ -32,7 +32,7 @@ def _recalc_material_cost(prod_id: int, db: Session):
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type == "outsource_out":
+        if t.trans_type in ("outsource_out", "material_issue_out"):
             total += abs(t.total_amount or 0)
         elif t.trans_type == "issue_cancel":
             total -= abs(t.total_amount or 0)
@@ -54,7 +54,7 @@ def _calc_material_issued_amount(prod_id: int, material_id: int, db: Session) ->
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type == "outsource_out":
+        if t.trans_type in ("outsource_out", "material_issue_out"):
             total += abs(t.total_amount or 0)
         elif t.trans_type == "issue_cancel":
             total -= abs(t.total_amount or 0)
@@ -116,11 +116,17 @@ def list_productions(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=200),
     status: str = Query(""), keyword: str = Query(""),
     date_from: str = Query(""), date_to: str = Query(""),
+    sales_order_id: int = Query(None, description="按销售订单过滤"),
+    sales_order_item_id: int = Query(None, description="按销售明细行过滤"),
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
     query = db.query(ProductionOrder)
     if status:
         query = query.filter(ProductionOrder.status == status)
+    if sales_order_id:
+        query = query.filter(ProductionOrder.sales_order_id == sales_order_id)
+    if sales_order_item_id:
+        query = query.filter(ProductionOrder.sales_order_item_id == sales_order_item_id)
     if keyword:
         query = query.outerjoin(Product).filter(
             ProductionOrder.order_no.like(f"%{keyword}%")
@@ -136,6 +142,11 @@ def list_productions(
          "product_id": p.product_id,
          "product_name": p.product.name_cn if p.product else "",
          "quantity": p.quantity, "status": p.status,
+         "production_type": p.production_type or "",
+         "requisition_id": p.requisition_id,
+         "sales_order_id": p.sales_order_id,
+         "sales_order_item_id": p.sales_order_item_id,
+         "received_qty": p.received_qty or 0,
          "created_at": str(p.created_at)[:10] if p.created_at else "",
          "start_date": str(p.start_date) if p.start_date else "",
          "due_date": str(p.due_date) if p.due_date else "",
@@ -147,6 +158,8 @@ def list_productions(
 @router.get("/inventory/batch", tags=["生产管理"])
 def query_batch_inventory(
     batch_no: str = Query("", description="批次号"),
+    keyword: str = Query("", description="物料/产品名称或编码"),
+    warehouse_id: int = Query(None, description="仓库ID"),
     product_id: int = Query(None),
     material_id: int = Query(None),
     db: Session = Depends(get_db),
@@ -156,14 +169,25 @@ def query_batch_inventory(
     query = db.query(WarehouseInventory)
     if batch_no:
         query = query.filter(WarehouseInventory.batch_no.like(f"%{batch_no}%"))
+    if warehouse_id:
+        query = query.filter(WarehouseInventory.warehouse_id == warehouse_id)
     if product_id:
         query = query.filter(WarehouseInventory.product_id == product_id)
     if material_id:
         query = query.filter(WarehouseInventory.material_id == material_id)
+    if keyword:
+        kw = f"%{keyword}%"
+        query = query.outerjoin(Material, WarehouseInventory.material_id == Material.id) \
+            .outerjoin(Product, WarehouseInventory.product_id == Product.id) \
+            .filter(or_(Material.code.like(kw), Material.name.like(kw),
+                        Product.code.like(kw), Product.name_cn.like(kw)))
+    query = query.filter(WarehouseInventory.quantity != 0)
     items = query.order_by(WarehouseInventory.id.desc()).limit(100).all()
     return {"items": [
         {"id": i.id, "warehouse": i.warehouse.name if i.warehouse else "",
          "batch_no": i.batch_no, "quantity": i.quantity,
+         "material_name": i.material.name if i.material else "",
+         "product_name": i.product.name_cn if i.product else "",
          "in_date": str(i.in_date), "source_type": i.source_type,
         } for i in items
     ]}
@@ -172,10 +196,17 @@ def query_batch_inventory(
 @router.get("/inventory/trace", tags=["生产管理"])
 def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """批次号全程追溯"""
+    batch = db.query(WarehouseInventory).filter(WarehouseInventory.batch_no == batch_no).first()
+    item_name = ""
+    if batch:
+        if batch.material:
+            item_name = batch.material.name
+        elif batch.product:
+            item_name = batch.product.name_cn
     transactions = db.query(StockTransaction).filter(
         StockTransaction.batch_no == batch_no
     ).order_by(StockTransaction.trans_date).all()
-    return {"batch_no": batch_no, "trace": [
+    return {"batch_no": batch_no, "item_name": item_name, "trace": [
         {"id": t.id, "type": t.trans_type, "quantity": t.quantity,
          "before": t.before_qty, "after": t.after_qty,
          "doc_type": t.source_doc_type, "doc_no": t.source_doc_no,
@@ -220,7 +251,7 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
             "process_name": pr.process.name if pr.process else "",
             "process_code": pr.process.code if pr.process else "",
             "seq": pr.seq, "outsourcer_id": pr.outsourcer_id,
-            "outsourcer_name": pr.outsourcer.supplier.name if pr.outsourcer and pr.outsourcer.supplier else "",
+            "outsourcer_name": pr.outsourcer.name if pr.outsourcer else "",
             "unit_price": pr.unit_price or 0,
             "process_qty": pr.process_qty or 0,
             "process_amount": pr.process_amount or 0,
@@ -244,12 +275,85 @@ def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), c
     return {"message": "生产订单已更新"}
 
 
+@router.post("/productions/{prod_id}/set-type", tags=["生产管理-新"])
+def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """确认备货方式: production_type = 自产/委外/外购"""
+    prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
+    if not prod:
+        raise HTTPException(404, "生产订单不存在")
+    if prod.production_type:
+        raise HTTPException(400, "备货方式已确认，不可更改")
+
+    ptype = data.get("production_type")
+    if ptype not in ("自产", "委外", "外购"):
+        raise HTTPException(400, "备货方式必须为: 自产/委外/外购")
+
+    prod.production_type = ptype
+    if ptype == "外购":
+        prod.status = "待采购"
+        # 自动标记产品可外购
+        from app.models.foundation import Product
+        product = db.query(Product).filter(Product.id == prod.product_id).first()
+        if product and not product.can_purchase:
+            product.can_purchase = 1
+    else:
+        prod.status = "待排产"
+
+    db.commit()
+    return {"message": f"备货方式已确认为「{ptype}」", "production_type": ptype, "status": prod.status}
+
+
+@router.post("/productions/{prod_id}/to-requisition", tags=["生产管理-新"])
+def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """外购型生产订单 → 推采购需求（采购部门后续转采购订单）"""
+    prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
+    if not prod:
+        raise HTTPException(404, "生产订单不存在")
+    if prod.production_type != "外购":
+        raise HTTPException(400, "仅外购型生产订单可推采购需求")
+    if prod.requisition_id:
+        req = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == prod.requisition_id).first()
+        if req and req.status != "已关闭":
+            raise HTTPException(400, f"该生产订单已有关联采购需求（{req.requisition_no}，状态：{req.status}）")
+
+    quantity = float(data.get("quantity", prod.quantity) or prod.quantity)
+    remark = data.get("remark", "")
+
+    from app.utils.batch_no import generate_doc_no
+    req = PurchaseRequisition(
+        requisition_no=generate_doc_no(db, "PR", PurchaseRequisition, "requisition_no"),
+        production_order_id=prod.id,
+        product_id=prod.product_id,
+        quantity=quantity,
+        status="待处理",
+        remark=remark,
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(req)
+    db.flush()
+
+    # 关联生产订单
+    prod.requisition_id = req.id
+    prod.status = "待采购"
+    db.commit()
+
+    return {
+        "message": f"已生成采购需求 {req.requisition_no}",
+        "requisition_id": req.id,
+        "requisition_no": req.requisition_no,
+    }
+
+
 @router.post("/productions/{prod_id}/expand-bom", tags=["生产管理-新"])
 def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """展开BOM → 生成物料需求清单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
         raise HTTPException(404, "生产订单不存在")
+    if prod.production_type == "外购":
+        raise HTTPException(400, "外购型生产订单无需展开 BOM")
+    if not prod.production_type:
+        raise HTTPException(400, "请先确认备货方式")
     # 删除已有物料清单
     db.query(ProductionMaterial).filter(ProductionMaterial.production_id == prod_id).delete()
     # 从 BomItem 展开
@@ -521,9 +625,9 @@ def issue_material_to_process(
     db.add(issue)
     db.flush()
 
-    # 库存流水
+    # 库存流水（自产工序=生产领料，委外工序=委外发料）
     trans = StockTransaction(
-        trans_type="outsource_out",
+        trans_type="outsource_out" if proc.outsourcer_id else "material_issue_out",
         warehouse_id=inventory.warehouse_id,
         material_id=material_id,
         batch_no=batch_no,
@@ -604,16 +708,16 @@ def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Dep
                 "trans_no": t.trans_no or "",
                 "batch_no": iss.batch_no,
                 "type": t.trans_type,
-                "type_label": "发料出库" if t.trans_type == "outsource_out" else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
-                "quantity": abs(t.quantity or 0) if t.trans_type == "outsource_out" else (-abs(t.quantity or 0)),
+                "type_label": "发料出库" if t.trans_type in ("outsource_out", "material_issue_out") else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
+                "quantity": abs(t.quantity or 0) if t.trans_type in ("outsource_out", "material_issue_out") else (-abs(t.quantity or 0)),
                 "amount": abs(t.total_amount or 0),
                 "operator": t.operator or "",
                 "date": str(t.trans_date)[:16] if t.trans_date else "",
             })
 
     # 汇总
-    out_qty = sum(it["quantity"] for it in items if it["type"] == "outsource_out")
-    out_amt = sum(it["amount"] for it in items if it["type"] == "outsource_out")
+    out_qty = sum(it["quantity"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
+    out_amt = sum(it["amount"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
     cancel_qty = sum(it["quantity"] for it in items if it["type"] == "issue_cancel")
     cancel_amt = sum(it["amount"] for it in items if it["type"] == "issue_cancel")
 
@@ -829,8 +933,22 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     if qty <= 0:
         raise HTTPException(400, "入库数量必须大于 0")
 
-    material_cost = float(data.get("material_cost", 0))
-    process_cost = float(data.get("process_cost", 0))
+    # 仓库参照校验：必须存在于仓库档案且启用
+    wh = db.query(Warehouse).filter(Warehouse.id == warehouse_id, Warehouse.is_active == 1).first()
+    if not wh:
+        raise HTTPException(400, f"仓库档案不存在或已停用 (id={warehouse_id})，请先在「基础档案-仓库管理」维护")
+
+    # 成本：显式传入(非空)则用传入值；否则按 剩余投入 × 本次占比 自动结转（可改）
+    remaining_qty = max(0, (prod.quantity or 0) - (prod.received_qty or 0))
+    ratio = min(1.0, qty / remaining_qty) if remaining_qty > 0 else 1.0
+    remaining_mat = max(0, (prod.total_material_cost or 0) - (prod.transferred_material_cost or 0))
+    remaining_proc = max(0, (prod.total_process_cost or 0) - (prod.transferred_process_cost or 0))
+    auto_mat = remaining_mat if qty >= remaining_qty else round(remaining_mat * ratio, 2)
+    auto_proc = remaining_proc if qty >= remaining_qty else round(remaining_proc * ratio, 2)
+    mc_raw = data.get("material_cost")
+    pc_raw = data.get("process_cost")
+    material_cost = auto_mat if mc_raw in (None, "") else float(mc_raw)
+    process_cost = auto_proc if pc_raw in (None, "") else float(pc_raw)
     if material_cost < 0 or process_cost < 0:
         raise HTTPException(400, "转出成本不能为负数")
 
@@ -935,6 +1053,16 @@ def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db),
     material_cost = receipt.material_cost or 0
     process_cost = receipt.process_cost or 0
     batch_no = receipt.batch_no
+
+    # 校验：该批次除本次入库/冲销外，若有任何其他出入库（发货/退货/盘点等），
+    # 禁止物理取消 — 否则流水累计与台账对不上，应走销售退货/红冲通道
+    other_txn = db.query(StockTransaction).filter(
+        StockTransaction.batch_no == batch_no,
+        StockTransaction.product_id == receipt.product_id,
+        ~StockTransaction.trans_type.in_(["production_in", "receipt_cancel"]),
+    ).first()
+    if other_txn:
+        raise HTTPException(400, "该批次已发生其他出入库（发货/退货/盘点等），无法取消入库；如需退回请走销售退货")
 
     # 删除成品库存
     db.query(WarehouseInventory).filter(
@@ -1124,15 +1252,15 @@ def production_workspace(
             "current_process_name": current_proc.process.name if current_proc and current_proc.process else "",
             "current_process_status": current_proc.status if current_proc else "",
             "current_outsourcer_name": (
-                current_proc.outsourcer.supplier.name
-                if current_proc and current_proc.outsourcer and current_proc.outsourcer.supplier
+                current_proc.outsourcer.name
+                if current_proc and current_proc.outsourcer
                 else ""
             ) if current_proc else "",
             "processes": [{
                 "id": pr.id, "process_name": pr.process.name if pr.process else "",
                 "seq": pr.seq, "status": pr.status,
                 "outsourcer_name": (
-                    pr.outsourcer.supplier.name if pr.outsourcer and pr.outsourcer.supplier else "自产"
+                    pr.outsourcer.name if pr.outsourcer else "自产"
                 ),
                 "unit_price": pr.unit_price or 0,
                 "process_qty": pr.process_qty or 0,
@@ -1203,9 +1331,9 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
     if not processes:
         raise HTTPException(400, "该生产订单没有已完工的委外工序")
 
-    # 取第一个委外工序的委外商对应的供应商
+    # 取第一个委外工序的委外商（即供应商）
     first_proc = processes[0]
-    supplier_id = first_proc.outsourcer.supplier_id if first_proc.outsourcer else None
+    supplier_id = first_proc.outsourcer_id or (first_proc.outsourcer.id if first_proc.outsourcer else None)
     if not supplier_id:
         raise HTTPException(400, "委外商未关联供应商")
 
@@ -1310,7 +1438,7 @@ def list_processing_invoice_candidates(
             ProductionProcess.outsourcer_id.isnot(None),
         ).all()
         first_proc = processes[0] if processes else None
-        supplier_id = first_proc.outsourcer.supplier_id if first_proc and first_proc.outsourcer else None
+        supplier_id = first_proc.outsourcer_id if first_proc else None
         supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first() if supplier_id else None
 
         result.append({

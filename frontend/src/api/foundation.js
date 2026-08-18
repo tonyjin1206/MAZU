@@ -47,9 +47,9 @@ export const authApi = {
   listPermissions: () => request.get('/auth/permissions'),
 }
 
-// 基础档案 — 通用 CRUD 工厂
-function crudApi(prefix) {
-  return {
+// 基础档案 — 通用 CRUD 工厂（methods 指定实际可用的方法，避免定义后端不存在的接口）
+function crudApi(prefix, methods = ['list', 'get', 'create', 'update', 'delete', 'select']) {
+  const map = {
     list: (params) => request.get(`/foundation/${prefix}`, { params }),
     get: (id) => request.get(`/foundation/${prefix}/${id}`),
     create: (data) => request.post(`/foundation/${prefix}`, data),
@@ -57,21 +57,30 @@ function crudApi(prefix) {
     delete: (id) => request.delete(`/foundation/${prefix}/${id}`),
     select: (keyword) => request.get(`/foundation/${prefix}-select`, { params: { keyword } }),
   }
+  const obj = {}
+  for (const m of methods) {
+    obj[m] = map[m]
+    if (m === 'delete') obj.remove = map.delete  // 别名兼容（历史页面用 remove 调用）
+  }
+  return obj
 }
 
 export const foundationApi = {
-  materials: crudApi('materials'),
+  procurementItemsSelect: () => request.get('/foundation/procurement-items-select'),
+  materials: crudApi('materials', ['list', 'create', 'update', 'delete', 'select']),
   products: crudApi('products'),
   processes: crudApi('processes'),
   departments: crudApi('departments'),
   employees: crudApi('employees'),
   customers: { ...crudApi('customers'), nextCode: () => request.get('/foundation/customers/next-code') },
   suppliers: { ...crudApi('suppliers'), nextCode: () => request.get('/foundation/suppliers/next-code') },
-  outsourcers: crudApi('outsourcers'),
+  outsourcers: crudApi('outsourcers', ['list', 'select']),
   warehouses: crudApi('warehouses'),
-  currencies: crudApi('currencies'),
-  hsCodes: crudApi('hs-codes'),
-  tradeTerms: crudApi('trade-terms'),
+  currencies: crudApi('currencies', ['list', 'get', 'create', 'update', 'delete']),
+  exchangeRates: crudApi('exchange-rates', ['list', 'create', 'update', 'delete']),
+  fetchExchangeRates: () => request.post('/foundation/exchange-rates/fetch'),
+  hsCodes: crudApi('hs-codes', ['list', 'create', 'update', 'delete']),
+  tradeTerms: crudApi('trade-terms', ['list', 'get', 'create', 'update', 'delete']),
 
   // BOM
   getBomByProduct: (productId) => request.get(`/foundation/bom/by-product/${productId}`),

@@ -31,6 +31,43 @@ class WarehouseInventory(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
     warehouse = relationship("Warehouse", backref="inventories")
+    material = relationship("Material")
+    product = relationship("Product")
+
+
+class Stocktake(Base):
+    """盘点单"""
+    __tablename__ = "inv_stocktake"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    stocktake_no = Column(String(64), unique=True, nullable=False, comment="盘点单号: STK-YYYYMMDD-NNN")
+    warehouse_id = Column(Integer, ForeignKey("fd_warehouse.id"), nullable=False, comment="盘点仓库")
+    status = Column(String(16), default="草稿", comment="状态: 草稿/已提交")
+    operator = Column(String(32), comment="盘点人")
+    remark = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+    submitted_at = Column(DateTime, comment="提交时间")
+
+    warehouse = relationship("Warehouse")
+    items = relationship("StocktakeItem", backref="stocktake", lazy="selectin", cascade="all, delete-orphan")
+
+
+class StocktakeItem(Base):
+    """盘点明细（一行=一个批次）"""
+    __tablename__ = "inv_stocktake_item"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    stocktake_id = Column(Integer, ForeignKey("inv_stocktake.id"), nullable=False)
+    material_id = Column(Integer, ForeignKey("fd_material.id"), comment="原料ID(与产品互斥)")
+    product_id = Column(Integer, ForeignKey("fd_product.id"), comment="产品ID")
+    batch_no = Column(String(64), nullable=False, comment="批次号")
+    book_qty = Column(Float, default=0, comment="账面数量")
+    actual_qty = Column(Float, default=0, comment="实盘数量")
+    unit_cost = Column(Float, default=0, comment="盘点时批次成本")
+    remark = Column(Text)
+
+    material = relationship("Material")
+    product = relationship("Product")
 
 
 class StockTransaction(Base):

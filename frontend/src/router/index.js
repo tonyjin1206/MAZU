@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { ElMessage } from 'element-plus'
 
 const routes = [
   { path: '/login', name: 'Login', component: () => import('../views/Login.vue') },
@@ -7,56 +8,63 @@ const routes = [
     component: () => import('../components/Layout.vue'),
     redirect: '/dashboard',
     children: [
-      { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue') },
+      { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue'), meta: { perm: 'menu:dashboard' } },
 
       // 基础档案
-      { path: 'foundation/materials', name: 'Materials', component: () => import('../views/foundation/Materials.vue') },
-      { path: 'foundation/products', name: 'Products', component: () => import('../views/foundation/Products.vue') },
-      { path: 'foundation/bom', name: 'Bom', component: () => import('../views/foundation/Bom.vue') },
-      { path: 'foundation/customers', name: 'Customers', component: () => import('../views/foundation/Customers.vue') },
-      { path: 'foundation/suppliers', name: 'Suppliers', component: () => import('../views/foundation/Suppliers.vue') },
-      { path: 'foundation/hs-codes', name: 'HsCodes', component: () => import('../views/foundation/HsCodes.vue') },
-      { path: 'foundation/processes', name: 'Processes', component: () => import('../views/foundation/Processes.vue') },
-      { path: 'foundation/params', name: 'SystemParams', component: () => import('../views/foundation/SystemParams.vue') },
+      { path: 'foundation/materials', name: 'Materials', component: () => import('../views/foundation/Materials.vue'), meta: { perm: 'menu:materials' } },
+      { path: 'foundation/products', name: 'Products', component: () => import('../views/foundation/Products.vue'), meta: { perm: 'menu:products' } },
+      { path: 'foundation/bom', name: 'Bom', component: () => import('../views/foundation/Bom.vue'), meta: { perm: 'menu:bom' } },
+      { path: 'foundation/customers', name: 'Customers', component: () => import('../views/foundation/Customers.vue'), meta: { perm: 'menu:customers' } },
+      { path: 'foundation/suppliers', name: 'Suppliers', component: () => import('../views/foundation/Suppliers.vue'), meta: { perm: 'menu:suppliers' } },
+      { path: 'foundation/hs-codes', name: 'HsCodes', component: () => import('../views/foundation/HsCodes.vue'), meta: { perm: 'menu:hs-codes' } },
+      { path: 'foundation/processes', name: 'Processes', component: () => import('../views/foundation/Processes.vue'), meta: { perm: 'menu:processes' } },
+      { path: 'foundation/params', name: 'SystemParams', component: () => import('../views/foundation/SystemParams.vue'), meta: { perm: 'menu:params' } },
+      { path: 'foundation/warehouses', name: 'Warehouses', component: () => import('../views/foundation/Warehouses.vue'), meta: { perm: 'menu:warehouses' } },
+      { path: 'foundation/currencies', name: 'CurrencyRates', component: () => import('../views/foundation/CurrencyRates.vue'), meta: { perm: 'menu:currencies' } },
 
       // 采购管理
-      { path: 'purchase/from-sales', name: 'PurchaseFromSales', component: () => import('../views/purchase/PurchaseFromSales.vue') },
-      { path: 'purchase/orders', name: 'PurchaseOrders', component: () => import('../views/purchase/PurchaseOrders.vue') },
-      { path: 'purchase/receipts', name: 'PurchaseReceipts', component: () => import('../views/purchase/PurchaseReceipts.vue') },
-      { path: 'purchase/invoices', name: 'PurchaseInvoices', component: () => import('../views/purchase/PurchaseInvoices.vue') },
-      { path: 'purchase/ap', name: 'AccountsPayable', component: () => import('../views/purchase/AccountsPayable.vue') },
-      { path: 'purchase/payments', name: 'Payments', component: () => import('../views/purchase/Payments.vue') },
-
+      { path: 'purchase/from-sales', name: 'PurchaseFromSales', component: () => import('../views/purchase/PurchaseFromSales.vue'), meta: { perm: 'menu:purchase:from-sales' } },
+      { path: 'purchase/requisitions', name: 'PurchaseRequisitions', component: () => import('../views/purchase/PurchaseRequisitions.vue'), meta: { perm: 'menu:purchase:requisitions' } },
+      { path: 'purchase/orders', name: 'PurchaseOrders', component: () => import('../views/purchase/PurchaseOrders.vue'), meta: { perm: 'menu:purchase:orders' } },
+      { path: 'purchase/receipts', name: 'PurchaseReceipts', component: () => import('../views/purchase/PurchaseReceipts.vue'), meta: { perm: 'menu:purchase:receipts' } },
+      { path: 'purchase/invoices', name: 'PurchaseInvoices', component: () => import('../views/purchase/PurchaseInvoices.vue'), meta: { perm: 'menu:purchase:invoices' } },
+      { path: 'purchase/ap', name: 'AccountsPayable', component: () => import('../views/purchase/AccountsPayable.vue'), meta: { perm: 'menu:purchase:ap' } },
+      { path: 'purchase/payments', name: 'Payments', component: () => import('../views/purchase/Payments.vue'), meta: { perm: 'menu:purchase:payments' } },
       // 销售管理
-      { path: 'sales/orders', name: 'SalesOrders', component: () => import('../views/sales/SalesOrders.vue') },
-      { path: 'sales/deliveries', name: 'SalesDeliveries', component: () => import('../views/sales/SalesDeliveries.vue') },
-      { path: 'sales/invoices', name: 'SalesInvoices', component: () => import('../views/sales/SalesInvoices.vue') },
-      { path: 'sales/customs', name: 'CustomsDeclarations', component: () => import('../views/sales/CustomsDeclarations.vue') },
-      { path: 'sales/ar', name: 'AccountsReceivable', component: () => import('../views/sales/AccountsReceivable.vue') },
-      { path: 'sales/collections', name: 'Collections', component: () => import('../views/sales/Collections.vue') },
+      { path: 'sales/orders', name: 'SalesOrders', component: () => import('../views/sales/SalesOrders.vue'), meta: { perm: 'menu:sales:orders' } },
+      { path: 'sales/deliveries', name: 'SalesDeliveries', component: () => import('../views/sales/SalesDeliveries.vue'), meta: { perm: 'menu:sales:deliveries' } },
+      { path: 'sales/invoices', name: 'SalesInvoices', component: () => import('../views/sales/SalesInvoices.vue'), meta: { perm: 'menu:sales:invoices' } },
+      { path: 'sales/customs', name: 'CustomsDeclarations', component: () => import('../views/sales/CustomsDeclarations.vue'), meta: { perm: 'menu:sales:customs' } },
+      { path: 'sales/ar', name: 'AccountsReceivable', component: () => import('../views/sales/AccountsReceivable.vue'), meta: { perm: 'menu:sales:ar' } },
+      { path: 'sales/collections', name: 'Collections', component: () => import('../views/sales/Collections.vue'), meta: { perm: 'menu:sales:collections' } },
+
+      // 生产管理（路由保留，菜单不显示）
+      { path: 'production/orders', name: 'ProductionOrders', component: () => import('../views/production/ProductionOrders.vue'), meta: { perm: 'menu:production:orders' } },
+      { path: 'production/detail/:id', name: 'ProductionDetail', component: () => import('../views/production/ProductionDetail.vue'), meta: { perm: 'menu:production:orders' } },
+      { path: 'production/workspace', name: 'ProductionWorkspace', component: () => import('../views/production/ProductionWorkspace.vue'), meta: { perm: 'menu:production:workspace' } },
+      { path: 'production/invoices', name: 'ProcessingInvoices', component: () => import('../views/production/ProcessingInvoices.vue'), meta: { perm: 'menu:production:invoices' } },
+      { path: 'production/inventory', name: 'BatchInventory', component: () => import('../views/production/BatchInventory.vue'), meta: { perm: 'menu:production:batch' } },
 
       // 委外管理
-      { path: 'outsource/from-sales', name: 'OutsourceFromSales', component: () => import('../views/outsource/OutsourceFromSales.vue') },
-      { path: 'outsource/orders', name: 'OutsourceOrders', component: () => import('../views/outsource/OutsourceOrders.vue') },
-      { path: 'production/invoices', name: 'ProcessingInvoices', component: () => import('../views/production/ProcessingInvoices.vue') },
+      { path: 'outsource/from-sales', name: 'OutsourceFromSales', component: () => import('../views/outsource/OutsourceFromSales.vue'), meta: { perm: 'menu:outsource:from-sales' } },
+      { path: 'outsource/orders', name: 'OutsourceOrders', component: () => import('../views/outsource/OutsourceOrders.vue'), meta: { perm: 'menu:outsource:orders' } },
 
       // 库存管理
-      { path: 'inventory/management', name: 'InventoryManagement', component: () => import('../views/inventory/InventoryManagement.vue') },
-      { path: 'inventory/summary', name: 'StockSummary', component: () => import('../views/inventory/StockSummary.vue') },
-      { path: 'inventory/stock-ins', name: 'StockIns', component: () => import('../views/inventory/StockIns.vue') },
-      { path: 'inventory/material-ins', name: 'MaterialIns', component: () => import('../views/inventory/MaterialIns.vue') },
-      { path: 'production/inventory', name: 'BatchInventory', component: () => import('../views/production/BatchInventory.vue') },
-
+      { path: 'inventory/management', name: 'InventoryManagement', component: () => import('../views/inventory/InventoryManagement.vue'), meta: { perm: 'menu:inventory' } },
+      { path: 'inventory/summary', name: 'StockSummary', component: () => import('../views/inventory/StockSummary.vue'), meta: { perm: 'menu:inventory:summary' } },
+      { path: 'inventory/stock-ins', name: 'StockIns', component: () => import('../views/inventory/StockIns.vue'), meta: { perm: 'menu:inventory:stock-ins' } },
+      { path: 'inventory/material-ins', name: 'MaterialIns', component: () => import('../views/inventory/MaterialIns.vue'), meta: { perm: 'menu:inventory:material-ins' } },
+      { path: 'inventory/stocktakes', name: 'StocktakeManagement', component: () => import('../views/inventory/StocktakeManagement.vue'), meta: { perm: 'menu:inventory:stocktake' } },
       // 退税管理
-      { path: 'tax-refund/declarations', name: 'TaxRefund', component: () => import('../views/taxRefund/TaxRefundDeclarations.vue') },
+      { path: 'tax-refund/declarations', name: 'TaxRefund', component: () => import('../views/taxRefund/TaxRefundDeclarations.vue'), meta: { perm: 'menu:tax' } },
 
       // 系统管理
-      { path: 'system/users', name: 'SystemUsers', component: () => import('../views/system/Users.vue') },
-      { path: 'system/roles', name: 'SystemRoles', component: () => import('../views/system/Roles.vue') },
-      { path: 'system/wecom', name: 'WecomConfig', component: () => import('../views/system/WecomConfig.vue') },
-      { path: 'system/bot', name: 'BotConfig', component: () => import('../views/system/BotConfig.vue') },
-      { path: 'system/bot-chat', name: 'BotChat', component: () => import('../views/system/BotChat.vue') },
-      { path: 'system/reminders', name: 'Reminders', component: () => import('../views/system/Reminders.vue') },
+      { path: 'system/users', name: 'SystemUsers', component: () => import('../views/system/Users.vue'), meta: { perm: 'menu:system:users' } },
+      { path: 'system/roles', name: 'SystemRoles', component: () => import('../views/system/Roles.vue'), meta: { perm: 'menu:system:roles' } },
+      { path: 'system/wecom', name: 'WecomConfig', component: () => import('../views/system/WecomConfig.vue'), meta: { perm: 'menu:system:wecom' } },
+      { path: 'system/bot', name: 'BotConfig', component: () => import('../views/system/BotConfig.vue'), meta: { perm: 'menu:system:bot' } },
+      { path: 'system/bot-chat', name: 'BotChat', component: () => import('../views/system/BotChat.vue'), meta: { perm: 'menu:system:bot-chat' } },
+      { path: 'system/reminders', name: 'Reminders', component: () => import('../views/system/Reminders.vue'), meta: { perm: 'menu:system:reminders' } },
     ],
   },
 ]
@@ -66,7 +74,7 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫：未登录跳转登录页
+// 路由守卫：未登录跳转登录页；无权限跳回工作台
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   const userStr = localStorage.getItem('user')
@@ -75,10 +83,22 @@ router.beforeEach((to, from, next) => {
   if (to.path !== '/login' && !isValid) {
     localStorage.removeItem('token')
     localStorage.removeItem('user')
+    localStorage.removeItem('permissions')
     next('/login')
   } else if (to.path === '/login' && isValid) {
     next('/dashboard')
   } else {
+    // 菜单级权限校验（to.meta.perm 为该页面所需权限码）
+    const required = to.meta?.perm
+    if (required) {
+      let perms = []
+      try { perms = JSON.parse(localStorage.getItem('permissions') || '[]') } catch (e) { /* ignore */ }
+      if (!perms.includes(required)) {
+        ElMessage.warning('没有访问该页面的权限')
+        next('/dashboard')
+        return
+      }
+    }
     next()
   }
 })

@@ -1,15 +1,16 @@
 """库存管理路由 — 收发存查询、库存流水、批次追溯"""
 
 from datetime import date, datetime
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.database import get_db
 from app.models.auth import User
-from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder
+from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder, Stocktake, StocktakeItem
 from app.models.foundation import Warehouse, Material, Product
 from app.models.sales import SalesOrder, SalesOrderItem
 from app.utils.auth import get_current_user
+from app.utils.batch_no import generate_doc_no
 
 router = APIRouter()
 
@@ -102,8 +103,9 @@ def _calc_period_balance(db, warehouse_id, material_id, product_id, type, keywor
         mat = db.query(Material).filter(Material.id == mat_id).first() if mat_id else None
         prod = db.query(Product).filter(Product.id == prod_id).first() if prod_id else None
 
-        # 批次号（取最新的一条）
-        latest_batch = trans_list[-1].batch_no if trans_list else ""
+        # 批次号（取最新的一条 — 显式按时间排序，避免查询顺序不确定性）
+        sorted_trans = sorted(trans_list, key=lambda t: (t.trans_date or datetime.min, t.id or 0))
+        latest_batch = sorted_trans[-1].batch_no if sorted_trans else ""
 
         results.append({
             "warehouse": wh.name if wh else "",
@@ -498,3 +500,297 @@ def trace_batch(
         })
 
     return {"batch_no": batch_no, "trace": result}
+
+
+# ==================== 盘点 ====================
+
+@router.post("/stocktakes", tags=["库存管理"])
+def create_stocktake(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """创建盘点单（草稿）— 自动带出该仓库所有有库存的批次作为盘点明细"""
+    warehouse_id = data["warehouse_id"]
+    warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id, Warehouse.is_active == 1).first()
+    if not warehouse:
+        raise HTTPException(400, "仓库档案不存在或已停用，请先在「基础档案-仓库管理」维护")
+
+    stocktake_no = generate_doc_no(db, "STK", Stocktake, "stocktake_no")
+    st = Stocktake(
+        stocktake_no=stocktake_no,
+        warehouse_id=warehouse_id,
+        status="草稿",
+        operator=current_user.display_name or current_user.username,
+        remark=data.get("remark", ""),
+    )
+    db.add(st)
+    db.flush()
+
+    # 自动带出该仓所有有库存的批次（数量≠0）
+    invs = db.query(WarehouseInventory).filter(
+        WarehouseInventory.warehouse_id == warehouse_id,
+        WarehouseInventory.quantity != 0,
+    ).all()
+    for inv in invs:
+        db.add(StocktakeItem(
+            stocktake_id=st.id,
+            material_id=inv.material_id,
+            product_id=inv.product_id,
+            batch_no=inv.batch_no,
+            book_qty=inv.quantity,
+            actual_qty=inv.quantity,
+            unit_cost=inv.unit_cost or 0,
+        ))
+    db.commit()
+    return {"id": st.id, "stocktake_no": stocktake_no, "item_count": len(invs), "message": f"盘点单 {stocktake_no} 已创建"}
+
+
+@router.get("/stocktakes", tags=["库存管理"])
+def list_stocktakes(
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """盘点单列表"""
+    items = db.query(Stocktake).order_by(Stocktake.id.desc()).offset(
+        (page - 1) * page_size).limit(page_size).all()
+    total = db.query(Stocktake).count()
+    return {"total": total, "page": page, "page_size": page_size, "items": [{
+        "id": s.id, "stocktake_no": s.stocktake_no,
+        "warehouse_name": s.warehouse.name if s.warehouse else "",
+        "status": s.status,
+        "item_count": len(s.items),
+        "operator": s.operator or "",
+        "remark": s.remark or "",
+        "created_at": str(s.created_at)[:19] if s.created_at else "",
+        "submitted_at": str(s.submitted_at)[:19] if s.submitted_at else "",
+    } for s in items]}
+
+
+@router.get("/stocktakes/{stocktake_id}", tags=["库存管理"])
+def get_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """盘点单详情（含明细）"""
+    s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
+    if not s:
+        raise HTTPException(404, "盘点单不存在")
+    return {
+        "id": s.id, "stocktake_no": s.stocktake_no,
+        "warehouse_name": s.warehouse.name if s.warehouse else "",
+        "status": s.status,
+        "operator": s.operator or "",
+        "remark": s.remark or "",
+        "created_at": str(s.created_at)[:19] if s.created_at else "",
+        "items": [{
+            "id": it.id,
+            "material_id": it.material_id,
+            "material_name": it.material.name if it.material else "",
+            "material_code": it.material.code if it.material else "",
+            "product_id": it.product_id,
+            "product_name": it.product.name_cn if it.product else "",
+            "product_code": it.product.code if it.product else "",
+            "batch_no": it.batch_no,
+            "book_qty": it.book_qty,
+            "actual_qty": it.actual_qty,
+            "diff_qty": round(it.actual_qty - it.book_qty, 4),
+            "unit_cost": it.unit_cost,
+        } for it in s.items],
+    }
+
+
+@router.put("/stocktakes/{stocktake_id}/items/{item_id}", tags=["库存管理"])
+def update_stocktake_item(
+    stocktake_id: int, item_id: int, data: dict,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """录入/修改实盘数（仅草稿状态）"""
+    s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
+    if not s:
+        raise HTTPException(404, "盘点单不存在")
+    if s.status != "草稿":
+        raise HTTPException(400, "已提交的盘点单不能修改")
+    it = db.query(StocktakeItem).filter(StocktakeItem.id == item_id, StocktakeItem.stocktake_id == stocktake_id).first()
+    if not it:
+        raise HTTPException(404, "盘点明细不存在")
+    actual = float(data["actual_qty"])
+    if actual < 0:
+        raise HTTPException(400, "实盘数量不能为负")
+    it.actual_qty = actual
+    db.commit()
+    return {"message": "实盘数已更新"}
+
+
+@router.post("/stocktakes/{stocktake_id}/items", tags=["库存管理"])
+def add_stocktake_item(
+    stocktake_id: int, data: dict,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """盘点明细新增一行（仅草稿）— 支持账外批次盘盈
+
+    body: {"material_id" 或 "product_id", "batch_no", "actual_qty", "unit_cost"(可选)}
+    账面数自动取该批次当前台账数量（账外批次=0）
+    """
+    s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
+    if not s:
+        raise HTTPException(404, "盘点单不存在")
+    if s.status != "草稿":
+        raise HTTPException(400, "已提交的盘点单不能新增明细")
+
+    material_id = data.get("material_id")
+    product_id = data.get("product_id")
+    if not material_id and not product_id:
+        raise HTTPException(400, "请选择物料或产品")
+    batch_no = str(data.get("batch_no", "")).strip()
+    if not batch_no:
+        raise HTTPException(400, "请填写批次号")
+    actual = float(data.get("actual_qty", 0))
+    if actual < 0:
+        raise HTTPException(400, "实盘数量不能为负")
+
+    # 同批次不能重复录入
+    dup = db.query(StocktakeItem).filter(
+        StocktakeItem.stocktake_id == stocktake_id,
+        StocktakeItem.batch_no == batch_no,
+    ).first()
+    if dup:
+        raise HTTPException(400, f"批次 {batch_no} 已在盘点单中")
+
+    # 账面数 = 该批次当前台账数量（账外批次 = 0）
+    inv = None
+    if material_id:
+        inv = db.query(WarehouseInventory).filter(
+            WarehouseInventory.batch_no == batch_no,
+            WarehouseInventory.material_id == material_id,
+        ).first()
+    elif product_id:
+        inv = db.query(WarehouseInventory).filter(
+            WarehouseInventory.batch_no == batch_no,
+            WarehouseInventory.product_id == product_id,
+        ).first()
+    book_qty = inv.quantity if inv else 0
+    unit_cost = float(data.get("unit_cost", inv.unit_cost if inv else 0) or 0)
+
+    it = StocktakeItem(
+        stocktake_id=s.id,
+        material_id=material_id,
+        product_id=product_id,
+        batch_no=batch_no,
+        book_qty=book_qty,
+        actual_qty=actual,
+        unit_cost=unit_cost,
+    )
+    db.add(it)
+    db.commit()
+    return {"id": it.id, "book_qty": book_qty, "unit_cost": unit_cost,
+            "message": f"已新增 {batch_no}（账面 {book_qty}，实盘 {actual}）"}
+
+
+@router.delete("/stocktakes/{stocktake_id}/items/{item_id}", tags=["库存管理"])
+def delete_stocktake_item(
+    stocktake_id: int, item_id: int,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """删除盘点明细一行（仅草稿）"""
+    s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
+    if not s:
+        raise HTTPException(404, "盘点单不存在")
+    if s.status != "草稿":
+        raise HTTPException(400, "已提交的盘点单不能删除明细")
+    it = db.query(StocktakeItem).filter(StocktakeItem.id == item_id, StocktakeItem.stocktake_id == stocktake_id).first()
+    if not it:
+        raise HTTPException(404, "盘点明细不存在")
+    db.delete(it)
+    db.commit()
+    return {"message": f"已删除批次 {it.batch_no}"}
+
+
+@router.post("/stocktakes/{stocktake_id}/submit", tags=["库存管理"])
+def submit_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """提交盘点 — 按差异生成盘盈/盘亏流水并更新台账"""
+    s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
+    if not s:
+        raise HTTPException(404, "盘点单不存在")
+    if s.status != "草稿":
+        raise HTTPException(400, "该盘点单已提交")
+
+    changed = 0
+    for it in s.items:
+        diff = round(it.actual_qty - it.book_qty, 4)
+        if abs(diff) < 0.0001:
+            continue
+
+        inv = db.query(WarehouseInventory).filter(
+            WarehouseInventory.batch_no == it.batch_no,
+        ).first()
+        if it.material_id:
+            inv = db.query(WarehouseInventory).filter(
+                WarehouseInventory.batch_no == it.batch_no,
+                WarehouseInventory.material_id == it.material_id,
+            ).first()
+        elif it.product_id:
+            inv = db.query(WarehouseInventory).filter(
+                WarehouseInventory.batch_no == it.batch_no,
+                WarehouseInventory.product_id == it.product_id,
+            ).first()
+        if not inv:
+            # 账外批次（盘点新增行）：创建台账行，成本用盘点录入的成本
+            uc = it.unit_cost or 0
+            inv = WarehouseInventory(
+                warehouse_id=s.warehouse_id,
+                material_id=it.material_id,
+                product_id=it.product_id,
+                batch_no=it.batch_no,
+                quantity=0,
+                unit_cost=uc,
+                total_cost=0,
+                in_date=date.today(),
+                source_type="stocktake",
+            )
+            db.add(inv)
+            db.flush()
+
+        uc = inv.unit_cost or it.unit_cost or 0
+        old_qty = inv.quantity
+        new_qty = round(old_qty + diff, 4)
+        if new_qty < 0:
+            raise HTTPException(400, f"批次 {it.batch_no} 盘亏超出账面库存（账面 {old_qty:.2f}）")
+        inv.quantity = new_qty
+        inv.total_cost = round(new_qty * uc, 2)
+
+        trans_type = "stocktake_in" if diff > 0 else "stocktake_out"
+        trans = StockTransaction(
+            trans_type=trans_type,
+            warehouse_id=s.warehouse_id,
+            material_id=it.material_id,
+            product_id=it.product_id,
+            batch_no=it.batch_no,
+            quantity=diff,
+            unit_cost=uc,
+            total_amount=round(diff * uc, 2),
+            before_qty=old_qty,
+            after_qty=new_qty,
+            before_cost=round(old_qty * uc, 2),
+            after_cost=round(new_qty * uc, 2),
+            source_doc_type="盘点",
+            source_doc_no=s.stocktake_no,
+            trans_no=generate_doc_no(db, "ST"),
+            operator=current_user.display_name or current_user.username,
+        )
+        db.add(trans)
+        changed += 1
+
+    if changed == 0:
+        raise HTTPException(400, "没有差异，无需提交（如确无差异可删除该盘点单）")
+
+    s.status = "已提交"
+    s.submitted_at = func.now()
+    db.commit()
+    return {"message": f"盘点已提交，共 {changed} 项差异已入账"}
+
+
+@router.delete("/stocktakes/{stocktake_id}", tags=["库存管理"])
+def delete_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """删除盘点单（仅草稿）"""
+    s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
+    if not s:
+        raise HTTPException(404, "盘点单不存在")
+    if s.status != "草稿":
+        raise HTTPException(400, "已提交的盘点单不能删除（可新建反向盘点调整）")
+    db.delete(s)
+    db.commit()
+    return {"message": "盘点单已删除"}

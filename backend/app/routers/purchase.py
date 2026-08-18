@@ -15,11 +15,12 @@ def _parse_date(val):
 from sqlalchemy import func as sa_func
 from app.database import get_db
 from app.models.auth import User
-from app.models.foundation import Material, Supplier, Warehouse, Currency
+from app.models.foundation import Material, Supplier, Warehouse, Currency, Product
 from app.models.purchase import (
     PurchaseOrder, PurchaseOrderItem,
     PurchaseReceipt, PurchaseReceiptItem,
     PurchaseInvoice,
+    PurchaseRequisition,
     AccountsPayable, Payment, PaymentAllocation,
 )
 from app.models.inventory import WarehouseInventory, StockTransaction
@@ -32,10 +33,152 @@ from app.schemas.purchase import (
     AccountsPayableOut,
     PaymentCreate, PaymentOut, PaymentAllocationCreate,
 )
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission
 from app.utils.batch_no import generate_batch_no, generate_doc_no
 
 router = APIRouter()
+
+
+# ==================== 采购需求（生产推式 → 采购转单） ====================
+
+@router.get("/requisitions", tags=["采购管理"])
+def list_requisitions(
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    status: str = Query("", description="状态筛选: 待处理/已转单/已关闭"),
+    keyword: str = Query("", description="需求单号/产品搜索"),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    query = db.query(PurchaseRequisition)
+    if status:
+        query = query.filter(PurchaseRequisition.status == status)
+    if keyword:
+        from app.models.foundation import Product
+        query = query.outerjoin(Product).filter(
+            PurchaseRequisition.requisition_no.like(f"%{keyword}%")
+            | Product.name_cn.like(f"%{keyword}%"))
+    total = query.count()
+    items = query.order_by(PurchaseRequisition.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+    return {"total": total, "page": page, "page_size": page_size, "items": [
+        {
+            "id": r.id, "requisition_no": r.requisition_no,
+            "production_order_id": r.production_order_id,
+            "production_order_no": r.production.order_no if r.production else "",
+            "product_id": r.product_id,
+            "product_name": r.product.name_cn if r.product else "",
+            "product_code": r.product.code if r.product else "",
+            "quantity": r.quantity,
+            "status": r.status,
+            "remark": r.remark or "",
+            "created_by": r.created_by,
+            "created_at": str(r.created_at)[:19] if r.created_at else "",
+        } for r in items
+    ]}
+
+
+@router.get("/requisitions/{req_id}", tags=["采购管理"])
+def get_requisition(req_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    r = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
+    if not r:
+        raise HTTPException(404, "采购需求不存在")
+    return {
+        "id": r.id, "requisition_no": r.requisition_no,
+        "production_order_id": r.production_order_id,
+        "production_order_no": r.production.order_no if r.production else "",
+        "product_id": r.product_id,
+        "product_name": r.product.name_cn if r.product else "",
+        "product_code": r.product.code if r.product else "",
+        "product_unit": r.product.unit if r.product else "",
+        "quantity": r.quantity,
+        "status": r.status,
+        "remark": r.remark or "",
+        "created_by": r.created_by,
+        "created_at": str(r.created_at)[:19] if r.created_at else "",
+    }
+
+
+@router.post("/requisitions/{req_id}/close", tags=["采购管理"])
+def close_requisition(req_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """关闭采购需求（仅待处理）→ 生产订单回到待采购，可重新推"""
+    r = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
+    if not r:
+        raise HTTPException(404, "采购需求不存在")
+    if r.status != "待处理":
+        raise HTTPException(400, f"仅待处理状态的采购需求可关闭（当前：{r.status}）")
+    r.status = "已关闭"
+    # 解除生产订单关联，允许重新推需求
+    from app.models.production import ProductionOrder
+    mo = db.query(ProductionOrder).filter(ProductionOrder.id == r.production_order_id).first()
+    if mo:
+        mo.requisition_id = None
+        if mo.production_type == "外购":
+            mo.status = "待采购"
+    db.commit()
+    return {"message": f"采购需求 {r.requisition_no} 已关闭"}
+
+
+@router.post("/requisitions/{req_id}/to-purchase", tags=["采购管理"])
+def requisition_to_purchase(req_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """采购需求 → 生成采购订单（采购人员维护供应商/单价/税率，数量可改）"""
+    r = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
+    if not r:
+        raise HTTPException(404, "采购需求不存在")
+    if r.status != "待处理":
+        raise HTTPException(400, f"仅待处理状态的采购需求可转采购订单（当前：{r.status}）")
+
+    supplier_id = data.get("supplier_id")
+    if not supplier_id:
+        raise HTTPException(400, "请选择供应商")
+
+    quantity = float(data.get("quantity", r.quantity) or r.quantity)
+    unit_price = float(data.get("unit_price", 0) or 0)
+    tax_rate = float(data.get("tax_rate", 13) or 13)
+    total_amount = unit_price * quantity
+    total_amount_excl_tax = round(total_amount / (1 + tax_rate / 100), 2)
+    tax_amount = round(total_amount - total_amount_excl_tax, 2)
+
+    from app.utils.batch_no import generate_doc_no
+    po = PurchaseOrder(
+        order_no=generate_doc_no(db, "PO", PurchaseOrder, "order_no"),
+        supplier_id=supplier_id,
+        order_date=date.today(),
+        expected_date=_parse_date(data.get("expected_date")) or (r.production.due_date if r.production else None),
+        status="待审核",
+        total_amount=total_amount,
+        total_amount_excl_tax=total_amount_excl_tax,
+        tax_amount=tax_amount,
+        tax_rate=tax_rate,
+        remark=f"由采购需求 {r.requisition_no} 转单生成",
+        created_by=current_user.display_name or current_user.username,
+    )
+    db.add(po)
+    db.flush()
+
+    poi = PurchaseOrderItem(
+        order_id=po.id,
+        product_id=r.product_id,
+        quantity=quantity,
+        unit_price=unit_price,
+        unit_price_local=unit_price * (po.exchange_rate or 1),
+        total_amount=total_amount,
+        total_amount_excl_tax=total_amount_excl_tax,
+        tax_rate=tax_rate,
+        requisition_id=r.id,
+    )
+    db.add(poi)
+
+    # 更新需求状态 + 生产订单
+    r.status = "已转单"
+    from app.models.production import ProductionOrder
+    mo = db.query(ProductionOrder).filter(ProductionOrder.id == r.production_order_id).first()
+    if mo:
+        mo.status = "采购中"
+    db.commit()
+
+    return {
+        "message": f"已生成采购订单 {po.order_no}",
+        "purchase_order_id": po.id,
+        "purchase_order_no": po.order_no,
+    }
 
 
 # ==================== 采购订单 ====================
@@ -174,6 +317,7 @@ def get_order(order_id: int, db: Session = Depends(get_db), current_user: User =
                 "sales_item_id": item.sales_item_id,
                 "sales_order_no": item.sales_item.order.order_no if item.sales_item else "",
                 "sales_batch_no": item.sales_item.batch_no if item.sales_item else "",
+                "requisition_id": item.requisition_id,
                 "quantity": item.quantity, "unit_price": item.unit_price,
                 "total_amount": item.total_amount, "received_qty": item.received_qty or 0,
                 "tax_rate": item.tax_rate or 0, "total_amount_excl_tax": item.total_amount_excl_tax or 0,
@@ -198,6 +342,24 @@ def delete_order(order_id: int, db: Session = Depends(get_db), current_user: Use
         raise HTTPException(400, "该订单已有关联入库单，无法删除")
     if invoices > 0:
         raise HTTPException(400, "该订单已有关联发票，无法删除")
+    # 删除后：来源 PR 回到待处理，生产订单回到待采购
+    from app.models.production import ProductionOrder
+    from app.models.purchase import PurchaseRequisition
+    # 找到该订单明细关联的采购需求
+    po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.order_id == order_id).all()
+    linked_reqs = []
+    for it in po_items:
+        if it.requisition_id and it.requisition_id not in linked_reqs:
+            linked_reqs.append(it.requisition_id)
+    # 采购需求恢复待处理 + 生产订单回到待采购
+    for req_id in linked_reqs:
+        req = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
+        if req and req.status == "已转单":
+            req.status = "待处理"
+        if req:
+            mo = db.query(ProductionOrder).filter(ProductionOrder.id == req.production_order_id).first()
+            if mo and mo.production_type == "外购":
+                mo.status = "待采购"
     # 铁律：删除后检查该销售明细行是否还有其他采购单——没有了才解锁回未生产
     item_ids = {i.sales_item_id for i in order.items if i.sales_item_id}
     db.delete(order)
@@ -252,6 +414,7 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
             new_item = PurchaseOrderItem(
                 order_id=order.id, material_id=mid or None, product_id=pid or None,
                 sales_item_id=item_data.get("sales_item_id") or None,
+                requisition_id=item_data.get("requisition_id") or None,
                 quantity=qty, unit_price=unit_price_fc,
                 total_amount=line_total,
                 tax_rate=order.tax_rate or 13,
@@ -768,8 +931,9 @@ def to_material(order_id: int, item_id: int,
 
 
 @router.post("/orders/{order_id}/approve", tags=["采购管理"])
-def approve_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """审核采购订单"""
+def approve_order(order_id: int, db: Session = Depends(get_db),
+                  current_user: User = Depends(require_permission("menu:purchase:orders"))):
+    """审核采购订单（需采购订单菜单权限）"""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
@@ -781,8 +945,9 @@ def approve_order(order_id: int, db: Session = Depends(get_db), current_user: Us
 
 
 @router.post("/orders/{order_id}/unapprove", tags=["采购管理"])
-def unapprove_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """反审核采购订单（无下游入库单/发票时允许）"""
+def unapprove_order(order_id: int, db: Session = Depends(get_db),
+                    current_user: User = Depends(require_permission("menu:purchase:orders"))):
+    """反审核采购订单（无下游入库单/发票时允许，需采购订单菜单权限）"""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
@@ -815,6 +980,11 @@ def create_receipt(
     if order.status in ("待审核", "已关闭", "已取消"):
         raise HTTPException(400, f"订单状态「{order.status}」不允许入库")
 
+    # 仓库参照校验：必须存在于仓库档案且启用
+    wh = db.query(Warehouse).filter(Warehouse.id == data.warehouse_id, Warehouse.is_active == 1).first()
+    if not wh:
+        raise HTTPException(400, f"仓库档案不存在或已停用 (id={data.warehouse_id})，请先在「基础档案-仓库管理」维护")
+
     # 生成入库单号
     from app.utils.batch_no import generate_doc_no
     from app.models.purchase import PurchaseReceipt
@@ -832,10 +1002,14 @@ def create_receipt(
     db.flush()
 
     total_qty = 0
-    # 预加载订单明细，按 material_id 索引
-    order_items_map = {}
+    # 预加载订单明细，按 material_id 和 product_id 分别索引
+    order_items_by_material = {}
+    order_items_by_product = {}
     for oi in order.items:
-        order_items_map[oi.material_id] = oi
+        if oi.material_id:
+            order_items_by_material[oi.material_id] = oi
+        if oi.product_id:
+            order_items_by_product[oi.product_id] = oi
 
     for item_data in data.items:
         if item_data.quantity <= 0:
@@ -843,13 +1017,18 @@ def create_receipt(
         # 产品类明细（转成品库入库）不能走采购入库
         if not item_data.material_id:
             raise HTTPException(400, "产品类采购明细请使用「转成品库入库」收货")
-        # 查找订单明细：优先按 order_item_id，其次按 material_id
+        # 查找订单明细：优先按 order_item_id，其次按 material_id/product_id
+        order_item = None
         if item_data.order_item_id:
             order_item = db.query(PurchaseOrderItem).filter(
                 PurchaseOrderItem.id == item_data.order_item_id
             ).first()
-        else:
-            order_item = order_items_map.get(item_data.material_id)
+        elif item_data.material_id:
+            order_item = order_items_by_material.get(item_data.material_id)
+        elif item_data.product_id:
+            order_item = order_items_by_product.get(item_data.product_id)
+
+        is_product = bool(order_item and order_item.product_id)
         # 成本 = 订单明细单价(本币) 或 明细项单价
         inv_unit_cost = 0
         if order_item:
@@ -863,7 +1042,8 @@ def create_receipt(
         receipt_item = PurchaseReceiptItem(
             receipt_id=receipt.id,
             order_item_id=item_data.order_item_id,
-            material_id=item_data.material_id,
+            material_id=item_data.material_id or (order_item.material_id if order_item else None),
+            product_id=item_data.product_id or (order_item.product_id if order_item else None),
             quantity=item_data.quantity,
             unit_price=inv_unit_cost,
             batch_no=batch_no,
@@ -879,7 +1059,8 @@ def create_receipt(
         # 写入批次库存台账（含成本）
         inventory = WarehouseInventory(
             warehouse_id=data.warehouse_id,
-            material_id=item_data.material_id,
+            material_id=item_data.material_id or (order_item.material_id if order_item else None),
+            product_id=item_data.product_id or (order_item.product_id if order_item else None),
             batch_no=batch_no,
             quantity=item_data.quantity,
             unit_cost=inv_unit_cost,
@@ -894,7 +1075,8 @@ def create_receipt(
         trans = StockTransaction(
             trans_type="purchase_in",
             warehouse_id=data.warehouse_id,
-            material_id=item_data.material_id,
+            material_id=item_data.material_id or (order_item.material_id if order_item else None),
+            product_id=item_data.product_id or (order_item.product_id if order_item else None),
             batch_no=batch_no,
             quantity=item_data.quantity,
             unit_cost=inv_unit_cost,
@@ -910,16 +1092,22 @@ def create_receipt(
         )
         db.add(trans)
 
-        # 回写物料最新采购单价
-        mat = db.query(Material).filter(Material.id == item_data.material_id).first()
-        if mat and inv_unit_cost > 0:
-            mat.purchase_price = inv_unit_cost
+        # 回写最新采购单价
+        if is_product:
+            prod = db.query(Product).filter(Product.id == order_item.product_id).first()
+            if prod and inv_unit_cost > 0:
+                prod.estimated_cost = inv_unit_cost
+        elif order_item and order_item.material_id:
+            mat = db.query(Material).filter(Material.id == order_item.material_id).first()
+            if mat and inv_unit_cost > 0:
+                mat.purchase_price = inv_unit_cost
 
         # 刷新确保流水号唯一递增
         db.flush()
 
     receipt.total_qty = total_qty
     # 更新订单状态
+    all_received = False
     if order:
         all_received = all(
             item.received_qty >= item.quantity
@@ -929,6 +1117,21 @@ def create_receipt(
             order.status = "待开票"
         else:
             order.status = "部分入库"
+
+    # 更新关联的生产订单（外购型 PO 入库完成 → MO 已入库）
+    from app.models.production import ProductionOrder
+    # 通过采购需求找 MO：订单明细 → requisition → production_order
+    from app.models.purchase import PurchaseRequisition
+    req_ids = [it.requisition_id for it in order.items if it.requisition_id]
+    linked_mo = None
+    for req_id in req_ids:
+        req = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
+        if req:
+            linked_mo = db.query(ProductionOrder).filter(ProductionOrder.id == req.production_order_id).first()
+            break
+    if linked_mo and all_received:
+        linked_mo.status = "已入库"
+        linked_mo.received_qty = linked_mo.quantity
 
     db.commit()
     return {
@@ -952,6 +1155,7 @@ def list_receipts(
     result = []
     for r in items:
         batch_nos = [i.batch_no for i in r.items]
+        red_of = db.query(PurchaseReceipt).filter(PurchaseReceipt.id == r.red_of_receipt_id).first() if r.red_of_receipt_id else None
         result.append({
             "id": r.id, "receipt_no": r.receipt_no,
             "order_no": r.order.order_no if r.order else "",
@@ -959,6 +1163,9 @@ def list_receipts(
             "receipt_date": str(r.receipt_date),
             "total_qty": r.total_qty,
             "status": r.status,
+            "is_red": r.is_red or 0,
+            "red_of_receipt_id": r.red_of_receipt_id,
+            "red_of_no": red_of.receipt_no if red_of else "",
             "batch_nos": batch_nos,
             "item_count": len(r.items),
         })
@@ -979,12 +1186,18 @@ def get_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: Us
         "receipt_date": str(r.receipt_date),
         "total_qty": r.total_qty,
         "status": r.status,
+        "is_red": r.is_red or 0,
+        "red_of_receipt_id": r.red_of_receipt_id,
         "remark": r.remark or "",
         "operator": r.operator or "",
         "created_at": str(r.created_at) if r.created_at else "",
         "items": [{
+            "id": i.id,
+            "material_id": i.material_id,
             "material_name": i.material.name if i.material else "",
             "material_code": i.material.code if i.material else "",
+            "product_id": i.product_id,
+            "product_name": i.product.name_cn if i.product else "",
             "quantity": i.quantity,
             "unit_price": i.unit_price,
             "total_amount": round(i.quantity * i.unit_price, 2),
@@ -995,39 +1208,79 @@ def get_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: Us
 
 @router.delete("/receipts/{receipt_id}", tags=["采购管理"])
 def delete_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """取消入库 — 回滚库存、批次、订单状态"""
+    """取消入库 — 仅限批次未发生任何下游出入库；回滚库存、订单状态并补冲销流水"""
     receipt = db.query(PurchaseReceipt).filter(PurchaseReceipt.id == receipt_id).first()
     if not receipt:
         raise HTTPException(404, "入库单不存在")
+    if receipt.is_red:
+        raise HTTPException(400, "红冲单不能取消，请直接删除红冲记录")
 
     # 检查下游发票
     invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == receipt.order_id).count()
     if invoices > 0:
         raise HTTPException(400, "该订单已有关联发票，无法取消入库")
 
+    # 校验：批次若已被消耗（发料/发货/盘点/退货等），禁止物理取消 → 应走红冲
+    for item in receipt.items:
+        other_txn = db.query(StockTransaction).filter(
+            StockTransaction.batch_no == item.batch_no,
+            ~StockTransaction.trans_type.in_(["purchase_in", "purchase_return_out"]),
+        ).first()
+        if other_txn:
+            raise HTTPException(400, f"批次 {item.batch_no} 已发生其他出入库，无法取消；请使用红冲")
+
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == receipt.order_id).first()
 
     # 回滚库存和批次
     for item in receipt.items:
-        # 删除库存台账记录
-        db.query(WarehouseInventory).filter(
+        # 补一条冲销流水（保留审计轨迹：入库+100 / 红冲-100 → 期末0）
+        inv = db.query(WarehouseInventory).filter(
+            WarehouseInventory.batch_no == item.batch_no,
+        ).first()
+        if inv:
+            uc = inv.unit_cost or item.unit_price or 0
+            trans = StockTransaction(
+                trans_type="purchase_return_out",
+                warehouse_id=receipt.warehouse_id,
+                material_id=item.material_id,
+                product_id=item.product_id,
+                batch_no=item.batch_no,
+                quantity=-item.quantity,
+                unit_cost=uc,
+                total_amount=round(-item.quantity * uc, 2),
+                before_qty=inv.quantity,
+                after_qty=max(0, inv.quantity - item.quantity),
+                before_cost=round(inv.quantity * uc, 2),
+                after_cost=round(max(0, inv.quantity - item.quantity) * uc, 2),
+                source_doc_type="取消入库",
+                source_doc_no=receipt.receipt_no,
+                trans_no=generate_doc_no(db, "ST"),
+                operator=current_user.display_name or current_user.username,
+            )
+            db.add(trans)
+        # 删除库存台账记录（材料/成品双路径）
+        inv_q = db.query(WarehouseInventory).filter(
             WarehouseInventory.source_type == "purchase",
             WarehouseInventory.source_doc_id == receipt.id,
-            WarehouseInventory.material_id == item.material_id,
             WarehouseInventory.batch_no == item.batch_no,
-        ).delete()
-        # 删除库存流水
-        db.query(StockTransaction).filter(
-            StockTransaction.trans_type == "purchase_in",
-            StockTransaction.source_doc_no == receipt.receipt_no,
-        ).delete()
+        )
+        if item.material_id:
+            inv_q = inv_q.filter(WarehouseInventory.material_id == item.material_id)
+        elif item.product_id:
+            inv_q = inv_q.filter(WarehouseInventory.product_id == item.product_id)
+        inv_q.delete()
         # 回滚订单明细已入库数量
         if item.order_item_id:
             oi = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == item.order_item_id).first()
-        else:
+        elif item.material_id:
             oi = db.query(PurchaseOrderItem).filter(
                 PurchaseOrderItem.order_id == receipt.order_id,
                 PurchaseOrderItem.material_id == item.material_id
+            ).first()
+        else:
+            oi = db.query(PurchaseOrderItem).filter(
+                PurchaseOrderItem.order_id == receipt.order_id,
+                PurchaseOrderItem.product_id == item.product_id
             ).first()
         if oi:
             oi.received_qty = max(0, (oi.received_qty or 0) - item.quantity)
@@ -1043,7 +1296,199 @@ def delete_receipt(receipt_id: int, db: Session = Depends(get_db), current_user:
     # 级联删除明细（cascade="all, delete-orphan"）
     db.delete(receipt)
     db.commit()
-    return {"message": "入库已取消，库存已回滚"}
+    return {"message": "入库已取消，库存已回滚（已补冲销流水）"}
+
+
+@router.post("/receipts/{receipt_id}/red", tags=["采购管理"])
+def red_receipt(
+    receipt_id: int, data: dict,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """红冲入库单 — 允许批次已被消耗的场景，生成负向红冲单+冲销流水，保留审计轨迹
+
+    body: {"items": [{"receipt_item_id": 1, "quantity": 20}], "remark": "..."}
+    - 不传 items → 按批次当前剩余全部红冲
+    - 红冲数量不能超过该批次当前剩余库存
+    """
+    receipt = db.query(PurchaseReceipt).filter(PurchaseReceipt.id == receipt_id).first()
+    if not receipt:
+        raise HTTPException(404, "入库单不存在")
+    if receipt.is_red:
+        raise HTTPException(400, "红冲单不能再次红冲")
+
+    # 检查下游发票
+    invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == receipt.order_id).count()
+    if invoices > 0:
+        raise HTTPException(400, "该订单已有关联发票，无法红冲")
+
+    # 已红冲数量（支持多次红冲）
+    red_receipts = db.query(PurchaseReceipt).filter(
+        PurchaseReceipt.red_of_receipt_id == receipt.id
+    ).all()
+    red_by_item = {}
+    for rr in red_receipts:
+        for ri in rr.items:
+            key = ri.order_item_id or (ri.material_id or ri.product_id)
+            red_by_item[key] = red_by_item.get(key, 0) + abs(ri.quantity or 0)
+
+    # 解析红冲请求：默认全部
+    req_items = {it["receipt_item_id"]: float(it["quantity"]) for it in (data.get("items") or [])}
+
+    from app.models.production import ProductionOrder
+    from app.models.purchase import PurchaseRequisition
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == receipt.order_id).first()
+
+    red_receipt_no = generate_doc_no(db, "PR", PurchaseReceipt, "receipt_no")
+    red = PurchaseReceipt(
+        receipt_no=red_receipt_no,
+        order_id=receipt.order_id,
+        warehouse_id=receipt.warehouse_id,
+        receipt_date=date.today(),
+        status="已红冲",
+        total_qty=0,
+        is_red=1,
+        red_of_receipt_id=receipt.id,
+        remark=data.get("remark", ""),
+        operator=current_user.display_name or current_user.username,
+    )
+    db.add(red)
+    db.flush()
+
+    red_total_qty = 0.0
+    mo_reduced = 0.0
+    for item in receipt.items:
+        # 定位台账行（材料/成品双路径）
+        inv = db.query(WarehouseInventory).filter(
+            WarehouseInventory.batch_no == item.batch_no,
+        ).first()
+        if item.material_id:
+            inv = db.query(WarehouseInventory).filter(
+                WarehouseInventory.batch_no == item.batch_no,
+                WarehouseInventory.material_id == item.material_id,
+            ).first()
+        elif item.product_id:
+            inv = db.query(WarehouseInventory).filter(
+                WarehouseInventory.batch_no == item.batch_no,
+                WarehouseInventory.product_id == item.product_id,
+            ).first()
+
+        key = item.order_item_id or (item.material_id or item.product_id)
+        already = red_by_item.get(key, 0)
+        max_red = max(0, (item.quantity or 0) - already)
+        remaining = inv.quantity if inv else 0
+
+        if item.id in req_items:
+            red_qty = min(req_items[item.id], max_red)
+            if req_items[item.id] > max_red + 0.001:
+                raise HTTPException(400, f"批次 {item.batch_no} 累计可红冲 {max_red:.2f}（本次请求 {req_items[item.id]:.2f}）")
+        else:
+            # 不指定数量 → 按"未冲销上限 与 当前剩余"的较小值（考虑已被发料/盘点消耗的部分）
+            red_qty = min(max_red, remaining)
+        if red_qty <= 0.001:
+            continue
+
+        uc = item.unit_price or (inv.unit_cost if inv else 0) or 0
+        if red_qty > remaining + 0.001:
+            raise HTTPException(400, f"批次 {item.batch_no} 当前剩余 {remaining:.2f}，不足红冲 {red_qty:.2f}")
+
+        # 红冲单明细（红字：数量为负）
+        ri = PurchaseReceiptItem(
+            receipt_id=red.id,
+            order_item_id=item.order_item_id,
+            material_id=item.material_id,
+            product_id=item.product_id,
+            quantity=-red_qty,
+            unit_price=uc,
+            batch_no=item.batch_no,
+            remark=data.get("remark", ""),
+        )
+        db.add(ri)
+
+        # 扣台账
+        if inv:
+            old_qty = inv.quantity
+            inv.quantity = round(old_qty - red_qty, 4)
+            inv.total_cost = round(inv.quantity * uc, 2)
+        else:
+            old_qty = 0
+
+        # 冲销流水
+        trans = StockTransaction(
+            trans_type="purchase_return_out",
+            warehouse_id=receipt.warehouse_id,
+            material_id=item.material_id,
+            product_id=item.product_id,
+            batch_no=item.batch_no,
+            quantity=-red_qty,
+            unit_cost=uc,
+            total_amount=round(-red_qty * uc, 2),
+            before_qty=old_qty,
+            after_qty=inv.quantity if inv else 0,
+            before_cost=round(old_qty * uc, 2),
+            after_cost=round((inv.quantity if inv else 0) * uc, 2),
+            source_doc_type="采购红冲",
+            source_doc_no=red_receipt_no,
+            trans_no=generate_doc_no(db, "ST"),
+            operator=current_user.display_name or current_user.username,
+        )
+        db.add(trans)
+
+        # 回退订单明细
+        if item.order_item_id:
+            oi = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == item.order_item_id).first()
+        elif item.material_id:
+            oi = db.query(PurchaseOrderItem).filter(
+                PurchaseOrderItem.order_id == receipt.order_id,
+                PurchaseOrderItem.material_id == item.material_id
+            ).first()
+        else:
+            oi = db.query(PurchaseOrderItem).filter(
+                PurchaseOrderItem.order_id == receipt.order_id,
+                PurchaseOrderItem.product_id == item.product_id
+            ).first()
+        if oi:
+            oi.received_qty = max(0, (oi.received_qty or 0) - red_qty)
+        red_total_qty += red_qty
+        mo_reduced += red_qty
+        db.flush()
+
+    if red_total_qty <= 0:
+        raise HTTPException(400, "没有可红冲的数量（可能已全部红冲）")
+
+    red.total_qty = red_total_qty
+
+    # 原单标记已红冲
+    receipt.status = "已红冲"
+
+    # 订单状态回退
+    if order:
+        remaining_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.order_id == order.id).all()
+        if all((it.received_qty or 0) <= 0 for it in remaining_items):
+            order.status = "已审核"
+        elif not all((it.received_qty or 0) >= it.quantity for it in remaining_items):
+            order.status = "部分入库"
+
+    # 外购型 MO 回退（PR → MO 链路）
+    req_ids = [it.requisition_id for it in order.items if it.requisition_id] if order else []
+    linked_mo = None
+    for req_id in req_ids:
+        req = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
+        if req:
+            linked_mo = db.query(ProductionOrder).filter(ProductionOrder.id == req.production_order_id).first()
+            break
+    if linked_mo and linked_mo.status in ("已入库", "部分入库"):
+        new_received = max(0, (linked_mo.received_qty or 0) - mo_reduced)
+        linked_mo.received_qty = new_received
+        if new_received <= 0:
+            linked_mo.status = "待采购"
+        else:
+            linked_mo.status = "部分入库"
+
+    db.commit()
+    return {
+        "id": red.id, "red_receipt_no": red_receipt_no,
+        "message": f"红冲成功：{red_total_qty:.2f}，红冲单 {red_receipt_no}",
+    }
 
 
 # ==================== 采购发票 ====================

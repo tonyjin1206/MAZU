@@ -3,26 +3,30 @@
 from app.models.base import BaseMixin
 from app.models.auth import User, Role, Permission, RolePermission
 from app.models.foundation import (
-    Material, Product, BomItem, Process,
+    Material, Product, BomItem, Process, ProductProcess, ProductCustomer,
     Department, Employee,
-    Customer, Supplier, Outsourcer,
+    Customer, Supplier,
     Warehouse, Currency, ExchangeRate,
     HsCode, TradeTerm,
     SystemParam,
 )
 from app.models.inventory import (
     WarehouseInventory, StockTransaction,
+    Stocktake, StocktakeItem,
     StockCheck, StockCheckItem,
+    StockInOrder,
 )
 from app.models.purchase import (
     PurchaseOrder, PurchaseOrderItem,
     PurchaseReceipt, PurchaseReceiptItem,
     PurchaseInvoice,
+    PurchaseRequisition,
     AccountsPayable, Payment, PaymentAllocation,
 )
 from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionProcess, ProductionReceipt, ProcessingInvoice,
-    OutsourcingOrder, OutsourceReceiptItem,
+    OutsourcingOrder,
+    OutsourceOrder,
     MaterialIssueItem,
 )
 from app.models.sales import (
@@ -37,26 +41,30 @@ from app.models.tax_refund import (
 )
 from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
-    ReminderConfig, ReminderLog,
+    ReminderConfig, ReminderLog, OperationLog,
 )
 
 __all__ = [
     "BaseMixin",
     "User", "Role", "Permission", "RolePermission",
-    "Material", "Product", "BomItem", "Process",
+    "Material", "Product", "BomItem", "Process", "ProductProcess", "ProductCustomer",
     "Department", "Employee",
-    "Customer", "Supplier", "Outsourcer",
+    "Customer", "Supplier",
     "Warehouse", "Currency", "ExchangeRate",
     "HsCode", "TradeTerm",
     "SystemParam",
     "WarehouseInventory", "StockTransaction",
+    "Stocktake", "StocktakeItem",
     "StockCheck", "StockCheckItem",
+    "StockInOrder",
     "PurchaseOrder", "PurchaseOrderItem",
     "PurchaseReceipt", "PurchaseReceiptItem",
-    "PurchaseInvoice",
+    "PurchaseInvoice", "PurchaseRequisition",
     "AccountsPayable", "Payment", "PaymentAllocation",
-    "ProductionOrder", "ProductionMaterial", "ProductionProcess", "ProductionReceipt", "ProcessingInvoice", "OutsourcingOrder",
-    "MaterialIssueItem", "OutsourceReceiptItem",
+    "ProductionOrder", "ProductionMaterial", "ProductionProcess", "ProductionReceipt", "ProcessingInvoice",
+    "OutsourcingOrder",
+    "OutsourceOrder",
+    "MaterialIssueItem",
     "SalesQuote", "SalesOrder",
     "SalesDelivery", "CustomsDeclaration",
     "SalesInvoice",
@@ -64,5 +72,5 @@ __all__ = [
     "TaxRefundInputInvoice", "TaxRefundDeclaration",
     "TaxRefundDetail", "TaxRefundProgress",
     "WecomConfig", "BotConfig", "BotConversation",
-    "ReminderConfig", "ReminderLog",
+    "ReminderConfig", "ReminderLog", "OperationLog",
 ]

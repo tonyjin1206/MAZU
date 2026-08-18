@@ -19,7 +19,7 @@ class TestPermissions:
         for g in data:
             for p in g["permissions"]:
                 all_codes.add(p["code"])
-        assert len(all_codes) == 27  # 27 个菜单权限
+        assert len(all_codes) == 36  # 36 个菜单权限（2026-07-31 仓库/盘点/币种汇率独立菜单）
 
     def test_my_permissions(self, client, auth_headers):
         resp = client.get("/api/auth/me/permissions", headers=auth_headers)
@@ -29,7 +29,10 @@ class TestPermissions:
         assert "role_code" in data
         assert data["role_code"] == "admin"
         assert "menu:system:users" in data["permissions"]
-        assert len(data["permissions"]) == 27
+        # 管理员 = 全量权限（main.py seed 每次补齐）—— 动态对比，不硬编码数量
+        groups = client.get("/api/auth/permissions", headers=auth_headers).json()
+        all_codes = {p["code"] for g in groups for p in g["permissions"]}
+        assert len(data["permissions"]) == len(all_codes)
 
 
 class TestUserCRUD:
@@ -121,7 +124,10 @@ class TestRoleCRUD:
         admin = [r for r in roles if r["code"] == "admin"][0]
         assert admin["is_system"] == 1
         assert admin["user_count"] >= 1
-        assert len(admin["permission_codes"]) == 27
+        # 管理员 = 全量权限（动态对比）
+        groups = client.get("/api/auth/permissions", headers=auth_headers).json()
+        all_codes = {p["code"] for g in groups for p in g["permissions"]}
+        assert len(admin["permission_codes"]) == len(all_codes)
 
     def test_create_custom_role(self, client, auth_headers):
         resp = client.post("/api/auth/roles", json={
@@ -169,7 +175,10 @@ class TestPermissionRoles:
     def test_admin_has_all(self, client, admin_token):
         h = {"Authorization": f"Bearer {admin_token}"}
         perms = client.get("/api/auth/me/permissions", headers=h).json()
-        assert len(perms["permissions"]) == 27
+        # 管理员 = 全量权限（动态对比）
+        groups = client.get("/api/auth/permissions", headers=h).json()
+        all_codes = {p["code"] for g in groups for p in g["permissions"]}
+        assert len(perms["permissions"]) == len(all_codes)
 
     def test_sales_manager_permissions(self, client, admin_token):
         """销售经理只有驾驶舱 + 6 个销售菜单"""

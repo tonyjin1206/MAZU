@@ -13,7 +13,6 @@ from app.schemas.foundation import (
     EmployeeCreate, EmployeeOut,
     CustomerCreate, CustomerUpdate, CustomerOut,
     SupplierCreate, SupplierUpdate, SupplierOut,
-    OutsourcerCreate, OutsourcerOut,
     WarehouseCreate, WarehouseOut,
     CurrencyCreate, CurrencyOut,
     ExchangeRateCreate, ExchangeRateOut,
@@ -32,9 +31,7 @@ from app.schemas.purchase import (
 )
 from app.schemas.production import (
     ProductionOrderCreate, ProductionOrderUpdate, ProductionOrderOut,
-    OutsourcingOrderCreate, OutsourcingOrderUpdate, OutsourcingOrderOut,
     MaterialIssueItemCreate, MaterialIssueItemOut,
-    OutsourceReceiptItemCreate, OutsourceReceiptItemOut,
 )
 from app.schemas.sales import (
     SalesQuoteCreate, SalesQuoteOut,
@@ -66,7 +63,6 @@ __all__ = [
     "EmployeeCreate", "EmployeeOut",
     "CustomerCreate", "CustomerUpdate", "CustomerOut",
     "SupplierCreate", "SupplierUpdate", "SupplierOut",
-    "OutsourcerCreate", "OutsourcerOut",
     "WarehouseCreate", "WarehouseOut",
     "CurrencyCreate", "CurrencyOut",
     "ExchangeRateCreate", "ExchangeRateOut",
@@ -82,9 +78,7 @@ __all__ = [
     "PaymentCreate", "PaymentOut", "PaymentAllocationCreate",
     # production
     "ProductionOrderCreate", "ProductionOrderUpdate", "ProductionOrderOut",
-    "OutsourcingOrderCreate", "OutsourcingOrderUpdate", "OutsourcingOrderOut",
     "MaterialIssueItemCreate", "MaterialIssueItemOut",
-    "OutsourceReceiptItemCreate", "OutsourceReceiptItemOut",
     # sales
     "SalesQuoteCreate", "SalesQuoteOut",
     "SalesOrderCreate", "SalesOrderUpdate", "SalesOrderOut",

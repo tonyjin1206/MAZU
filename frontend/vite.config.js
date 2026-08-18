@@ -13,7 +13,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8788',
+        // E2E 测试可用 VITE_PROXY_TARGET 覆盖后端地址（默认开发端口 8788）
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8788',
         changeOrigin: true,
       },
     },

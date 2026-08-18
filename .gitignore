@@ -18,6 +18,10 @@ frontend/dist/
 # === 数据库 (不提交实际数据) ===
 backend/data/erp.db
 backend/data/erp.db-wal
+backend/data/*.bak*
+
+# === Git worktree 元数据 ===
+.worktrees/
 backend/data/erp.db-shm
 backend/data/journal/
 

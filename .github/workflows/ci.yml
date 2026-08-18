@@ -2,12 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, app-optimization]
   pull_request:
     branches: [main]
 
 jobs:
-  test:
+  # ============ 后端：单元/契约/状态机/边界/全流程 + 架构检查 ============
+  backend-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,6 +18,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: "pip"
 
       - name: Install dependencies
         run: |
@@ -28,8 +30,71 @@ jobs:
           pip install flake8
           flake8 backend/app --count --select=E9,F63,F7,F82 --show-source --statistics
 
-      - name: Test with pytest
+      - name: Test with pytest (187 tests)
         run: |
-          cd backend && python -m pytest tests/ -v --tb=short
+          cd backend && python -m pytest tests/ -q --tb=short -W ignore::DeprecationWarning
         env:
           ERP_DEV: "1"
+
+      - name: Architecture check
+        run: |
+          python scripts/check_architecture.py
+
+  # ============ 前端：构建校验 ============
+  frontend-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Build
+        run: npm run build
+        working-directory: frontend
+
+  # ============ E2E：真实浏览器全流程（独立测试库） ============
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install playwright
+
+      - name: Install Chromium (with system deps)
+        run: python -m playwright install --with-deps chromium
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Run E2E (34 tests - 32 pages + login + core flow)
+        run: |
+          cd e2e && ERP_DEV=1 python -m pytest -q --tb=short

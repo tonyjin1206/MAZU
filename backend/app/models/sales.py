@@ -110,7 +110,7 @@ class SalesDelivery(Base):
     unit_price = Column(Float, default=0, comment="含税单价(外币)")
     amount = Column(Float, default=0, comment="含税金额(外币)")
     delivery_date = Column(Date, nullable=False, default=date.today, comment="发货日期")
-    status = Column(String(16), default="已发货", comment="状态: 已发货/已报关")
+    status = Column(String(16), default="已发货", comment="状态: 已发货/已报关/已退货")
     is_return = Column(Integer, default=0, comment="是否退货单: 0正常发货/1退货")
     return_of_delivery_id = Column(Integer, ForeignKey("so_delivery.id"), comment="原发货单ID(退货时)")
     remark = Column(Text)
