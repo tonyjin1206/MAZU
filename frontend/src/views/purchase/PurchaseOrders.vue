@@ -31,7 +31,7 @@
           <span>采购订单</span>
           <span style="margin-left: 10px; font-size: 12px; color: #909399">点击订单行，下方查看该订单明细</span>
           <span style="flex: 1" />
-          <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
+          <el-button size="small" @click="openOrderSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
       <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
@@ -47,7 +47,7 @@
                   <el-dropdown-item v-for="c in allColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                  <el-dropdown-item @click.stop="openOrderSettings" style="color: #409eff">列设置...</el-dropdown-item>
+                  <el-dropdown-item @click.stop="openOrderSettingsRaw" style="color: #409eff">列设置...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -101,7 +101,7 @@
         <div style="display: flex; align-items: center">
           <span>订单明细</span>
           <span style="flex: 1" />
-          <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
+          <el-button size="small" @click="openItemSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
       <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
@@ -117,7 +117,7 @@
                   <el-dropdown-item v-for="c in allItemColumns" :key="c.prop">
                     <el-checkbox :model-value="c.visible !== false" @change="toggleItemColumn(c)">{{ c.label }}</el-checkbox>
                   </el-dropdown-item>
-                  <el-dropdown-item @click.stop="openItemSettings" style="color: #409eff">列设置...</el-dropdown-item>
+                  <el-dropdown-item @click.stop="openItemSettingsRaw" style="color: #409eff">列设置...</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>

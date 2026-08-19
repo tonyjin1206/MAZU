@@ -24,9 +24,6 @@
     </el-card>
 
     <el-card>
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
-        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
-      </div>
 <el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
         <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'remark'">
           <template #header>

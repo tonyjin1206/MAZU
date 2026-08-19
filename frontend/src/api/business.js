@@ -60,6 +60,9 @@ export const salesApi = {
   deliveries: {
     list: (params) => request.get('/sales/deliveries', { params }),
     create: (data) => request.post('/sales/deliveries', data),
+    notify: (data) => request.post('/sales/deliveries/notify', data),
+    issue: (id, data) => request.post(`/sales/deliveries/${id}/issue`, data),
+    outs: (params) => request.get('/sales/deliveries/outs', { params }),
     return: (id, data) => request.post(`/sales/deliveries/${id}/return`, data),
   },
   customs: {

@@ -85,12 +85,14 @@
         </el-sub-menu>
 
         <!-- 5. 库存管理 -->
-        <el-sub-menu index="inventory" v-if="hasPerm('menu:inventory') || hasPerm('menu:inventory:summary') || hasPerm('menu:inventory:stock-ins') || hasPerm('menu:inventory:material-ins') || hasPerm('menu:inventory:stocktake') || hasPerm('menu:production:batch')">
+        <el-sub-menu index="inventory" v-if="hasPerm('menu:inventory') || hasPerm('menu:inventory:summary') || hasPerm('menu:inventory:stock-ins') || hasPerm('menu:inventory:material-ins') || hasPerm('menu:inventory:material-outs') || hasPerm('menu:inventory:delivery-outs') || hasPerm('menu:inventory:stocktake') || hasPerm('menu:production:batch')">
           <template #title>库存管理</template>
           <el-menu-item index="/inventory/management" v-if="hasPerm('menu:inventory')">库存查询</el-menu-item>
           <el-menu-item index="/inventory/summary" v-if="hasPerm('menu:inventory:summary')">收发存</el-menu-item>
           <el-menu-item index="/inventory/stock-ins" v-if="hasPerm('menu:inventory:stock-ins')">成品入库</el-menu-item>
           <el-menu-item index="/inventory/material-ins" v-if="hasPerm('menu:inventory:material-ins')">原料入库</el-menu-item>
+          <el-menu-item index="/inventory/material-outs" v-if="hasPerm('menu:inventory:material-outs')">原料出库</el-menu-item>
+          <el-menu-item index="/inventory/delivery-outs" v-if="hasPerm('menu:inventory:delivery-outs')">成品出库</el-menu-item>
           <el-menu-item index="/inventory/stocktakes" v-if="hasPerm('menu:inventory:stocktake')">盘点管理</el-menu-item>
           <el-menu-item index="/production/inventory" v-if="hasPerm('menu:production:batch')">批次追溯</el-menu-item>
         </el-sub-menu>
@@ -181,6 +183,8 @@ const pageTitle = computed(() => {
     '/inventory/stocktakes': '盘点管理',
     '/inventory/stock-ins': '成品入库',
     '/inventory/material-ins': '原料入库',
+    '/inventory/material-outs': '原料出库',
+    '/inventory/delivery-outs': '成品出库',
     '/outsource/from-sales': '销售订单转委外',
     '/outsource/orders': '委外订单',
     '/tax-refund/declarations': '退税申报',

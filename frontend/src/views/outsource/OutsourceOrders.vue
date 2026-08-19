@@ -234,9 +234,11 @@ async function handleApprove(row) {
 }
 
 async function handleDelete(row) {
-  await ElMessageBox.confirm(`确定删除委外订单 ${row.outsource_no}？删除后销售明细行回到「未生产」。`, '提示', { type: 'warning' })
+  const matCount = new Set((row.materials || []).map(m => m.material_id)).size
+  const matTip = matCount > 0 ? `该单已认领 ${matCount} 种材料，删除后材料将退回原批次。` : ''
+  await ElMessageBox.confirm(`确定删除委外订单 ${row.outsource_no}？${matTip}删除后销售明细行回到「未生产」。`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/outsource/orders/${row.id}`)
+    const res = await request.delete(`/outsource/orders/${row.id}`)
     ElMessage.success(res.message || '已删除')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }

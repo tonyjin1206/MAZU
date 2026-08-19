@@ -32,9 +32,6 @@
           <el-date-picker v-model="query.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchData" />
         </el-form-item>
       </el-form>
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
-        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
-      </div>
 <el-table ref="tableRef" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="summaryMethod">
         <el-table-column prop="warehouse" label="仓库" width="110" sortable />
         <el-table-column prop="material_name" label="物料名称" min-width="140" sortable>

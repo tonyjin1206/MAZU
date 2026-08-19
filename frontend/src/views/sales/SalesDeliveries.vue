@@ -47,8 +47,8 @@
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="!row.delivery_confirmed" link type="primary" @click="openShipDialog(row)">发货</el-button>
-            <el-button link type="warning" @click="openReturnDialog(row)">退货</el-button>
+            <el-button v-if="!row.delivery_confirmed" link type="primary" @click="openShipDialog(row)">通知发货</el-button>
+            <el-button v-if="(row.delivered_qty || 0) > 0" link type="warning" @click="openReturnDialog(row)">退货</el-button>
             <el-button v-if="!row.delivery_confirmed" link type="success" @click="confirmDone(row)">发货完成</el-button>
             <el-button v-else link type="info" @click="cancelDone(row)">撤销确认</el-button>
           </template>
@@ -98,34 +98,28 @@
       </el-table>
     </el-card>
 
-    <!-- ========== 发货弹窗 ========== -->
-    <el-dialog v-model="shipVisible" title="发货" width="560px" destroy-on-close>
+    <!-- ========== 通知发货弹窗 ========== -->
+    <el-dialog v-model="shipVisible" title="通知发货" width="520px" destroy-on-close>
       <el-form :model="shipForm" label-width="100px">
         <el-form-item label="销售订单"><span>{{ shipForm.order_no }}</span></el-form-item>
         <el-form-item label="产品"><span>{{ shipForm.product_name }}（单价 {{ $fm(shipForm.unit_price) }}）</span></el-form-item>
-        <el-form-item label="批次号" required>
-          <el-select v-model="shipForm.batch_no" placeholder="请选择批次" filterable style="width: 100%">
-            <el-option v-for="b in shipBatchList" :key="b.id" :label="batchLabel(b)" :value="b.batch_no" :disabled="b.available <= 0" />
-          </el-select>
+        <el-form-item label="订单量/已出/可通知">
+          <span>订单 {{ $fq(shipForm.quantity) }} / 已出库 {{ $fq(shipForm.delivered_qty) }} / 可通知 {{ $fq(shipForm.max_notify) }}</span>
         </el-form-item>
-        <el-form-item label="发货数量" required>
-          <el-input type="number" v-model="shipForm.quantity" :min="1" :max="shipBatchAvailable" style="width: 100%" />
+        <el-form-item label="通知数量" required>
+          <el-input type="number" v-model="shipForm.notify_qty" :min="1" :max="shipForm.max_notify" style="width: 100%" />
         </el-form-item>
-        <el-form-item label="仓库" required>
-          <el-select v-model="shipForm.warehouse_id" placeholder="请选择仓库" style="width: 100%">
-            <el-option v-for="w in warehouseList" :key="w.id" :label="`${w.code||''} - ${w.name}`" :value="w.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="发货日期" required>
-          <el-date-picker v-model="shipForm.delivery_date" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%" />
+        <el-form-item label="通知日期" required>
+          <el-date-picker v-model="shipForm.notify_date" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%" />
         </el-form-item>
         <el-form-item label="备注">
           <el-input v-model="shipForm.remark" type="textarea" :rows="2" placeholder="请输入备注" />
         </el-form-item>
+        <el-alert type="info" :closable="false" title="已通知的货将在【库存管理→成品出库】中由库管选择批次出库。" />
       </el-form>
       <template #footer>
         <el-button @click="shipVisible = false">取消</el-button>
-        <el-button type="primary" :loading="shipSubmitting" :disabled="!shipForm.batch_no" @click="handleShipSubmit">提交发货</el-button>
+        <el-button type="primary" :loading="shipSubmitting" :disabled="shipForm.max_notify <= 0" @click="handleShipSubmit">通知发货</el-button>
       </template>
     </el-dialog>
 
@@ -181,11 +175,11 @@ const defaultOrderColumns = [
   { prop: 'batch_no', label: '批次号', width: 150, sortable: true },
   { prop: 'quantity', label: '订单数量', width: 95, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'received_qty', label: '已入库', width: 90, align: 'right', sortable: true, fmt: 'qty' },
-  { prop: 'delivered_qty', label: '已发货', width: 90, align: 'right', sortable: true, fmt: 'qty' },
-  { prop: 'undelivered_qty', label: '未发货', width: 90, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'delivered_qty', label: '已出库', width: 90, align: 'right', sortable: true, fmt: 'qty' },
+  { prop: 'undelivered_qty', label: '未出库', width: 90, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'physical_stock', label: '实物库存', width: 95, align: 'right', sortable: true, fmt: 'qty' },
   { prop: 'available_stock', label: '可用库存', width: 95, align: 'right', sortable: true, fmt: 'qty' },
-  { prop: 'delivery_confirmed', label: '发货状态', width: 95, align: 'center', sortable: true, fmt: 'tag' },
+  { prop: 'delivery_confirmed', label: '出库状态', width: 95, align: 'center', sortable: true, fmt: 'tag' },
 ]
 const {
   columns: orderColumns, columnVersion: orderColumnVersion, initColumnDrag: initOrderDrag,
@@ -233,15 +227,14 @@ const returnMax = ref(0)
 // ===== 分栏 =====
 const topHeight = ref(420)
 
-// ===== 发货弹窗 =====
+// ===== 通知发货弹窗 =====
 const shipVisible = ref(false)
 const shipSubmitting = ref(false)
-const shipBatchList = ref([])
-const shipBatchAvailable = ref(1)
 const shipForm = reactive({
   order_id: null, order_item_id: null, product_id: null,
   order_no: '', product_name: '', unit_price: 0,
-  batch_no: '', quantity: 1, warehouse_id: null, delivery_date: '', remark: '',
+  quantity: 0, delivered_qty: 0, max_notify: 0,
+  notify_qty: 1, notify_date: '', remark: '',
 })
 
 // ===== 退货弹窗 =====
@@ -249,8 +242,6 @@ const returnVisible = ref(false)
 const returnSubmitting = ref(false)
 const returnBatchList = ref([])
 const returnForm = reactive({ batch_no: '', quantity: 1, return_date: '', remark: '' })
-
-const warehouseList = ref([])
 
 function resetSearch() { searchForm.keyword = ''; searchForm.status = ''; queryParams.page = 1; fetchData() }
 
@@ -292,74 +283,49 @@ async function loadDeliveries(itemId) {
   }
 }
 
-// ===== 发货 =====
-function openShipDialog(row) {
-  if (row.delivery_confirmed) { ElMessage.warning('该产品已确认发货完成，不能发货（可先撤销确认）'); return }
+// ===== 通知发货 =====
+async function openShipDialog(row) {
+  if (row.delivery_confirmed) { ElMessage.warning('该产品已确认发货完成，不能通知（可先撤销确认）'); return }
+  const maxNotify = Math.max(0, (row.quantity || 0) - (row.delivered_qty || 0))
   Object.assign(shipForm, {
     order_id: row.order_id, order_item_id: row.item_id, product_id: row.product_id,
     order_no: row.order_no, product_name: row.product_name, unit_price: 0,
-    batch_no: '', quantity: 1, warehouse_id: null, delivery_date: '', remark: '',
+    quantity: row.quantity || 0, delivered_qty: row.delivered_qty || 0, max_notify: maxNotify,
+    notify_qty: maxNotify > 0 ? 1 : 0, notify_date: '', remark: '',
   })
-  shipBatchAvailable.value = 1
-  loadShipBatches(row)
-  shipVisible.value = true
-}
-
-async function loadShipBatches(row) {
-  shipBatchList.value = []
   // 单价从订单详情取
   try {
     const detail = await request.get(`/sales/orders/${row.order_id}`)
     const it = (detail.items || []).find(i => i.id === row.item_id)
     if (it) shipForm.unit_price = it.unit_price || 0
   } catch {}
-  try {
-    const res = await request.get('/inventory/available-batches', { params: { product_id: row.product_id, order_id: row.order_id } })
-    shipBatchList.value = res.items || []
-  } catch { shipBatchList.value = [] }
-}
-
-function batchLabel(b) {
-  let label = `${b.batch_no} (可发${b.available})`
-  if (b.locked_qty > 0 && b.owner_order_no) label += ` · ${b.locked_qty}锁定给${b.owner_order_no}`
-  return label
-}
-
-function onBatchChange(batchNo) {
-  const b = shipBatchList.value.find(x => x.batch_no === batchNo)
-  if (b) {
-    shipForm.warehouse_id = b.warehouse_id
-    shipBatchAvailable.value = b.available
-    shipForm.quantity = 1
-  }
+  shipVisible.value = true
 }
 
 async function handleShipSubmit() {
-  if (!shipForm.order_id || !shipForm.batch_no) { ElMessage.warning('请选择订单和批次'); return }
+  if (!shipForm.order_item_id || shipForm.max_notify <= 0) { ElMessage.warning('该产品已全部通知发货'); return }
+  const qty = Number(shipForm.notify_qty)
+  if (!qty || qty <= 0 || qty > shipForm.max_notify) { ElMessage.warning(`请输入 1~${shipForm.max_notify} 的通知数量`); return }
   shipSubmitting.value = true
   try {
-    await request.post('/sales/deliveries', {
-      order_id: shipForm.order_id,
+    await request.post('/sales/deliveries/notify', {
       order_item_id: shipForm.order_item_id,
-      product_id: shipForm.product_id,
-      batch_no: shipForm.batch_no,
-      quantity: shipForm.quantity,
-      warehouse_id: shipForm.warehouse_id,
-      delivery_date: shipForm.delivery_date,
+      quantity: qty,
+      notify_date: shipForm.notify_date,
       remark: shipForm.remark,
     })
-    ElMessage.success('发货成功')
+    ElMessage.success('已通知发货，等待库管出库')
     shipVisible.value = false
     fetchData()
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '发货失败') } finally { shipSubmitting.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '通知发货失败') } finally { shipSubmitting.value = false }
 }
 
 // ===== 退货 =====
 async function openReturnDialog(row) {
   Object.assign(returnForm, { batch_no: '', quantity: 1, return_date: '', remark: '' })
-  // 已发过的批次（正常发货单的批次，去重）
+  // 已出库批次（正常发货单已出库的批次，去重；待出库未出库的不可退）
   const res = await request.get('/sales/deliveries', { params: { page: 1, page_size: 100, order_item_id: row.item_id } }).catch(() => ({ items: [] }))
-  const shippedBatches = [...new Set((res.items || []).filter(i => !i.is_return).map(i => i.batch_no))]
+  const shippedBatches = [...new Set((res.items || []).filter(i => !i.is_return && i.status !== '待出库' && (i.delivered_qty || 0) > 0 && i.batch_no).map(i => i.batch_no))]
   returnBatchList.value = shippedBatches
   const ret = (res.items || []).filter(i => i.is_return).reduce((s, i) => s + (i.quantity || 0), 0)
   returnedTotal.value = ret
@@ -483,17 +449,13 @@ function resetItemSettings() {
 }
 function openItemSettings() { openItemSettingsRaw() }
 
-async function fetchWarehouses() {
-  try {
-    const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
-    warehouseList.value = res.items || []
-  } catch {}
-}
+async function fetchWarehouses() {}
 
 watch(orderColumnVersion, () => { nextTick(() => { initOrderDrag() }) })
 watch(itemColumnVersion, () => { nextTick(() => { initItemDrag() }) })
 
-onMounted(() => { fetchData(); fetchWarehouses() })
+onMounted(() => { fetchData() })
+
 </script>
 
 <style scoped>

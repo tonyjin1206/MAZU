@@ -28,6 +28,12 @@
             <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
           </el-table-column>
           <el-table-column prop="batch_no" label="批次号" min-width="150" show-overflow-tooltip sortable />
+          <el-table-column prop="source" label="来源" width="90" align="center" sortable>
+            <template #default="{ row }">
+              <el-tag v-if="row.source === '转外发'" type="success" size="small">转外发</el-tag>
+              <el-tag v-else type="info" size="small">转直采</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="采购状态" width="120" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
             <template #default="{ row }">
               <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">采购完成</el-tag>

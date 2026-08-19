@@ -27,6 +27,7 @@ from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionProcess, ProductionReceipt, ProcessingInvoice,
     OutsourcingOrder,
     OutsourceOrder,
+    OutsourceMaterial,
     MaterialIssueItem,
 )
 from app.models.sales import (
@@ -64,6 +65,7 @@ __all__ = [
     "ProductionOrder", "ProductionMaterial", "ProductionProcess", "ProductionReceipt", "ProcessingInvoice",
     "OutsourcingOrder",
     "OutsourceOrder",
+    "OutsourceMaterial",
     "MaterialIssueItem",
     "SalesQuote", "SalesOrder",
     "SalesDelivery", "CustomsDeclaration",

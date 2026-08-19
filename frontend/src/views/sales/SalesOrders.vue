@@ -118,36 +118,11 @@
           <template #default="{ row }">
             <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转直采</el-button>
             <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
-            <el-button v-if="(row.production_status === '未生产' || !row.production_status || row.production_status === '部分入库') && selectedOrder?.status === '已审'" link type="success" size="small" @click="openClaimDialog(row)">认领库存</el-button>
-            <el-button v-if="row.claimed_from_batch && selectedOrder?.status === '已审' && !(row.delivered_qty || 0)" link type="danger" size="small" @click="handleUnclaim(row)">解绑</el-button>
             <el-button v-if="!row.production_status || row.production_status === '未生产'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
-
-    <!-- 认领库存弹窗（备货批次挂到本销售行） -->
-    <el-dialog v-model="claimVisible" title="认领库存（把备货挂到本销售单）" width="720px" destroy-on-close>
-      <div style="margin-bottom: 10px; font-size: 12px; color: #606266">
-        选择仓库里已备货的批次（显示的是该产品的备货库存），认领后货就归本销售单，成本按该批次的进价归集。支持填数量部分认领。
-      </div>
-      <el-table :data="claimBatches" height="260" border size="small" highlight-current-row @row-click="pickClaimBatch">
-        <el-table-column prop="batch_no" label="批次号" width="150" sortable />
-        <el-table-column prop="warehouse_name" label="仓库" min-width="110" sortable />
-        <el-table-column prop="quantity" label="库存数" width="100" align="right" sortable />
-        <el-table-column prop="unit_cost" label="进价" width="100" align="right" sortable />
-      </el-table>
-      <el-empty v-if="!claimBatches.length" description="没有可认领的备货批次（该产品无备货库存，或备货批次已被认领/锁定）" :image-size="60" style="padding: 0" />
-      <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px">
-        <span>认领数量</span>
-        <el-input-number v-model="claimForm.quantity" :min="0" :max="claimMax" :disabled="!claimForm.batch_no" style="width: 160px" />
-        <span style="font-size: 12px; color: #909399">最多可认领 {{ claimMax }}（订单还需 {{ claimRemain }}）</span>
-      </div>
-      <template #footer>
-        <el-button @click="claimVisible = false">取消</el-button>
-        <el-button type="primary" :loading="claimSubmitting" :disabled="!claimForm.batch_no || claimForm.quantity <= 0" @click="handleClaim">确认认领</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 新建/编辑/详情弹窗 -->
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close>
@@ -280,14 +255,17 @@
       </template>
     </el-dialog>
 
-    <!-- 变更明细行弹窗（改数量 / 停售） -->
+    <!-- 变更明细行弹窗（改数量 / 改单价 / 停售） -->
     <el-dialog v-model="changeVisible" title="变更明细行" width="460px" destroy-on-close>
       <el-form label-width="80px">
         <el-form-item label="产品">
           <el-input :model-value="changeForm.product_name" readonly />
         </el-form-item>
         <el-form-item label="新数量">
-          <el-input-number v-model="changeForm.quantity" :min="0" style="width: 100%" :disabled="changeForm.stop_sale" />
+          <el-input-number v-model="changeForm.quantity" :min="1" style="width: 100%" :disabled="changeForm.stop_sale" />
+        </el-form-item>
+        <el-form-item label="新单价">
+          <el-input-number v-model="changeForm.unit_price" :min="0.01" :precision="2" :step="0.01" style="width: 100%" :disabled="changeForm.stop_sale" />
         </el-form-item>
         <el-form-item label="停售">
           <el-switch v-model="changeForm.stop_sale" active-text="停售此产品（整行作废）" />
@@ -527,60 +505,6 @@ function productionStatusLabel(status) {
   return map[status] || status || '未生产'
 }
 
-// ========== 明细行：认领库存 / 解绑 ==========
-const claimVisible = ref(false)
-const claimBatches = ref([])
-const claimForm = reactive({ batch_no: '', quantity: 0 })
-const claimTarget = ref(null)
-const claimSubmitting = ref(false)
-const claimMax = ref(0)
-const claimRemain = ref(0)
-
-async function openClaimDialog(row) {
-  claimTarget.value = row
-  claimForm.batch_no = ''
-  claimForm.quantity = 0
-  claimMax.value = 0
-  claimRemain.value = Math.max(0, (row.quantity || 0) - (row.delivered_qty || 0))
-  try {
-    const res = await request.get('/inventory/available-batches', { params: { product_id: row.product_id } })
-    // 只显示无归属的备货批次（owner_order_no 为空）
-    claimBatches.value = (res.items || []).filter(b => !b.owner_order_no && b.quantity > 0)
-  } catch { claimBatches.value = [] }
-  claimVisible.value = true
-}
-
-function pickClaimBatch(b) {
-  claimForm.batch_no = b.batch_no
-  claimMax.value = Math.min(b.quantity, claimRemain.value)
-  claimForm.quantity = claimMax.value
-}
-
-async function handleClaim() {
-  if (!claimForm.batch_no || claimForm.quantity <= 0) return
-  claimSubmitting.value = true
-  try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${claimTarget.value.id}/claim-batch`, {
-      batch_no: claimForm.batch_no,
-      quantity: claimForm.quantity,
-    })
-    ElMessage.success(res.message || '认领成功')
-    claimVisible.value = false
-    loadOrderDetail(selectedOrder.value.id)
-    fetchData()
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '认领失败') } finally { claimSubmitting.value = false }
-}
-
-async function handleUnclaim(row) {
-  await ElMessageBox.confirm(`确定解绑？该行认领的库存将退回原备货批次（${row.claimed_from_batch}）。已发货的行不能解绑。`, '提示', { type: 'warning' })
-  try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/unclaim-batch`)
-    ElMessage.success(res.message || '解绑成功')
-    loadOrderDetail(selectedOrder.value.id)
-    fetchData()
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '解绑失败') }
-}
-
 // ========== 明细行：转直采 / 转外发 ==========
 async function handleStockIn(row) {
   await ElMessageBox.confirm(`将「${row.product_name}」转直采？单据将进入「采购管理 → 销售订单转采购」，在那里办理采购。`, '提示', { type: 'info' })
@@ -600,14 +524,15 @@ async function handleOutsource(row) {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
 }
 
-// ========== 明细行：变更（改数量 / 停售） ==========
+// ========== 明细行：变更（改数量 / 改单价 / 停售） ==========
 const changeVisible = ref(false)
-const changeForm = reactive({ id: null, product_name: '', quantity: 1, stop_sale: false })
+const changeForm = reactive({ id: null, product_name: '', quantity: 1, unit_price: 0, stop_sale: false })
 
 function openChangeDialog(row) {
   changeForm.id = row.id
   changeForm.product_name = `${row.product_code || ''} ${row.product_name || ''}`
   changeForm.quantity = row.quantity
+  changeForm.unit_price = row.unit_price
   changeForm.stop_sale = false
   changeVisible.value = true
 }
@@ -619,6 +544,8 @@ async function handleChange() {
   } else {
     if (!(changeForm.quantity > 0)) { ElMessage.warning('数量必须大于 0'); return }
     payload.quantity = parseFloat(changeForm.quantity) || 0
+    if (!(changeForm.unit_price > 0)) { ElMessage.warning('单价必须大于 0'); return }
+    payload.unit_price = parseFloat(changeForm.unit_price) || 0
   }
   try {
     const res = await request.put(`/sales/orders/${selectedOrder.value.id}/items/${changeForm.id}`, payload)

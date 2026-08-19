@@ -1,6 +1,6 @@
 <template>
-  <div>
-    <el-card style="margin-bottom: 12px">
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+    <el-card style="margin-bottom: 12px; flex: none">
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="search">查询</el-button>
@@ -22,10 +22,11 @@
       </el-form>
     </el-card>
 
-    <el-card>
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px; flex: none">
         <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
       </div>
+      <div style="flex: 1; min-height: 0; overflow: auto">
 <el-table
         ref="tableRef"
         :key="columnVersion"
@@ -33,6 +34,7 @@
         border stripe v-loading="loading" show-summary :summary-method="getBatchSummary"
         size="small"
         style="width: 100%"
+        height="100%"
       >
         <el-table-column
           v-for="col in visibleColumns"
@@ -69,11 +71,22 @@
           <template #default="{ row }"><el-button type="primary" link @click="trace(row.batch_no)">追溯</el-button></template>
         </el-table-column>
       </el-table>
+      </div>
     </el-card>
 
+    <!-- 拖动条：上下拉动调节列表/追溯区域高度 -->
+    <div
+      class="split-bar"
+      style="flex: none; height: 8px; cursor: row-resize; background: transparent; display: flex; align-items: center; justify-content: center; user-select: none"
+      @mousedown="onSplitterDown"
+    >
+      <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
+    </div>
+
     <!-- 追溯结果 -->
-    <el-card v-if="traceData.length > 0" style="margin-top: 12px">
+    <el-card v-if="traceData.length > 0" :style="{ flex: '1', minHeight: '140px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <template #header><span>批次追溯 — {{ traceBatchNo }}</span></template>
+      <div style="flex: 1; min-height: 0; overflow: auto">
       <el-timeline>
         <el-timeline-item v-for="t in traceData" :key="t.id" :timestamp="t.date" :color="t.quantity > 0 ? '#67c23a' : '#e6a23c'">
           {{ { purchase_in: '采购入库', production_in: '完工入库', sale_out: '销售出库', outsource_out: '委外发料' }[t.type] || t.type }}
@@ -81,6 +94,7 @@
           <span style="color: #909399; margin-left: 8px">单据: {{ t.doc_type }} {{ t.doc_no }}</span>
         </el-timeline-item>
       </el-timeline>
+      </div>
     </el-card>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
 
@@ -123,6 +137,30 @@ const traceData = ref([])
 const traceBatchNo = ref('')
 const loading = ref(false)
 const query = reactive({ batch_no: '', keyword: '', warehouse_id: null })
+
+// ========== 上下区域高度拖动 ==========
+const SPLIT_KEY = 'mazu_batch_inventory_splitH'
+const topHeight = ref(parseInt(localStorage.getItem(SPLIT_KEY) || '400') || 400)
+function onSplitterDown(e) {
+  const startY = e.clientY
+  const startH = topHeight.value
+  const onMove = (ev) => {
+    const h = startH + (ev.clientY - startY)
+    topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    localStorage.setItem(SPLIT_KEY, String(topHeight.value))
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
 
 
 // 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）

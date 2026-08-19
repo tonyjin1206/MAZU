@@ -54,6 +54,8 @@ const routes = [
       { path: 'inventory/summary', name: 'StockSummary', component: () => import('../views/inventory/StockSummary.vue'), meta: { perm: 'menu:inventory:summary' } },
       { path: 'inventory/stock-ins', name: 'StockIns', component: () => import('../views/inventory/StockIns.vue'), meta: { perm: 'menu:inventory:stock-ins' } },
       { path: 'inventory/material-ins', name: 'MaterialIns', component: () => import('../views/inventory/MaterialIns.vue'), meta: { perm: 'menu:inventory:material-ins' } },
+      { path: 'inventory/material-outs', name: 'MaterialOuts', component: () => import('../views/inventory/MaterialOuts.vue'), meta: { perm: 'menu:inventory:material-outs' } },
+      { path: 'inventory/delivery-outs', name: 'DeliveryOuts', component: () => import('../views/inventory/DeliveryOuts.vue'), meta: { perm: 'menu:inventory:delivery-outs' } },
       { path: 'inventory/stocktakes', name: 'StocktakeManagement', component: () => import('../views/inventory/StocktakeManagement.vue'), meta: { perm: 'menu:inventory:stocktake' } },
       // 退税管理
       { path: 'tax-refund/declarations', name: 'TaxRefund', component: () => import('../views/taxRefund/TaxRefundDeclarations.vue'), meta: { perm: 'menu:tax' } },

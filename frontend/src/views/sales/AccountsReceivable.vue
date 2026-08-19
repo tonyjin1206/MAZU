@@ -17,7 +17,7 @@
                   </span>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item @click.stop="openOrderOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                      <el-dropdown-item @click.stop="openOrderSettingsRaw" style="color: #409eff">列排序...</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>
@@ -43,7 +43,7 @@
                   </span>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item @click.stop="openCdOrder" style="color: #409eff">列排序...</el-dropdown-item>
+                      <el-dropdown-item @click.stop="openCdSettingsRaw" style="color: #409eff">列排序...</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>

@@ -134,10 +134,12 @@ class OutsourceOrder(Base):
     sales_order_id = Column(Integer, ForeignKey("so_order.id"), comment="关联销售订单")
     sales_item_id = Column(Integer, ForeignKey("so_order_item.id"), comment="关联销售明细行")
     product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False, comment="产品")
+    process_id = Column(Integer, ForeignKey("fd_process.id"), comment="工序")
     quantity = Column(Float, nullable=False, comment="委外数量")
     outsourcer_id = Column(Integer, ForeignKey("fd_supplier.id"), comment="委外商(供应商)")
     unit_price = Column(Float, default=0, comment="加工单价")
     amount = Column(Float, default=0, comment="加工费金额")
+    supply_type = Column(String(16), default="己方提供", comment="供料方式: 己方提供/包工包料")
     due_date = Column(Date, comment="约定交期")
     status = Column(String(16), default="待确认", comment="状态: 待确认/已审核/已完工/已入库/已退回")
     remark = Column(Text)
@@ -147,6 +149,26 @@ class OutsourceOrder(Base):
 
     product = relationship("Product")
     outsourcer = relationship("Supplier")
+    process = relationship("Process")
+    materials = relationship("OutsourceMaterial", back_populates="outsource_order",
+                             cascade="all, delete-orphan", order_by="OutsourceMaterial.id")
+
+
+class OutsourceMaterial(Base):
+    """委外订单材料认领明细（认领原料库批次，自动生成原料出库）"""
+    __tablename__ = "os_order_material"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    outsource_order_id = Column(Integer, ForeignKey("os_order.id"), nullable=False, comment="委外订单")
+    material_id = Column(Integer, ForeignKey("fd_material.id"), nullable=False, comment="材料")
+    batch_no = Column(String(64), nullable=False, comment="原料批次号")
+    quantity = Column(Float, nullable=False, default=0, comment="认领数量")
+    unit_cost = Column(Float, default=0, comment="认领时带出的材料成本")
+    supply_type = Column(String(16), comment="材料级供料方式: 己方提供/包工包料;空=己方提供")
+    created_at = Column(DateTime, default=func.now())
+
+    outsource_order = relationship("OutsourceOrder", back_populates="materials")
+    material = relationship("Material")
 
 
 # ==================== 以下为旧模型（保留兼容，新代码不再使用） ====================

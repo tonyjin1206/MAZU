@@ -625,9 +625,10 @@ def issue_material_to_process(
     db.add(issue)
     db.flush()
 
-    # 库存流水（自产工序=生产领料，委外工序=委外发料）
+    # 库存流水（委外工序=委外发料→原料出库，自产工序=生产领料）
+    is_outsource = bool(proc.outsourcer_id)
     trans = StockTransaction(
-        trans_type="outsource_out" if proc.outsourcer_id else "material_issue_out",
+        trans_type="material_out" if is_outsource else "material_issue_out",
         warehouse_id=inventory.warehouse_id,
         material_id=material_id,
         batch_no=batch_no,
@@ -638,7 +639,7 @@ def issue_material_to_process(
         after_qty=inventory.quantity,
         before_cost=round(old_qty * inv_unit_cost, 2),
         after_cost=round(inventory.quantity * inv_unit_cost, 2),
-        source_doc_type="工序发料",
+        source_doc_type="原料出库" if is_outsource else "工序发料",
         source_doc_no=issue_no,
         trans_no=generate_doc_no(db, "ST"),
         operator=current_user.display_name or current_user.username,

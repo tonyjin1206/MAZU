@@ -58,6 +58,8 @@ def _seed_rbac(db):
         {"code": "menu:inventory:summary", "name": "收发存", "module": "库存管理", "description": ""},
         {"code": "menu:inventory:stock-ins", "name": "成品入库", "module": "库存管理", "description": ""},
         {"code": "menu:inventory:material-ins", "name": "原料入库", "module": "库存管理", "description": ""},
+        {"code": "menu:inventory:material-outs", "name": "原料出库", "module": "库存管理", "description": ""},
+        {"code": "menu:inventory:delivery-outs", "name": "成品出库", "module": "库存管理", "description": ""},
         {"code": "menu:outsource:from-sales", "name": "销售订单转委外", "module": "委外管理", "description": ""},
         {"code": "menu:outsource:orders", "name": "委外订单", "module": "委外管理", "description": ""},
         # 退税管理
@@ -91,7 +93,7 @@ def _seed_rbac(db):
     sales_base = [c for c in sales_all if not c.endswith(("invoices", "ar", "collections"))]
     sales_finance = [c for c in sales_all if c.endswith(("invoices", "ar", "collections"))]
     production = [c for c in all_codes if c.startswith("menu:production:")]
-    inventory = ["menu:inventory", "menu:inventory:stocktake", "menu:production:batch"]
+    inventory = ["menu:inventory", "menu:inventory:stocktake", "menu:inventory:stock-ins", "menu:inventory:material-ins", "menu:inventory:material-outs", "menu:inventory:delivery-outs", "menu:production:batch"]
     tax = ["menu:tax"]
     sys_menu = [c for c in all_codes if c.startswith("menu:system:")]
 

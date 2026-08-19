@@ -9,9 +9,6 @@
               <el-input v-model="searchKeyword" placeholder="输入供应商名称查询" clearable style="width: 260px" @input="filterSummary" />
             </el-form-item>
           </el-form>
-                <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
-        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
-      </div>
 <el-table ref="tableRef" class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
             <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>

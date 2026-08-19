@@ -565,7 +565,7 @@ def list_sales_to_purchase(
     from app.models.purchase import PurchaseOrderItem
     # 只显示在销售订单那边点了「转入库」的明细行
     query = db.query(SalesOrderItem).join(SalesOrder, SalesOrder.id == SalesOrderItem.order_id).filter(
-        SalesOrderItem.production_status == "已通知入库",
+        SalesOrderItem.production_status.in_(["已通知入库", "已通知外发"]),
         SalesOrder.status.in_(["已审", "生产中", "部分发货"]),
     )
     if keyword:
@@ -576,7 +576,7 @@ def list_sales_to_purchase(
     if date_to:
         query = query.filter(SalesOrder.order_date <= date_to)
     total = query.count()
-    items = query.order_by(SalesOrderItem.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    items = query.order_by(SalesOrderItem.id.asc()).offset((page - 1) * page_size).limit(page_size).all()
 
     def row_status(si):
         """该明细行采购状态（人工判定完成）:
@@ -618,6 +618,7 @@ def list_sales_to_purchase(
             "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
             "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
             "quantity": si.quantity or 0, "batch_no": si.batch_no or "",
+            "source": "转直采" if si.production_status == "已通知入库" else "转外发",
             "purchase_status": row_status(si),
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
@@ -680,8 +681,8 @@ def get_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_u
     si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
     if not si:
         raise HTTPException(404, "销售明细行不存在")
-    if si.production_status != "已通知入库":
-        raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请在销售订单明细行点「转入库」）")
+    if si.production_status not in ("已通知入库", "已通知外发"):
+        raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请先在销售订单明细行转直采/转外发）")
 
     pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
         PurchaseOrderItem.sales_item_id == si.id,
@@ -758,6 +759,8 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
         si = next((i for i in order.items if i.id == r["sales_item_id"]), None)
         if not si:
             raise HTTPException(400, "销售明细行不存在")
+        if si.production_status not in ("已通知入库", "已通知外发"):
+            raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请先在销售订单明细行转直采/转外发）")
         req = next((x for x in _so_row_requirements(db, si)
                     if (x["material_id"] == r.get("material_id") and x["product_id"] == r.get("product_id"))), None)
         if not req:

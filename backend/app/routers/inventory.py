@@ -427,19 +427,26 @@ def get_transactions(
 
 @router.get("/available-batches", tags=["库存管理"])
 def get_available_batches(
-    product_id: int = Query(..., description="产品ID"),
+    product_id: int = Query(None, description="产品ID"),
+    material_id: int | None = Query(None, description="材料ID（原料出库批次选择用）"),
     warehouse_id: int | None = Query(None, description="仓库ID"),
     order_id: int | None = Query(None, description="当前发货订单ID，用于计算批次锁定"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """查询可用批次（按产品+仓库），返回每个批次的锁定/可发数量：
-    - 批次归属订单未确认发货完成时，(订单量-已发) 锁定给该订单；当前订单自己的批次不锁定
-    - 归属订单确认完成后锁定解除
-    - 无归属（备货 FG- 批次）不锁定"""
-    query = db.query(WarehouseInventory).filter(
-        WarehouseInventory.product_id == product_id,
-    )
+    """查询可用批次，返回每个批次的锁定/可发数量：
+    - 成品维度：product_id 必填，按产品+仓库；批次归属订单未确认发货完成时，(订单量-已发) 锁定给该订单；当前订单自己的批次不锁定
+    - 材料维度：material_id 必填，按材料+仓库；材料无订单锁定，可发量=批次净库存"""
+    if material_id is not None:
+        query = db.query(WarehouseInventory).filter(
+            WarehouseInventory.material_id == material_id,
+        )
+    else:
+        if product_id is None:
+            raise HTTPException(400, "product_id 或 material_id 必须二选一")
+        query = db.query(WarehouseInventory).filter(
+            WarehouseInventory.product_id == product_id,
+        )
     if warehouse_id:
         query = query.filter(WarehouseInventory.warehouse_id == warehouse_id)
     items = query.all()
@@ -457,18 +464,149 @@ def get_available_batches(
 
     result = []
     for key, b in batch_map.items():
-        owner = db.query(SalesOrderItem).filter(SalesOrderItem.batch_no == key).first()
         locked = 0
         owner_order_no = ""
-        if owner:
-            owner_order_no = owner.order.order_no if owner.order else ""
-            if owner.order_id != order_id and not owner.delivery_confirmed:
-                locked = max(0, round((owner.quantity or 0) - (owner.delivered_qty or 0), 2))
+        if material_id is None:
+            owner = db.query(SalesOrderItem).filter(SalesOrderItem.batch_no == key).first()
+            if owner:
+                owner_order_no = owner.order.order_no if owner.order else ""
+                if owner.order_id != order_id and not owner.delivery_confirmed:
+                    locked = max(0, round((owner.quantity or 0) - (owner.delivered_qty or 0), 2))
         b["locked_qty"] = locked
         b["available"] = max(0, round(b["quantity"] - locked, 2))
         b["owner_order_no"] = owner_order_no
         result.append(b)
     return {"items": result}
+
+
+@router.post("/material-outs", tags=["库存管理"])
+def create_material_out(
+    data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """手动原料出库 — 一次可出多行明细 [{material_id, batch_no, quantity, remark}]。
+    扣减 WarehouseInventory 对应材料+批次数量（精确批次，FIFO 跨多条库存记录）、写 StockTransaction。"""
+    items = data.get("items") or [data]
+    if not items:
+        raise HTTPException(400, "出库明细不能为空")
+
+    from app.utils.batch_no import generate_doc_no
+    out_no = generate_doc_no(db, "MU")
+    operator = current_user.display_name or current_user.username
+    created = []
+
+    for it in items:
+        material_id = it.get("material_id")
+        batch_no = (it.get("batch_no") or "").strip()
+        qty = float(it.get("quantity") or 0)
+        if not material_id:
+            raise HTTPException(400, "材料不能为空")
+        material = db.query(Material).filter(Material.id == material_id, Material.is_active == 1).first()
+        if not material:
+            raise HTTPException(400, f"材料不存在或已停用 (id={material_id})")
+        if qty <= 0:
+            raise HTTPException(400, f"材料 {material.code} 出库数量必须大于0")
+        if not batch_no:
+            raise HTTPException(400, f"材料 {material.code} 未选择批次")
+
+        invs = db.query(WarehouseInventory).filter(
+            WarehouseInventory.material_id == material_id,
+            WarehouseInventory.batch_no == batch_no,
+        ).order_by(WarehouseInventory.id).all()
+        stock = round(sum((i.quantity or 0) for i in invs), 2)
+        if stock <= 0:
+            raise HTTPException(400, f"材料 {material.code} 批次 {batch_no} 库存不足（当前 0）")
+        if qty > stock:
+            raise HTTPException(400, f"材料 {material.code} 批次 {batch_no} 库存不足（当前 {stock}，需出 {qty}）")
+        warehouse_id = data.get("warehouse_id") or (invs[0].warehouse_id if invs else None)
+
+        # FIFO 跨多条库存记录扣减，每条生成一条流水
+        remaining = qty
+        for inv in invs:
+            if remaining <= 0:
+                break
+            take = min(inv.quantity or 0, remaining)
+            if take <= 0:
+                continue
+            old_qty = inv.quantity
+            inv_unit_cost = inv.unit_cost or 0
+            inv.quantity = round(old_qty - take, 2)
+            inv.total_cost = round(inv.quantity * inv_unit_cost, 2)
+            trans = StockTransaction(
+                trans_type="material_out",
+                warehouse_id=inv.warehouse_id,
+                material_id=material_id,
+                batch_no=batch_no,
+                quantity=-take,
+                unit_cost=inv_unit_cost,
+                total_amount=round(-take * inv_unit_cost, 2),
+                before_qty=old_qty,
+                after_qty=inv.quantity,
+                before_cost=round(old_qty * inv_unit_cost, 2),
+                after_cost=round(inv.quantity * inv_unit_cost, 2),
+                source_doc_type="原料出库",
+                source_doc_no=out_no,
+                trans_no=generate_doc_no(db, "ST"),
+                operator=operator,
+                remark=(it.get("remark") or "").strip() or None,
+            )
+            db.add(trans)
+            remaining = round(remaining - take, 2)
+
+    db.commit()
+    return {"out_no": out_no, "message": "原料出库成功，库存已扣减"}
+
+
+@router.get("/material-outs", tags=["库存管理"])
+def list_material_outs(
+    page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
+    keyword: str = "", start_date: str = "", end_date: str = "",
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """原料出库记录列表 — 手动出库 + 委外/生产发料（source_doc_type=原料出库）的流水，按时间倒序。"""
+    from sqlalchemy import or_
+    q = db.query(StockTransaction).filter(StockTransaction.source_doc_type == "原料出库")
+    if start_date:
+        start_dt = datetime.combine(_parse_date(start_date), datetime.min.time())
+        q = q.filter(StockTransaction.trans_date >= start_dt)
+    if end_date:
+        end_dt = datetime.combine(_parse_date(end_date), datetime.max.time().replace(microsecond=0))
+        q = q.filter(StockTransaction.trans_date <= end_dt)
+    if keyword:
+        mat_ids = [m.id for m in db.query(Material).filter(
+            (Material.name.like(f"%{keyword}%")) | (Material.code.like(f"%{keyword}%"))
+        ).all()]
+        if mat_ids:
+            q = q.filter(or_(StockTransaction.material_id.in_(mat_ids),
+                             StockTransaction.batch_no.like(f"%{keyword}%")))
+        else:
+            q = q.filter(StockTransaction.batch_no.like(f"%{keyword}%"))
+
+    total = q.count()
+    rows = q.order_by(StockTransaction.id.desc()).offset((page-1)*page_size).limit(page_size).all()
+
+    items = []
+    for t in rows:
+        mat = db.query(Material).filter(Material.id == t.material_id).first() if t.material_id else None
+        wh = db.query(Warehouse).filter(Warehouse.id == t.warehouse_id).first()
+        doc_no = t.source_doc_no or ""
+        source = "委外发料" if doc_no.startswith("WO-") else "手动出库"
+        items.append({
+            "id": t.id,
+            "out_no": t.source_doc_no or "",
+            "material_id": t.material_id,
+            "material_code": mat.code if mat else "",
+            "material_name": mat.name if mat else "",
+            "material_spec": mat.spec if mat else "",
+            "material_unit": mat.unit if mat else "",
+            "batch_no": t.batch_no,
+            "quantity": round(abs(t.quantity or 0), 2),
+            "warehouse": wh.name if wh else "",
+            "source": source,
+            "remark": t.remark or "",
+            "out_date": str(t.trans_date)[:19] if t.trans_date else "",
+            "operator": t.operator or "",
+        })
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
 @router.get("/trace/{batch_no}", tags=["库存管理"])
