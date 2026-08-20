@@ -1,6 +1,7 @@
 <template>
-  <div>
-        <el-card>
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+        <!-- 上卡片：库存汇总表（高度可拖） -->
+        <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
           <template #header>
             <div style="display: flex; justify-content: flex-end; gap: 8px">
               <el-button type="primary" @click="fetchBalance">查询</el-button>
@@ -8,7 +9,7 @@
               <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
             </div>
           </template>
-          <el-form :inline="true" label-width="70px">
+          <el-form :inline="true" label-width="70px" style="flex: none">
             <el-form-item label="仓库">
               <el-select v-model="balanceQuery.warehouse_id" clearable placeholder="全部" style="width: 140px" @change="fetchBalance">
                 <el-option v-for="w in warehouseList" :key="w.id" :label="w.name" :value="w.id" />
@@ -33,7 +34,8 @@
               <el-date-picker v-model="balanceQuery.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 280px" @change="onDateRangeChange" />
             </el-form-item>
           </el-form>
-          <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border @row-click="openBatchReceipts" :show-summary="true" :summary-method="getBalanceSummary">
+          <div style="flex: 1; min-height: 0; overflow: auto">
+          <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border height="100%" @row-click="openBatchReceipts" :show-summary="true" :summary-method="getBalanceSummary">
             <el-table-column v-for="col in visibleBalanceColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -83,22 +85,56 @@
               <template v-else-if="col.prop === 'so_order_qty' || col.prop === 'so_received_qty'" #default="{ row }">{{ $fq(row[col.prop]) }}</template>
             </el-table-column>
           </el-table>
-          <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px" />
+          </div>
+          <el-pagination v-model:current-page="balancePage" v-model:page-size="balancePageSize" :total="balanceTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchBalance" @current-change="fetchBalance" style="margin-top: 12px; flex: none" />
         </el-card>
-    
-    <!-- 列排序弹窗 -->
-    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
-    
-    <!-- 批次收货记录弹窗（点击批次行穿透） -->
-    <el-dialog v-model="batchReceiptVisible" :title="'批次收货记录 — ' + (batchReceiptBatch || '')" width="640px" destroy-on-close>
-      <el-table :data="batchReceiptList" border stripe size="small" show-summary :summary-method="batchReceiptSummary" empty-text="该批次暂无入库记录">
-        <el-table-column prop="in_date" label="入库日期" width="120" sortable />
-        <el-table-column prop="warehouse" label="仓库" width="120" sortable />
-        <el-table-column prop="receipt_no" label="入库单号" min-width="140" sortable />
-        <el-table-column prop="quantity" label="本次数量" width="100" align="right" sortable />
-      </el-table>
-      <div style="color: #909399; font-size: 12px; margin-top: 8px">点击上方批次行查看该批次的每次入库记录</div>
-    </el-dialog>
+
+        <!-- 拖动条：上下拉动调节列表/明细区域高度 -->
+        <div
+          class="split-bar"
+          style="flex: none; height: 8px; cursor: row-resize; background: transparent; display: flex; align-items: center; justify-content: center; user-select: none"
+          @mousedown="onSplitterDown"
+        >
+          <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
+        </div>
+
+        <!-- 下卡片：批次收货明细（点击上方行穿透） -->
+        <el-card :style="{ flex: '1', minHeight: '140px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
+          <template #header>
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span style="font-weight: 600">批次收货明细</span>
+              <el-button size="small" @click="openReceiptColumnSettings">⚙ 列设置</el-button>
+            </div>
+          </template>
+          <div style="flex: 1; min-height: 0; overflow: auto">
+            <el-table class="drag-table-receipt" :key="receiptColumnVersion" :data="batchReceiptList" v-loading="receiptLoading" stripe border size="small" height="100%" show-summary :summary-method="batchReceiptSummary" empty-text="点击上方行查看该批次的入库记录">
+              <el-table-column v-for="col in visibleReceiptColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+                <template #header>
+                  <el-dropdown trigger="contextmenu" :hide-on-click="false">
+                    <span class="col-header-wrap">
+                      <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                      {{ col.label }}
+                    </span>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item v-for="c in allReceiptColumns" :key="c.prop">
+                          <el-checkbox :model-value="c.visible !== false" @change="toggleReceiptColumn(c)">{{ c.label }}</el-checkbox>
+                        </el-dropdown-item>
+                        <el-dropdown-item @click.stop="openReceiptColumnSettings" style="color: #409eff">列设置...</el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                </template>
+                <template v-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-card>
+
+        <!-- 列排序弹窗（余额表） -->
+        <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
+        <!-- 批次收货明细列排序弹窗 -->
+        <ColumnSettingsDialog v-model:visible="receiptSettingsVisible" :columns="receiptSettingsList" @confirm="confirmReceiptSettings" />
   </div>
 </template>
 
@@ -165,6 +201,24 @@ const defaultTransColumns = [
 const { columns: transColumns, columnVersion: transColumnVersion, initColumnDrag: initTransColumnDrag } = useColumnDrag(defaultTransColumns, TRANS_STORAGE_KEY, '.drag-table-trans .el-table__header-wrapper thead tr')
 const { visibleColumns: visibleTransColumns, allColumns: allTransColumns, toggleColumn: toggleTransColumn, initColumnVisible: initTransVisible } = useColumnCustomize(transColumns, TRANS_STORAGE_KEY)
 
+// ===== 批次收货明细列配置（可拖拽排序 + 显隐） =====
+const RECEIPT_STORAGE_KEY = 'mazu_inventory_batch_columns'
+const defaultReceiptColumns = [
+  { prop: 'in_date', label: '入库日期', width: 120, sortable: true },
+  { prop: 'warehouse', label: '仓库', width: 120, sortable: true },
+  { prop: 'receipt_no', label: '入库单号', minWidth: 140, sortable: true },
+  { prop: 'quantity', label: '本次数量', width: 110, align: 'right', sortable: true },
+]
+const { columns: receiptColumns, columnVersion: receiptColumnVersion, initColumnDrag: initReceiptColumnDrag, settingsVisible: receiptSettingsVisible, settingsList: receiptSettingsList, openColumnSettings: openReceiptColumnSettingsRaw, confirmSettings: confirmReceiptSettings } = useColumnDrag(defaultReceiptColumns, RECEIPT_STORAGE_KEY, '.drag-table-receipt .el-table__header-wrapper thead tr')
+const { visibleColumns: visibleReceiptColumns, allColumns: allReceiptColumns, toggleColumn: toggleReceiptColumn, initColumnVisible: initReceiptVisible } = useColumnCustomize(receiptColumns, RECEIPT_STORAGE_KEY)
+
+// ===== 明细表列设置弹窗（注入当前显隐状态） =====
+function openReceiptColumnSettings() {
+  const visMap = {}
+  for (const c of allReceiptColumns.value) visMap[c.prop] = c.visible !== false
+  openReceiptColumnSettingsRaw(visMap)
+}
+
 const activeTab = ref('balance')
 const warehouseList = ref([])
 
@@ -195,7 +249,12 @@ async function fetchBalance() {
     balanceTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally {
     balanceLoading.value = false
-    nextTick(() => { initColumnDrag(); fitTable(balanceTableRef.value, visibleBalanceColumns, balanceList) })
+    nextTick(() => {
+      initColumnDrag()
+      fitTable(balanceTableRef.value, visibleBalanceColumns, balanceList)
+      // 默认选中第一行加载明细
+      if (balanceList.value.length) openBatchReceipts(balanceList.value[0])
+    })
   }
 }
 
@@ -306,20 +365,45 @@ function viewTransactions(row) {
   fetchTransactions()
 }
 
-// ===== 批次收货记录弹窗（点击批次行穿透） =====
-const batchReceiptVisible = ref(false)
-const batchReceiptBatch = ref('')
+// ===== 上下区域高度拖动 =====
+const SPLIT_KEY = 'mazu_inventory_splitH'
+const topHeight = ref(parseInt(localStorage.getItem(SPLIT_KEY) || '400') || 400)
+function onSplitterDown(e) {
+  const startY = e.clientY
+  const startH = topHeight.value
+  const onMove = (ev) => {
+    const h = startH + (ev.clientY - startY)
+    topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    localStorage.setItem(SPLIT_KEY, String(topHeight.value))
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
+
+// ===== 批次收货明细（点击上方行穿透，常驻下卡片） =====
 const batchReceiptList = ref([])
+const receiptLoading = ref(false)
 
 async function openBatchReceipts(row) {
-  if (!row.batch_no) return
-  batchReceiptBatch.value = row.batch_no
-  batchReceiptVisible.value = true
+  if (!row || !row.batch_no) return
   batchReceiptList.value = []
+  receiptLoading.value = true
   try {
     const res = await request.get('/inventory/batch-receipts', { params: { batch_no: row.batch_no } })
     batchReceiptList.value = res.items || []
-  } catch { batchReceiptList.value = [] }
+  } catch { batchReceiptList.value = [] } finally {
+    receiptLoading.value = false
+    nextTick(initReceiptColumnDrag)
+  }
 }
 
 function batchReceiptSummary({ columns, data }) {
@@ -368,6 +452,7 @@ function getTransSummary({ columns, data }) {
 onMounted(() => {
   initBalanceVisible()
   initTransVisible()
+  initReceiptVisible()
   request.get('/foundation/warehouses', { params: { page_size: 50 } }).then(res => {
     warehouseList.value = res.items || []
   }).catch(() => {})
@@ -380,9 +465,16 @@ watch(columnVersion, () => {
   nextTick(() => { initBalanceVisible(); initColumnDrag() })
 })
 
+// 明细表列顺序变化时重同步
+watch(receiptColumnVersion, () => {
+  nextTick(() => { initReceiptVisible(); initReceiptColumnDrag() })
+})
+
 </script>
 
 <style scoped>
 :deep(.el-table) { table-layout: auto; }
 :deep(.el-table .cell) { white-space: nowrap; }
+/* 上下卡片 body 撑满，保证表格区域 flex:1 生效 */
+:deep(.el-card__body) { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 </style>
