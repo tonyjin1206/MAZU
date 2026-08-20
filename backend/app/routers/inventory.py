@@ -490,7 +490,8 @@ def create_material_out(
         raise HTTPException(400, "出库明细不能为空")
 
     from app.utils.batch_no import generate_doc_no
-    out_no = generate_doc_no(db, "MU")
+    # MU 号存在流水 source_doc_no 字段（非 trans_no），必须指定字段查询，否则每天都是 2608xx01 撞号
+    out_no = generate_doc_no(db, "MU", StockTransaction, "source_doc_no")
     operator = current_user.display_name or current_user.username
     created = []
 
@@ -554,6 +555,85 @@ def create_material_out(
 
     db.commit()
     return {"out_no": out_no, "message": "原料出库成功，库存已扣减"}
+
+
+@router.post("/material-outs/{out_no}/return", tags=["库存管理"])
+def return_material_out(
+    out_no: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """手动原料出库退回 — 按出库单号(MU-xxx)整单退回：库存回补原批次 + 红字流水(source_doc_type=原料出库退回)。
+    仅手动出库可退（委外发料WO单的退回走委外单删除逻辑）；该单已退过则拒绝。"""
+    if not out_no.startswith("MU-"):
+        raise HTTPException(400, "仅手动出库单(MU单号)可退回，委外发料请到委外订单页处理")
+    trans = db.query(StockTransaction).filter(
+        StockTransaction.source_doc_no == out_no,
+        StockTransaction.trans_type == "material_out",
+    ).all()
+    if not trans:
+        raise HTTPException(404, f"出库单 {out_no} 不存在")
+    already = db.query(StockTransaction).filter(
+        StockTransaction.source_doc_no == out_no,
+        StockTransaction.trans_type == "material_out_return",
+    ).first()
+    if already:
+        raise HTTPException(400, f"出库单 {out_no} 已退回，不能重复退回")
+
+    operator = current_user.display_name or current_user.username
+    from app.utils.batch_no import generate_doc_no
+    returned = []
+    for t in trans:
+        material_id = t.material_id
+        batch_no = t.batch_no or ""
+        back_qty = round(abs(t.quantity or 0), 2)
+        if back_qty <= 0:
+            continue
+        # 库存回补口径与销售退货一致：优先回补正数库存记录；该批次正数记录已空则按原出库成本新建一条
+        invs = db.query(WarehouseInventory).filter(
+            WarehouseInventory.material_id == material_id,
+            WarehouseInventory.batch_no == batch_no,
+            WarehouseInventory.quantity > 0,
+        ).order_by(WarehouseInventory.id).all()
+        if invs:
+            inv = invs[0]
+        else:
+            inv = WarehouseInventory(
+                warehouse_id=t.warehouse_id,
+                material_id=material_id,
+                batch_no=batch_no,
+                quantity=0,
+                unit_cost=t.unit_cost or 0,
+                total_cost=0,
+                in_date=date.today(),
+                source_type="material_out_return",
+            )
+            db.add(inv)
+            db.flush()
+        old_qty = inv.quantity or 0
+        unit_cost = t.unit_cost if (t.unit_cost or 0) > 0 else (inv.unit_cost or 0)
+        inv.quantity = round(old_qty + back_qty, 2)
+        inv.total_cost = round(inv.quantity * unit_cost, 2)
+        ret = StockTransaction(
+            trans_type="material_out_return",
+            warehouse_id=t.warehouse_id,
+            material_id=material_id,
+            batch_no=batch_no,
+            quantity=back_qty,
+            unit_cost=unit_cost,
+            total_amount=round(back_qty * unit_cost, 2),
+            before_qty=old_qty,
+            after_qty=inv.quantity,
+            before_cost=round(old_qty * unit_cost, 2),
+            after_cost=round(inv.quantity * unit_cost, 2),
+            source_doc_type="原料出库退回",
+            source_doc_no=out_no,
+            trans_no=generate_doc_no(db, "ST"),
+            operator=operator,
+            remark=f"退回出库单 {out_no}",
+        )
+        db.add(ret)
+        returned.append({"material_id": material_id, "batch_no": batch_no, "quantity": back_qty})
+    db.commit()
+    return {"message": f"出库单 {out_no} 已退回，库存已回补", "returned": returned}
 
 
 @router.get("/material-outs", tags=["库存管理"])

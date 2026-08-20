@@ -24,6 +24,7 @@ const routes = [
 
       // 采购管理
       { path: 'purchase/from-sales', name: 'PurchaseFromSales', component: () => import('../views/purchase/PurchaseFromSales.vue'), meta: { perm: 'menu:purchase:from-sales' } },
+      { path: 'purchase/requisitions', redirect: '/purchase/from-sales' },
       { path: 'purchase/orders', name: 'PurchaseOrders', component: () => import('../views/purchase/PurchaseOrders.vue'), meta: { perm: 'menu:purchase:orders' } },
       { path: 'purchase/receipts', name: 'PurchaseReceipts', component: () => import('../views/purchase/PurchaseReceipts.vue'), meta: { perm: 'menu:purchase:receipts' } },
       { path: 'purchase/invoices', name: 'PurchaseInvoices', component: () => import('../views/purchase/PurchaseInvoices.vue'), meta: { perm: 'menu:purchase:invoices' } },

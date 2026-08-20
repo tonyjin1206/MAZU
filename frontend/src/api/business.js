@@ -10,11 +10,6 @@ export const purchaseApi = {
     approve: (id) => request.post(`/purchase/orders/${id}/approve`),
     unapprove: (id) => request.post(`/purchase/orders/${id}/unapprove`),
   },
-  requisitions: {
-    list: (params) => request.get('/purchase/requisitions', { params }),
-    close: (id) => request.post(`/purchase/requisitions/${id}/close`),
-    toPurchase: (id, data) => request.post(`/purchase/requisitions/${id}/to-purchase`, data),
-  },
   receipts: {
     list: (params) => request.get('/purchase/receipts', { params }),
     get: (id) => request.get(`/purchase/receipts/${id}`),

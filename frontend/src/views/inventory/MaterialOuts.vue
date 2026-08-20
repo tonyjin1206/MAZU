@@ -37,6 +37,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="remark" label="备注" min-width="130" show-overflow-tooltip sortable />
+        <el-table-column label="操作" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button v-if="row.source === '手动出库'" link type="warning" size="small" @click="handleReturn(row)">退回</el-button>
+          </template>
+        </el-table-column>
       </el-table>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 16px" />
     </el-card>
@@ -212,4 +217,13 @@ async function handleSubmit() {
 }
 
 onMounted(fetchData)
+
+async function handleReturn(row) {
+  try {
+    await ElMessageBox.confirm(`确认退回出库单「${row.out_no}」？库存将回补原批次，并生成红字流水。`, '退回确认', { type: 'warning' })
+    const res = await request.post(`/inventory/material-outs/${row.out_no}/return`)
+    ElMessage.success(res.message || '已退回')
+    fetchData()
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '操作失败') }
+}
 </script>

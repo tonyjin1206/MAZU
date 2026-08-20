@@ -58,8 +58,9 @@
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.status === '待入库' || row.status === '部分入库'" link type="primary" size="small" @click="openReceive(row)">入库</el-button>
+            <el-button v-if="row.status === '待入库'" link type="warning" size="small" @click="handleCancel(row)">退回</el-button>
             <el-button v-if="row.status === '部分入库'" link type="success" size="small" @click="handleComplete(row)">确认完成</el-button>
-            <el-button v-if="row.status === '已入库' || row.status === '部分入库'" link type="danger" size="small" @click="openReturn(row)">退回</el-button>
+            <el-button v-if="row.status === '已入库' || row.status === '部分入库'" link type="danger" size="small" @click="openReturn(row)">退数量</el-button>
           </template>
         </el-table-column>
       </el-table>

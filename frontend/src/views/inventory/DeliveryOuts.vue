@@ -54,10 +54,11 @@
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="130" fixed="right">
+        <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.unout_qty > 0" link type="primary" @click="openIssueDialog(row)">出库</el-button>
             <el-button v-else-if="row.out_records && row.out_records.length" link type="info" @click="showOutRecords(row)">出库记录</el-button>
+            <el-button v-if="(row.delivered_qty || 0) > 0" link type="warning" @click="openIssueReturnDialog(row)">退回</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -104,6 +105,29 @@
         <el-table-column prop="operator" label="操作人" width="110" />
         <el-table-column prop="trans_date" label="日期" width="110" />
       </el-table>
+    </el-dialog>
+    <!-- ========== 出库退回弹窗 ========== -->
+    <el-dialog v-model="issueReturnVisible" title="出库退回" width="560px" destroy-on-close>
+      <el-form :model="issueReturnForm" label-width="100px">
+        <el-form-item label="SD单号"><span>{{ issueReturnForm.delivery_no }}</span></el-form-item>
+        <el-form-item label="产品"><span>{{ issueReturnForm.product_name }}（{{ issueReturnForm.product_code }}）</span></el-form-item>
+        <el-form-item label="已出库"><span>{{ $fq(issueReturnForm.delivered_qty) }}</span></el-form-item>
+        <el-form-item label="批次号" required>
+          <el-select v-model="issueReturnForm.batch_no" placeholder="选择该单出库过的批次" filterable style="width: 100%">
+            <el-option v-for="b in issueReturnBatchList" :key="b.batch_no" :label="`${b.batch_no}（已出 ${$fq(b.quantity)}）`" :value="b.batch_no" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="退回数量" required>
+          <el-input type="number" v-model="issueReturnForm.quantity" :min="1" :max="issueReturnMax" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="issueReturnForm.remark" type="textarea" :rows="2" placeholder="退回原因" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="issueReturnVisible = false">取消</el-button>
+        <el-button type="warning" :loading="issueReturnSubmitting" :disabled="!issueReturnForm.batch_no" @click="handleIssueReturnSubmit">确认退回</el-button>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -197,6 +221,44 @@ async function handleIssueSubmit() {
 function showOutRecords(row) {
   recordsList.value = row.out_records || []
   recordsVisible.value = true
+}
+
+// ========== 出库退回（红冲撤销出库） ==========
+const issueReturnVisible = ref(false)
+const issueReturnSubmitting = ref(false)
+const issueReturnBatchList = ref([])
+const issueReturnMax = ref(1)
+const issueReturnForm = reactive({
+  id: null, delivery_no: '', product_id: null, product_name: '', product_code: '',
+  delivered_qty: 0, batch_no: '', quantity: 1, remark: '',
+})
+
+function openIssueReturnDialog(row) {
+  Object.assign(issueReturnForm, {
+    id: row.id, delivery_no: row.delivery_no, product_id: row.product_id,
+    product_name: row.product_name, product_code: row.product_code,
+    delivered_qty: row.delivered_qty || 0, batch_no: '', quantity: 1, remark: '',
+  })
+  issueReturnMax.value = Math.max(1, row.delivered_qty || 1)
+  issueReturnBatchList.value = (row.out_records || []).map(r => ({ batch_no: r.batch_no, quantity: r.quantity }))
+  issueReturnVisible.value = true
+}
+
+async function handleIssueReturnSubmit() {
+  if (!issueReturnForm.id || !issueReturnForm.batch_no) { ElMessage.warning('请选择批次'); return }
+  const qty = Number(issueReturnForm.quantity)
+  if (!qty || qty <= 0 || qty > issueReturnMax.value) { ElMessage.warning(`请输入 1~${issueReturnMax.value} 的退回数量`); return }
+  issueReturnSubmitting.value = true
+  try {
+    await request.post(`/sales/deliveries/${issueReturnForm.id}/issue-return`, {
+      batch_no: issueReturnForm.batch_no,
+      quantity: qty,
+      remark: issueReturnForm.remark,
+    })
+    ElMessage.success('出库已退回，库存已回补')
+    issueReturnVisible.value = false
+    fetchData()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '退回失败') } finally { issueReturnSubmitting.value = false }
 }
 
 onMounted(() => { fetchData() })

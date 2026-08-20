@@ -980,7 +980,7 @@ def issue_delivery(
 
 
 def _update_order_delivery_status(order):
-    """按明细行人工确认状态更新订单发货状态（已发货=全部行确认完成）"""
+    """按明细行人工确认状态更新订单发货状态（已发货=全部行确认完成；全部退回后回到已审）"""
     items = order.items
     if not items:
         return
@@ -988,6 +988,8 @@ def _update_order_delivery_status(order):
         order.status = "已发货"
     elif any((i.delivery_confirmed or 0) == 1 or (i.delivered_qty or 0) > 0 for i in items):
         order.status = "部分发货"
+    else:
+        order.status = "已审"
 
 
 @router.post("/orders/{order_id}/items/{item_id}/delivery-confirm", tags=["销售管理"])
@@ -1314,6 +1316,106 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
     _update_order_delivery_status(item.order)
     db.commit()
     return {"id": ret.id, "delivery_no": delivery_no, "message": "退货成功，库存已加回"}
+
+
+@router.post("/deliveries/{delivery_id}/issue-return", tags=["销售管理"])
+def return_delivery_issue(
+    delivery_id: int, data: dict,
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """库管出库退回（红冲）— 撤销出库：库存回补原批次 + 红字流水(delivery_out_return/成品出库退回) + delivered_qty 回减 + 单/明细/订单状态回退。
+    用于库管出库出错撤销；客户退货请走「销售发货→退货」(生成红字退货单)。"""
+    from app.models.inventory import StockTransaction
+    from app.utils.batch_no import generate_doc_no
+
+    sd = db.query(SalesDelivery).filter(SalesDelivery.id == delivery_id).first()
+    if not sd:
+        raise HTTPException(404, "发货单不存在")
+    if sd.is_return:
+        raise HTTPException(400, "退货单不能操作")
+    already = sd.delivered_qty or 0
+    if already <= 0:
+        raise HTTPException(400, "该发货单尚未出库，无法退回")
+    if sd.status not in ("已出库", "部分出库"):
+        raise HTTPException(400, f"当前状态「{sd.status}」不可退回")
+
+    qty = float(data.get("quantity") or 0)
+    if qty <= 0:
+        raise HTTPException(400, "退回数量必须大于0")
+    if qty > already + 0.001:
+        raise HTTPException(400, f"退回数量{qty}超限：该单已出库{already}，最多退回{already}")
+    batch_no = (data.get("batch_no") or "").strip()
+    if not batch_no:
+        raise HTTPException(400, "请选择批次")
+
+    # 该批次必须是该单出库过的批次
+    shipped = db.query(StockTransaction).filter(
+        StockTransaction.source_doc_type == "成品出库",
+        StockTransaction.source_doc_no == sd.delivery_no,
+        StockTransaction.batch_no == batch_no,
+    ).first()
+    if not shipped:
+        raise HTTPException(400, f"批次 {batch_no} 不是该发货单出库过的批次")
+
+    # 库存回补原批次（优先加到正数记录，全发空则新建）
+    inv = db.query(WarehouseInventory).filter(
+        WarehouseInventory.batch_no == batch_no,
+        WarehouseInventory.product_id == sd.product_id,
+        WarehouseInventory.quantity > 0,
+    ).order_by(WarehouseInventory.id).first()
+    if inv:
+        old_qty = inv.quantity or 0
+        unit_cost = inv.unit_cost or 0
+        wh_id = inv.warehouse_id
+        inv.quantity = round(old_qty + qty, 2)
+        inv.total_cost = round(inv.quantity * unit_cost, 2)
+        after_qty = inv.quantity
+    else:
+        old_qty = 0
+        # 全空新建：成本取该单原出库流水成本（撤销出库=红冲还原，与销售退货「全空新建」口径一致）
+        unit_cost = shipped.unit_cost or 0
+        wh_id = sd.warehouse_id or 1
+        inv = WarehouseInventory(
+            warehouse_id=wh_id, product_id=sd.product_id, batch_no=batch_no,
+            quantity=qty, unit_cost=unit_cost, total_cost=round(qty * unit_cost, 2),
+            in_date=date.today(), source_type="delivery_out_return",
+            source_doc_id=sd.id, receipt_no=sd.delivery_no,
+        )
+        db.add(inv)
+        db.flush()
+        after_qty = qty
+
+    # 红字流水（正数回库）
+    db.add(StockTransaction(
+        trans_type="delivery_out_return",
+        warehouse_id=wh_id, product_id=sd.product_id, batch_no=batch_no,
+        quantity=+qty, unit_cost=unit_cost,
+        total_amount=round(qty * unit_cost, 2),
+        before_qty=old_qty, after_qty=after_qty,
+        before_cost=round(old_qty * unit_cost, 2),
+        after_cost=round(after_qty * unit_cost, 2),
+        source_doc_type="成品出库退回",
+        source_doc_no=sd.delivery_no,
+        trans_no=generate_doc_no(db, "ST"),
+        operator=current_user.display_name or current_user.username,
+        remark=f"退回出库 {qty}（{sd.delivery_no}）",
+    ))
+
+    # delivered_qty 回减 + 状态回退
+    new_already = round(already - qty, 2)
+    sd.delivered_qty = new_already
+    sd.status = "待出库" if new_already <= 0 else "部分出库"
+
+    # 明细行回减 + 确认撤销 + 订单状态
+    item = sd.order_item
+    if item:
+        item.delivered_qty = round((item.delivered_qty or 0) - qty, 2)
+        if item.delivery_confirmed:
+            # 与销售退货口径一致：发生退回即撤销确认，未发部分可继续发货补齐
+            item.delivery_confirmed = 0
+        _update_order_delivery_status(item.order)
+    db.commit()
+    return {"message": f"出库已退回 {qty}，库存已回补", "delivery_no": sd.delivery_no, "status": sd.status}
 
 
 @router.post("/deliveries/{delivery_id}/return", tags=["销售管理"])
