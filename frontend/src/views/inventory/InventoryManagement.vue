@@ -61,9 +61,6 @@
               </template>
               <template v-else-if="col.prop === 'material_spec'" #default="{ row }">{{ row.material_spec || row.product_spec || '-' }}</template>
               <template v-else-if="col.prop === 'material_model'" #default="{ row }">{{ row.material_model || row.product_model || '-' }}</template>
-              <template v-else-if="col.prop === 'material_id'" #default="{ row }">
-                <el-tag :type="row.material_id ? 'warning' : 'primary'" size="small">{{ row.material_id ? '原料' : '成品' }}</el-tag>
-              </template>
               <template v-else-if="col.prop === 'quantity'" #default="{ row }">{{ $fq(row.quantity) }}</template>
               <template v-else-if="col.prop === 'unit_cost'" #default="{ row }">{{ $fm(row.unit_cost) }}</template>
               <template v-else-if="col.prop === 'total_cost'" #default="{ row }">{{ $fm(row.total_cost) }}</template>
@@ -82,7 +79,6 @@
               <template v-else-if="col.prop === 'closing_cost'" #default="{ row }">
                 <span style="color: #409eff; font-weight: bold">{{ $fm(row.closing_cost) }}</span>
               </template>
-              <template v-else-if="col.prop === 'so_order_qty' || col.prop === 'so_received_qty'" #default="{ row }">{{ $fq(row[col.prop]) }}</template>
             </el-table-column>
           </el-table>
           </div>
@@ -156,18 +152,15 @@ const defaultColumns = [
   { prop: 'material_code', label: '物料编码', minWidth: 90, sortable: true, measureKeys: ['material_code', 'product_code'] },
   { prop: 'material_spec', label: '规格', minWidth: 80, sortable: true, measureKeys: ['material_spec', 'product_spec'] },
   { prop: 'material_model', label: '型号', minWidth: 80, sortable: true, measureKeys: ['material_model', 'product_model'] },
-  { prop: 'material_id', label: '类型', width: 80, align: 'center', sortable: true },
   { prop: 'batch_no', label: '批次号', width: 140, sortable: true },
   { prop: 'quantity', label: '数量', width: 100, align: 'right', group: 'snapshot', sortable: true, fmt: 'qty' },
   { prop: 'unit_cost', label: '单价(¥)', width: 90, align: 'right', group: 'snapshot', sortable: true, fmt: 'money' },
   { prop: 'total_cost', label: '金额(¥)', width: 110, align: 'right', group: 'snapshot', sortable: true, fmt: 'money' },
-  { prop: 'opening_qty', label: '期初', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
-  { prop: 'period_in_qty', label: '入库', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
-  { prop: 'period_out_qty', label: '出库', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
-  { prop: 'closing_qty', label: '期末数量', width: 90, align: 'right', group: 'period', sortable: true, fmt: 'qty' },
-  { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', group: 'period', sortable: true, fmt: 'money' },
-  { prop: 'so_order_qty', label: '订单数', width: 70, align: 'right', sortable: true, fmt: 'qty', visible: false },
-  { prop: 'so_received_qty', label: '已入库', width: 70, align: 'right', sortable: true, fmt: 'qty', visible: false },
+  { prop: 'opening_qty', label: '期初', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty', visible: false },
+  { prop: 'period_in_qty', label: '入库', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty', visible: false },
+  { prop: 'period_out_qty', label: '出库', width: 80, align: 'right', group: 'period', sortable: true, fmt: 'qty', visible: false },
+  { prop: 'closing_qty', label: '期末数量', width: 90, align: 'right', group: 'period', sortable: true, fmt: 'qty', visible: false },
+  { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', group: 'period', sortable: true, fmt: 'money', visible: false },
 ]
 const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings: openColumnSettingsRaw, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-balance .el-table__header-wrapper thead tr')
 const { fitTable } = useColumnAutoFit()
