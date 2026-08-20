@@ -23,7 +23,7 @@ from app.models.purchase import (
     PurchaseRequisition,
     AccountsPayable, Payment, PaymentAllocation,
 )
-from app.models.inventory import WarehouseInventory, StockTransaction
+from app.models.inventory import StockInOrder, WarehouseInventory, StockTransaction
 from app.schemas.purchase import (
     PurchaseOrderCreate, PurchaseOrderUpdate, PurchaseOrderOut,
     PurchaseOrderItemCreate, PurchaseOrderItemOut,
@@ -330,23 +330,48 @@ def get_order(order_id: int, db: Session = Depends(get_db), current_user: User =
 
 @router.delete("/orders/{order_id}", tags=["采购管理"])
 def delete_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """删除采购订单（仅待审核状态允许，且无下游入库单/发票）"""
+    """删除采购订单（仅待审核状态允许，且无下游待入库单/入库单/发票）"""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
     if order.status != "待审核":
         raise HTTPException(400, "仅待审核状态的订单允许删除")
+    # 找到该订单明细关联的采购需求（后面恢复需求/生产订单状态也要用）
+    po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.order_id == order_id).all()
+    # 校验待入库单（最直接的下游：明细已转原料库/成品库）——有未退回的待入库单先报
+    item_ids = [it.id for it in po_items]
+    pending_stock_ins = []
+    if item_ids:
+        pending_stock_ins = db.query(StockInOrder).filter(
+            StockInOrder.purchase_item_id.in_(item_ids),
+            StockInOrder.status != "已退回",
+        ).all()
+    if pending_stock_ins:
+        first = pending_stock_ins[0]
+        first_item = next((it for it in po_items if it.id == first.purchase_item_id), None)
+        material_name = ""
+        if first_item:
+            material_name = first_item.material.name if first_item.material else (
+                first_item.product.name_cn if first_item.product else ""
+            )
+        raise HTTPException(
+            400,
+            f"该订单明细已生成待入库单(如:{material_name}),请先在「库存管理→原料入库/成品入库」退回待入库单后再退回本采购订单",
+        )
     receipts = db.query(PurchaseReceipt).filter(PurchaseReceipt.order_id == order_id).count()
     invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == order_id).count()
     if receipts > 0:
         raise HTTPException(400, "该订单已有关联入库单，无法删除")
     if invoices > 0:
         raise HTTPException(400, "该订单已有关联发票，无法删除")
+    # 走到这里说明本单剩余的待入库单都已退回（未退回的上面已拦截），随订单一起清掉，避免外键拦截
+    if item_ids:
+        db.query(StockInOrder).filter(StockInOrder.purchase_item_id.in_(item_ids)).delete(
+            synchronize_session=False
+        )
     # 删除后：来源 PR 回到待处理，生产订单回到待采购
     from app.models.production import ProductionOrder
     from app.models.purchase import PurchaseRequisition
-    # 找到该订单明细关联的采购需求
-    po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.order_id == order_id).all()
     linked_reqs = []
     for it in po_items:
         if it.requisition_id and it.requisition_id not in linked_reqs:

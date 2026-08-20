@@ -813,9 +813,9 @@ async function handleUnapprove(row) {
 
 async function handleDelete(row) {
   if (row.from_sales) {
-    await ElMessageBox.confirm(`确定退回订单 ${row.order_no}？退回后该销售订单的采购状态将自动更新，可重新转采购。`, '退回确认', { type: 'warning' })
+    await ElMessageBox.confirm(`确定退回订单 ${row.order_no}？退回后该销售订单的采购状态将自动更新，可重新转采购。若明细已转原料库/成品库，需先在入库页面退回待入库单。`, '退回确认', { type: 'warning' })
   } else {
-    await ElMessageBox.confirm(`确定删除订单 ${row.order_no}？`, '提示', { type: 'warning' })
+    await ElMessageBox.confirm(`确定删除订单 ${row.order_no}？若明细已转原料库/成品库，需先在入库页面退回待入库单。`, '提示', { type: 'warning' })
   }
   try { await purchaseApi.orders.delete(row.id); ElMessage.success(row.from_sales ? '已退回' : '删除成功'); fetchData() } catch (e) {}
 }
