@@ -71,7 +71,7 @@
       <template #header>
         <div style="display: flex; align-items: center">
           <span>工序层级关系面</span>
-          <span style="margin-left: 10px; font-size: 12px; color: #909399">工序按工艺路线直接排列，配置完成后点上方列表「转委外」生成委外订单</span>
+          <span style="margin-left: 10px; font-size: 12px; color: #909399">工序按工艺路线直接排列，可删除本次不委外的工序；配置完成后点上方列表「转委外」生成委外订单</span>
         </div>
       </template>
 
@@ -125,7 +125,10 @@
               <div v-else style="width: 310px; flex: none; border: 1px solid #e4e7ed; border-radius: 8px; overflow: hidden; background: #fff">
                 <div style="padding: 8px 10px; display: flex; align-items: center; justify-content: space-between; background: #f5f7fa; border-bottom: 1px solid #e4e7ed">
                   <span style="font-weight: 600">{{ proc.process_name }}<span style="color: #909399; font-weight: 400">（第{{ proc.seq }}道）</span></span>
-                  <el-tag type="info" size="small">未生成</el-tag>
+                  <div style="display: flex; align-items: center; gap: 6px">
+                    <el-tag type="info" size="small">未生成</el-tag>
+                    <el-button link type="danger" size="small" @click="onRemoveProcess(proc)">删除</el-button>
+                  </div>
                 </div>
                 <div style="padding: 10px">
                   <div style="font-size: 12px; margin-bottom: 8px; color: #606266">
@@ -153,13 +156,15 @@
             </template>
           </div>
 
-          <!-- 底部：损耗（生成入口=上方列表「转委外」） -->
+          <!-- 底部：损耗（生成入口=上方列表「转委外」）+ 待生成计数 + 恢复全部工序 -->
           <div style="flex: none; margin-top: 10px; display: flex; align-items: center; gap: 12px; border-top: 1px solid #e4e7ed; padding-top: 10px">
             <span style="font-size: 12px; color: #606266">
               损耗
               <el-input-number v-model="lossPct" :min="0" :max="50" :precision="0" size="small" controls-position="right" style="width: 90px" />
               %
             </span>
+            <span style="font-size: 12px; color: #606266">待生成工序 {{ pendingProcessCount }} 道</span>
+            <el-button v-if="hasRemoved" type="warning" size="small" plain @click="restoreProcesses">恢复全部工序</el-button>
             <span style="font-size: 12px; color: #909399">供料方式选「己方提供」时，需先「认领原料」再点转委外；全部工序配置完成后，点击上方列表的「转委外」生成委外订单</span>
           </div>
         </div>
@@ -284,6 +289,8 @@ function statusRank(s) {
 // ========== 下面：工序层级关系面（明细区域） ==========
 const selectedItem = ref(null)
 const detail = ref(null)
+// 原始工序快照（本次加载的完整工艺路线，用于「恢复全部工序」）
+const originalProcesses = ref([])
 const loadingDetail = ref(false)
 const lossPct = ref(10)
 const submitting = ref(false)
@@ -299,6 +306,19 @@ const editorMap = reactive({})
 const remainingQty = computed(() => {
   if (!detail.value) return 0
   return Math.max(0, (detail.value.need_qty || 0) - (detail.value.outsourced_qty || 0))
+})
+
+// 待生成工序数（已删除的不计入）
+const pendingProcessCount = computed(() => {
+  if (!detail.value) return 0
+  return detail.value.processes.filter(p => !p.generated.length).length
+})
+
+// 是否有被删除的工序（有才显示「恢复全部工序」按钮）
+const hasRemoved = computed(() => {
+  if (!detail.value) return false
+  const ids = new Set(detail.value.processes.map(p => p.process_id))
+  return originalProcesses.value.some(p => !ids.has(p.process_id))
 })
 
 const totalClaimedQty = computed(() => claims.value.reduce((s, c) => s + (c.quantity || 0), 0))
@@ -355,6 +375,8 @@ async function loadDetail(row) {
   try {
     const res = await request.get(`/outsource/sales-to-outsource/${row.sales_item_id}`)
     detail.value = res
+    // 快照原始工序（换行/刷新时删除状态自动重置）
+    originalProcesses.value = (res.processes || []).map(p => ({ ...p, generated: [...(p.generated || [])] }))
     lossPct.value = 10
     // 订单级认领数据（BOM材料清单 + 已认领记录）
     try {
@@ -367,22 +389,52 @@ async function loadDetail(row) {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载工序信息失败') } finally { loadingDetail.value = false }
 }
 
+// 未生成工序默认编辑数据（供初始化/恢复复用）
+function createEditorFor(p) {
+  const d = detail.value
+  const remain = Math.max(0, (d.need_qty || 0) - (d.outsourced_qty || 0))
+  return {
+    process_id: p.process_id,
+    outsourcer_id: p.default_supplier_id || null,
+    unit_price: p.default_unit_price || 0,
+    quantity: remain,
+  }
+}
+
 // 换选中行：配置状态重置（已生成的工序保留绿框只读）
 function initEditors() {
   for (const k of Object.keys(editorMap)) delete editorMap[k]
   const d = detail.value
   if (!d) return
-  const remain = Math.max(0, (d.need_qty || 0) - (d.outsourced_qty || 0))
   for (const p of d.processes) {
-    if (!p.generated.length) {
-      editorMap[p.process_id] = {
-        process_id: p.process_id,
-        outsourcer_id: p.default_supplier_id || null,
-        unit_price: p.default_unit_price || 0,
-        quantity: remain,
-      }
-    }
+    if (!p.generated.length) editorMap[p.process_id] = createEditorFor(p)
   }
+}
+
+// 删除工序：本次不委外，仅前端移除（不影响已认领原料）
+async function onRemoveProcess(proc) {
+  try {
+    await ElMessageBox.confirm(`确认删除工序「${proc.process_name}」?删除后本次转委外将不生成该工序的委外单,删除工序不影响已认领的原料`, '删除工序', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+  } catch { return }
+  const d = detail.value
+  if (!d) return
+  d.processes = d.processes.filter(p => p.process_id !== proc.process_id)
+  delete editorMap[proc.process_id]
+  ElMessage.success(`已删除工序「${proc.process_name}」，本次转委外不生成该工序`)
+}
+
+// 恢复全部工序：把被删除的工序按 seq 加回（保留已配置的工序不动）
+function restoreProcesses() {
+  const d = detail.value
+  if (!d) return
+  const currentIds = new Set(d.processes.map(p => p.process_id))
+  const removed = originalProcesses.value.filter(p => !currentIds.has(p.process_id))
+  if (!removed.length) { ElMessage.info('没有已删除的工序'); return }
+  d.processes = [...d.processes, ...removed].sort((a, b) => a.seq - b.seq)
+  for (const p of removed) {
+    if (!p.generated.length) editorMap[p.process_id] = createEditorFor(p)
+  }
+  ElMessage.success(`已恢复 ${removed.length} 道工序`)
 }
 
 // ========== 加工商下拉 ==========
