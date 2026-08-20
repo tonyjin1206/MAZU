@@ -708,8 +708,8 @@ def create_claims(data: dict, db: Session = Depends(get_db), current_user: User 
     bom_mats = {b.material_id: (b.quantity or 1) for b in bom_items}
     if not bom_mats:
         raise HTTPException(400, "该产品未配置 BOM 材料，无需认领原料")
-    # 校验请求明细：材料在 BOM 内、数量>0、有批次
-    req = []  # (material_id, batch_no, quantity)
+    # 校验请求明细：材料在 BOM 内、数量>0；batch_no 可选（不传则按仓库总数量 FIFO 认领）
+    req = []  # (material_id, batch_no, quantity)，batch_no 空=按仓库总数量认领
     for m in materials:
         mid = m.get("material_id")
         batch = str(m.get("batch_no") or "").strip()
@@ -718,8 +718,6 @@ def create_claims(data: dict, db: Session = Depends(get_db), current_user: User 
             raise HTTPException(400, f"材料(id={mid})不在该产品 BOM 内，不能认领")
         if qty <= 0:
             raise HTTPException(400, "认领数量必须大于0")
-        if not batch:
-            raise HTTPException(400, "认领材料未选择批次")
         req.append((mid, batch, round(qty, 2)))
     # 现有认领累计（同材料跨批次）
     existing_qty = {}
@@ -727,18 +725,20 @@ def create_claims(data: dict, db: Session = Depends(get_db), current_user: User 
         existing_qty[c.material_id] = round(existing_qty.get(c.material_id, 0) + (c.quantity or 0), 2)
     # 需求 = 销售数量 × BOM用量 × (1+损耗%)
     need_qty = {mid: round((si.quantity or 0) * qty * (1 + loss_pct / 100), 2) for mid, qty in bom_mats.items()}
-    # 批次库存预检（FIFO 跨多条库存记录）
+    # 库存预检：传批次则只扣该批次；不传批次则校验仓库总可用（所有批次合计），FIFO 跨批次扣
     stock_invs = {}
     for mid, batch, qty in req:
-        invs = db.query(WarehouseInventory).filter(
-            WarehouseInventory.material_id == mid,
-            WarehouseInventory.batch_no == batch,
-        ).order_by(WarehouseInventory.id).all()
+        query = db.query(WarehouseInventory).filter(WarehouseInventory.material_id == mid)
+        if batch:
+            query = query.filter(WarehouseInventory.batch_no == batch)
+        invs = query.order_by(WarehouseInventory.id).all()
         stock = round(sum((i.quantity or 0) for i in invs), 2)
+        mat = db.query(Material).filter(Material.id == mid).first()
+        mat_name = mat.name if mat else str(mid)
         if stock <= 0:
-            raise HTTPException(400, f"材料批次库存不足（当前 0）")
+            raise HTTPException(400, f"材料「{mat_name}」仓库总可用 0，不足认领 {qty}")
         if qty > stock:
-            raise HTTPException(400, f"材料批次库存不足（当前 {stock}，需认领 {qty}）")
+            raise HTTPException(400, f"材料「{mat_name}」仓库总可用 {stock}，不足认领 {qty}")
         stock_invs[(mid, batch)] = invs
     # 每种本次认领的材料累计量 ≥ 需求（含历史累计；未认领的材料不强制，转委外时统一校验）
     req_qty = {}
@@ -751,14 +751,13 @@ def create_claims(data: dict, db: Session = Depends(get_db), current_user: User 
             mat = db.query(Material).filter(Material.id == mid).first()
             mat_name = mat.name if mat else str(mid)
             raise HTTPException(400, f"材料「{mat_name}」己方提供，认领量不足（需 {need}，已认领 {round(existing_qty.get(mid, 0), 2)}）")
-    # 执行：扣库存 + 流水 + 写认领（同材料同批次累计）
+    # 执行：扣库存（FIFO 按库存记录 id 升序跨批次扣）+ 流水 + 写认领（按实际扣减批次分行，同材料同批次累计）
     operator = current_user.display_name or current_user.username
     sales_no = si.order.order_no if si.order else ""
     try:
         for mid, batch, qty in req:
             invs = stock_invs[(mid, batch)]
             remaining = qty
-            total_cost = 0.0
             for inv in invs:
                 if remaining <= 0:
                     break
@@ -769,12 +768,11 @@ def create_claims(data: dict, db: Session = Depends(get_db), current_user: User 
                 old_qty = round(inv.quantity or 0, 2)
                 inv.quantity = round(old_qty - take, 2)
                 inv.total_cost = round(inv.quantity * unit_cost, 2)
-                total_cost += round(take * unit_cost, 2)
                 db.add(StockTransaction(
                     trans_type="material_out",
                     warehouse_id=inv.warehouse_id,
                     material_id=mid,
-                    batch_no=batch,
+                    batch_no=inv.batch_no,
                     quantity=-take,
                     unit_cost=unit_cost,
                     total_amount=round(-take * unit_cost, 2),
@@ -787,23 +785,27 @@ def create_claims(data: dict, db: Session = Depends(get_db), current_user: User 
                     trans_no=generate_doc_no(db, "ST"),
                     operator=operator,
                 ))
+                # 认领记录按实际扣减批次分行（同材料同批次累计）
+                exist = db.query(OsClaimMaterial).filter(
+                    OsClaimMaterial.sales_item_id == si.id,
+                    OsClaimMaterial.material_id == mid,
+                    OsClaimMaterial.batch_no == inv.batch_no,
+                ).first()
+                if exist:
+                    old_claim_qty = round(exist.quantity or 0, 2)
+                    new_qty = round(old_claim_qty + take, 2)
+                    exist.quantity = new_qty
+                    exist.unit_cost = round(
+                        (old_claim_qty * (exist.unit_cost or 0) + take * unit_cost) / new_qty, 6) if new_qty else 0
+                else:
+                    db.add(OsClaimMaterial(
+                        sales_item_id=si.id,
+                        material_id=mid,
+                        batch_no=inv.batch_no,
+                        quantity=take,
+                        unit_cost=unit_cost,
+                    ))
                 remaining = round(remaining - take, 2)
-            # 同材料同批次累计：已有记录则数量累加，否则新建
-            exist = db.query(OsClaimMaterial).filter(
-                OsClaimMaterial.sales_item_id == si.id,
-                OsClaimMaterial.material_id == mid,
-                OsClaimMaterial.batch_no == batch,
-            ).first()
-            if exist:
-                exist.quantity = round((exist.quantity or 0) + qty, 2)
-            else:
-                db.add(OsClaimMaterial(
-                    sales_item_id=si.id,
-                    material_id=mid,
-                    batch_no=batch,
-                    quantity=qty,
-                    unit_cost=round(total_cost / qty, 6) if qty else 0,
-                ))
         db.commit()
     except Exception:
         db.rollback()

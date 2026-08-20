@@ -96,7 +96,7 @@
             </el-radio-group>
             <el-button v-if="supplyType === '己方提供'" type="primary" size="small" @click="openClaim">认领原料</el-button>
             <el-tag v-else type="info" size="small">包工包料：材料由加工厂全包，无需认领</el-tag>
-            <span v-if="claims.length" style="font-size: 12px; color: #606266">已认领 {{ claims.length }} 项材料（{{ fmtQty(totalClaimedQty) }}）</span>
+            <span v-if="groupedClaims.length" style="font-size: 12px; color: #606266">已认领 {{ groupedClaims.length }} 项材料（{{ fmtQty(totalClaimedQty) }}）</span>
           </div>
 
           <!-- 工序节点：按 seq 从左到右直接排列，节点间 ➜ 连线 -->
@@ -174,7 +174,7 @@
     <!-- ========== 认领原料弹窗（订单级：BOM全部材料，只管总发料） ========== -->
     <el-dialog v-model="claimVisible" title="认领原料（订单级）" width="780px" destroy-on-close>
       <div style="font-size: 13px; margin-bottom: 10px">
-        需求基准：成品数量 {{ fmtQty(detail ? detail.need_qty : 0) }} × BOM用量 ×（1+损耗 {{ lossPct }}%）；只管总发料，不区分工序/加工商。
+        需求基准：成品数量 {{ fmtQty(detail ? detail.need_qty : 0) }} × BOM用量 ×（1+损耗 {{ lossPct }}%）；按仓库总数量认领，系统自动按先进先出从各批次扣减。
       </div>
       <div v-if="claimRows.length" style="max-height: 44vh; overflow: auto">
         <div v-for="row in claimRows" :key="row.material_id" style="border: 1px solid #e4e7ed; border-radius: 6px; padding: 10px; margin-bottom: 8px">
@@ -184,27 +184,26 @@
           </div>
           <div style="display: flex; gap: 10px">
             <div style="flex: 1">
-              <div style="font-size: 12px; color: #606266; margin-bottom: 4px">批次</div>
-              <el-select v-model="row.batch_no" placeholder="选择原料批次" filterable size="small" style="width: 100%" @change="onRowBatchChange(row)">
-                <el-option v-for="b in row.batches" :key="b.batch_no" :label="`${b.batch_no}（可用 ${fmtQty(b.available)}，${b.warehouse_name || ''}）`" :value="b.batch_no" />
-              </el-select>
+              <div style="font-size: 12px; color: #606266; margin-bottom: 4px">仓库总可用</div>
+              <div style="font-size: 14px; font-weight: 600; line-height: 28px">{{ row.batches.length ? fmtQty(row.maxQty) + ' ' + (row.unit || '') : '—' }}</div>
             </div>
             <div style="flex: 1">
               <div style="font-size: 12px; color: #606266; margin-bottom: 4px">认领数量（≥ 需 {{ fmtQty(row.need) }}）</div>
-              <el-input-number v-model="row.quantity" :min="row.need" :max="row.maxQty || 999999" :precision="2" size="small" style="width: 100%" />
+              <el-input-number v-model="row.quantity" :min="Math.min(row.need, row.maxQty || 0)" :max="row.maxQty || 999999" :precision="2" size="small" style="width: 100%" />
             </div>
           </div>
           <div v-if="!row.batches.length" style="font-size: 12px; color: #e6a23c; margin-top: 8px; padding: 6px 8px; background: #fdf6ec; border-radius: 4px">原料库暂无该材料（{{ row.name }}），请先完成采购→原料入库后再认领</div>
+          <div v-else-if="row.maxQty < row.need" style="font-size: 12px; color: #e6a23c; margin-top: 8px; padding: 6px 8px; background: #fdf6ec; border-radius: 4px">仓库总可用 {{ fmtQty(row.maxQty) }} ＜ 需认领 {{ fmtQty(row.need) }}，不足 {{ fmtQty(row.need - row.maxQty) }} {{ row.unit || '' }}，请先补料入库</div>
         </div>
       </div>
       <div v-else style="font-size: 13px; color: #909399; text-align: center; padding: 20px 0">该产品暂无BOM材料</div>
 
-      <!-- 已认领材料（订单级，批次+数量，可删） -->
-      <div v-if="claims.length" style="margin-top: 12px">
-        <div style="font-size: 12px; color: #606266; margin-bottom: 4px">已认领材料（{{ claims.length }}）</div>
-        <div v-for="c in claims" :key="c.claim_id" style="font-size: 12px; display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; background: #f0f9eb; border-radius: 4px; margin-bottom: 4px">
-          <span>{{ c.material_code }} {{ c.material_name }}（批次 {{ c.batch_no }}）{{ fmtQty(c.quantity) }}</span>
-          <el-button type="danger" link size="small" @click="deleteClaim(c)">删除</el-button>
+      <!-- 已认领材料（订单级，按材料合并显示总数量，可删；删除=退回该材料全部认领量回库存） -->
+      <div v-if="groupedClaims.length" style="margin-top: 12px">
+        <div style="font-size: 12px; color: #606266; margin-bottom: 4px">已认领材料（{{ groupedClaims.length }}）</div>
+        <div v-for="g in groupedClaims" :key="g.material_id" style="font-size: 12px; display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; background: #f0f9eb; border-radius: 4px; margin-bottom: 4px">
+          <span>{{ g.material_code }} {{ g.material_name }} × {{ fmtQty(g.total_qty) }} {{ g.unit || '' }}</span>
+          <el-button type="danger" link size="small" @click="deleteClaimGroup(g)">删除</el-button>
         </div>
       </div>
       <template #footer>
@@ -322,6 +321,27 @@ const hasRemoved = computed(() => {
 })
 
 const totalClaimedQty = computed(() => claims.value.reduce((s, c) => s + (c.quantity || 0), 0))
+
+// 已认领材料按材料合并（界面不显示批次；删除=退回该材料全部认领量）
+const groupedClaims = computed(() => {
+  const map = new Map()
+  for (const c of claims.value) {
+    if (!map.has(c.material_id)) {
+      map.set(c.material_id, {
+        material_id: c.material_id,
+        material_code: c.material_code,
+        material_name: c.material_name,
+        unit: c.unit || '',
+        total_qty: 0,
+        claim_ids: [],
+      })
+    }
+    const g = map.get(c.material_id)
+    g.total_qty = (g.total_qty || 0) + (c.quantity || 0)
+    g.claim_ids.push(c.claim_id)
+  }
+  return Array.from(map.values())
+})
 
 // 单材料认领需求 = 销售数量 × BOM用量 ×（1+损耗%）
 function claimNeed(materialId) {
@@ -445,19 +465,17 @@ async function searchSuppliers() {
   } catch {}
 }
 
-// ========== 认领原料（订单级弹窗：BOM全部材料，每材料选批次+数量） ==========
+// ========== 认领原料（订单级弹窗：BOM全部材料，按仓库总数量认领，不选批次） ==========
 const claimVisible = ref(false)
 const claimRows = ref([])
 
-// 单材料行加载可用批次
-async function loadBatchesFor(row) {
+// 单材料行加载仓库总可用（available-batches 各批次可用量合计）
+async function loadStockFor(row) {
   try {
     const res = await request.get('/inventory/available-batches', { params: { material_id: row.material_id } })
     row.batches = (res.items || []).filter(b => (b.available || 0) > 0)
-    if (!row.batch_no && row.batches.length) row.batch_no = row.batches[0].batch_no
-    const b = row.batches.find(x => x.batch_no === row.batch_no)
-    row.maxQty = b ? (b.available || 0) : (row.batches.length ? row.batches[0].available : 0)
-  } catch (e) { ElMessage.error(e.response?.data?.detail || `加载材料「${row.name}」批次失败`) }
+    row.maxQty = row.batches.reduce((s, b) => s + (b.available || 0), 0)
+  } catch (e) { ElMessage.error(e.response?.data?.detail || `加载材料「${row.name}」库存失败`) }
 }
 
 async function openClaim() {
@@ -477,35 +495,31 @@ async function openClaim() {
     unit: m.unit || '',
     bom_qty: m.quantity || 0,
     need: claimNeed(m.material_id),
-    batch_no: '',
     quantity: claimNeed(m.material_id),
     batches: [],
     maxQty: 0,
   }))
   claimVisible.value = true
-  await Promise.all(claimRows.value.map(row => loadBatchesFor(row)))
-}
-
-// 切换批次: 数量上限跟随批次可用量
-function onRowBatchChange(row) {
-  const b = row.batches.find(x => x.batch_no === row.batch_no)
-  row.maxQty = b ? (b.available || 0) : 0
-  if (row.maxQty > 0 && row.quantity > row.maxQty) row.quantity = row.maxQty
+  await Promise.all(claimRows.value.map(row => loadStockFor(row)))
 }
 
 async function confirmClaim() {
   const errors = []
   const materials = []
   for (const row of claimRows.value) {
-    if (!row.batch_no || !(row.quantity > 0)) {
-      errors.push(`材料「${row.name}」请选择批次并填写认领数量（≥ ${fmtQty(row.need)}）`)
+    if (!(row.quantity > 0)) {
+      errors.push(`材料「${row.name}」请填写认领数量（≥ ${fmtQty(row.need)}）`)
+      continue
+    }
+    if (row.maxQty < row.need) {
+      errors.push(`材料「${row.name}」仓库总可用 ${fmtQty(row.maxQty)} 不足，缺 ${fmtQty(row.need - row.maxQty)}，请先补料入库`)
       continue
     }
     if (row.quantity < row.need) {
       errors.push(`材料「${row.name}」认领数量需 ≥ ${fmtQty(row.need)}`)
       continue
     }
-    materials.push({ material_id: row.material_id, batch_no: row.batch_no, quantity: row.quantity })
+    materials.push({ material_id: row.material_id, quantity: row.quantity })
   }
   if (errors.length) { ElMessage.warning(errors.join('\n')); return }
   if (!materials.length) { ElMessage.warning('请至少认领一种材料'); return }
@@ -524,11 +538,13 @@ async function confirmClaim() {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '认领失败') }
 }
 
-async function deleteClaim(c) {
+async function deleteClaimGroup(g) {
   try {
-    await ElMessageBox.confirm(`确认删除「${c.material_name}」批次 ${c.batch_no} 的认领记录？材料将退回原料库。`, '删除认领', { type: 'warning' })
-    const res = await request.delete(`/outsource/claims/${c.claim_id}`)
-    ElMessage.success(res.message || '已删除')
+    await ElMessageBox.confirm(`确认删除「${g.material_name}」的认领记录（${fmtQty(g.total_qty)} ${g.unit || ''}）？材料将退回原料库。`, '删除认领', { type: 'warning' })
+    for (const claimId of g.claim_ids) {
+      await request.delete(`/outsource/claims/${claimId}`)
+    }
+    ElMessage.success('已删除，材料已退回原料库')
     await loadDetail(selectedItem.value)
     fetchData()
   } catch (e) {
