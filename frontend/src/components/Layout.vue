@@ -74,10 +74,9 @@
         </el-sub-menu>
 
         <!-- 4. 采购管理 -->
-        <el-sub-menu index="purchase" v-if="hasPerm('menu:purchase:from-sales') || hasPerm('menu:purchase:requisitions') || hasPerm('menu:purchase:orders') || hasPerm('menu:purchase:invoices') || hasPerm('menu:purchase:ap') || hasPerm('menu:purchase:payments')">
+        <el-sub-menu index="purchase" v-if="hasPerm('menu:purchase:from-sales') || hasPerm('menu:purchase:orders') || hasPerm('menu:purchase:invoices') || hasPerm('menu:purchase:ap') || hasPerm('menu:purchase:payments')">
           <template #title>采购管理</template>
           <el-menu-item index="/purchase/from-sales" v-if="hasPerm('menu:purchase:from-sales')">销售订单转采购</el-menu-item>
-          <el-menu-item index="/purchase/requisitions" v-if="hasPerm('menu:purchase:requisitions')">采购需求</el-menu-item>
           <el-menu-item index="/purchase/orders" v-if="hasPerm('menu:purchase:orders')">采购订单</el-menu-item>
           <el-menu-item index="/purchase/invoices" v-if="hasPerm('menu:purchase:invoices')">采购发票</el-menu-item>
           <el-menu-item index="/purchase/ap" v-if="hasPerm('menu:purchase:ap')">应付账款</el-menu-item>
@@ -163,7 +162,6 @@ const pageTitle = computed(() => {
     '/foundation/warehouses': '仓库管理',
     '/foundation/currencies': '币种/汇率',
     '/foundation/processes': '工序管理',
-    '/purchase/requisitions': '采购需求',
     '/purchase/from-sales': '销售订单转采购',
     '/purchase/orders': '采购订单',
     '/purchase/invoices': '采购发票',

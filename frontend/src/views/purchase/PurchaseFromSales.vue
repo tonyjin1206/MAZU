@@ -45,9 +45,9 @@
           <el-table-column label="操作" width="200" align="center" fixed="right">
             <template #default="{ row }">
               <el-button v-if="row.purchase_status === 'none' || row.purchase_status === 'partial'" type="primary" size="small" @click="openPurchase(row)">采购</el-button>
-              <el-button v-if="row.purchase_status === 'partial' || row.purchase_status === 'transferred'" type="success" size="small" @click="handleComplete(row)">完成采购</el-button>
               <el-button v-if="row.purchase_status === 'completed'" type="warning" size="small" @click="handleUncomplete(row)">取消完成</el-button>
               <el-button v-if="row.purchase_status === 'none'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
+              <el-button v-if="row.purchase_status === 'transferred'" type="danger" size="small" @click="handleReturn(row)">退回</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -209,17 +209,6 @@ async function openPurchase(row) {
     }
     purchaseVisible.value = true
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载采购需求明细失败') }
-}
-
-async function handleComplete(row) {
-  try {
-    await ElMessageBox.confirm(`确认完成采购？系统按人工判定：数量是否足够由你决定。完成后不能再追加采购，可随时「取消完成」。`, '完成确认', { type: 'info' })
-    const res = await request.post(`/purchase/sales-to-purchase/${row.sales_item_id}/complete`)
-    ElMessage.success(res.message || '已标记采购完成')
-    fetchData()
-  } catch (e) {
-    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '操作失败')
-  }
 }
 
 async function handleUncomplete(row) {

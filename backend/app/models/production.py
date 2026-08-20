@@ -154,6 +154,21 @@ class OutsourceOrder(Base):
                              cascade="all, delete-orphan", order_by="OutsourceMaterial.id")
 
 
+class OsClaimMaterial(Base):
+    """订单级材料认领（销售明细行转委外时认领原料，只管总发料，不挂工序/供应商）"""
+    __tablename__ = "os_claim_material"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    sales_item_id = Column(Integer, ForeignKey("so_order_item.id"), nullable=False, comment="销售订单明细行")
+    material_id = Column(Integer, ForeignKey("fd_material.id"), nullable=False, comment="材料")
+    batch_no = Column(String(64), nullable=False, comment="原料批次号")
+    quantity = Column(Float, nullable=False, default=0, comment="认领数量")
+    unit_cost = Column(Float, default=0, comment="认领时带出的材料成本")
+    created_at = Column(DateTime, default=func.now())
+
+    material = relationship("Material")
+
+
 class OutsourceMaterial(Base):
     """委外订单材料认领明细（认领原料库批次，自动生成原料出库）"""
     __tablename__ = "os_order_material"

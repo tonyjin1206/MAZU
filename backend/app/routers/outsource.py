@@ -8,10 +8,10 @@ from app.database import get_db
 from app.models.auth import User
 from app.models.foundation import Product, Supplier, Customer, Process, ProductProcess
 from app.models.inventory import StockInOrder, WarehouseInventory, StockTransaction
-from app.models.production import OutsourceOrder, OutsourceMaterial
+from app.models.production import OutsourceOrder, OutsourceMaterial, OsClaimMaterial
 from app.models.purchase import AccountsPayable
 from app.models.sales import SalesOrder, SalesOrderItem
-from app.models.foundation import Material
+from app.models.foundation import Material, BomItem
 from app.utils.auth import get_current_user
 from app.utils.batch_no import generate_doc_no
 
@@ -473,9 +473,10 @@ def uncomplete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), c
 
 @router.get("/sales-to-outsource/{item_id}", tags=["委外管理"])
 def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """销售明细行转委外：产品行 + 工序支线（工艺路线工序 + 各工序BOM材料 + 已生成委外单）"""
+    """销售明细行转委外详情（订单级供料方式）：产品行 + 工序卡片（加工商/单价/数量/金额） + 该行已认领材料
+    工序不再挂 BOM 材料/认领；BOM 材料清单与认领记录走 GET /outsource/claims 接口（认领弹窗用）"""
     from app.models.sales import SalesOrderItem
-    from app.models.foundation import ProductProcess, BomItem
+    from app.models.foundation import ProductProcess
     si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
     if not si:
         raise HTTPException(404, "销售明细行不存在")
@@ -491,24 +492,7 @@ def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_
     procs = db.query(ProductProcess).filter(
         ProductProcess.product_id == si.product_id,
     ).order_by(ProductProcess.seq.asc(), ProductProcess.id.asc()).all()
-    # BOM 材料（该产品全部启用材料，不按工序挂接；每道工序认领时人工选择）
-    bom_items = db.query(BomItem).filter(
-        BomItem.product_id == si.product_id,
-        BomItem.is_active == 1,
-    ).order_by(BomItem.sort_order.asc(), BomItem.id.asc()).all()
-    all_bom_materials = []
-    for b in bom_items:
-        mat = b.material
-        all_bom_materials.append({
-            "material_id": b.material_id,
-            "code": mat.code if mat else "",
-            "name": mat.name if mat else "",
-            "spec": mat.spec or "" if mat else "",
-            "unit": mat.unit or "" if mat else "",
-            "quantity": b.quantity or 1,
-            "loss_rate": b.loss_rate or 0,
-        })
-    # 已生成委外单（按工序分组）
+    # 已生成委外单（按工序分组，绿框只读）
     gen_by_process = {}
     for o in os_orders:
         if o.process_id:
@@ -529,7 +513,6 @@ def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_
                 "amount": o.amount or 0,
                 "supply_type": o.supply_type or "己方提供",
                 "status": o.status,
-                "materials": _os_materials(db, o.id),
             })
         processes.append({
             "process_id": pp.process_id,
@@ -539,8 +522,23 @@ def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_
             "default_unit_price": pp.default_unit_price or 0,
             "default_supplier_id": pp.default_supplier_id,
             "default_supplier_name": sup.name if sup else "",
-            "bom_materials": all_bom_materials,
             "generated": generated,
+        })
+    # 订单级已认领材料（os_claim_material）
+    claims = []
+    for c in db.query(OsClaimMaterial).filter(OsClaimMaterial.sales_item_id == si.id).order_by(OsClaimMaterial.id.asc()).all():
+        mat = c.material
+        claims.append({
+            "claim_id": c.id,
+            "material_id": c.material_id,
+            "material_code": mat.code if mat else "",
+            "material_name": mat.name if mat else "",
+            "spec": mat.spec or "" if mat else "",
+            "unit": mat.unit or "" if mat else "",
+            "batch_no": c.batch_no or "",
+            "quantity": c.quantity or 0,
+            "unit_cost": c.unit_cost or 0,
+            "created_at": str(c.created_at) if c.created_at else "",
         })
     return {
         "id": si.order_id, "order_no": si.order.order_no,
@@ -555,8 +553,9 @@ def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_
         "need_qty": si.quantity or 0,
         "outsourced_qty": round(outsourced_qty, 2),
         "production_status": si.production_status or "未生产",
+        "supply_type": si.supply_type or "己方提供",
+        "claims": claims,
         "processes": processes,
-        "common_materials": [],
     }
 
 
@@ -619,20 +618,259 @@ def create_outsource_from_sales(data: dict, db: Session = Depends(get_db), curre
     return {"message": f"已生成 {len(created)} 张委外订单（待确认，请在委外订单中维护委外商/加工单价后审核）", "orders": created}
 
 
+# ==================== 订单级材料认领（只管总发料，不挂工序/供应商） ====================
+
+def _claim_rows(db: Session, sales_item_id: int):
+    """订单级认领记录列表"""
+    rows = []
+    for c in db.query(OsClaimMaterial).filter(OsClaimMaterial.sales_item_id == sales_item_id).order_by(OsClaimMaterial.id.asc()).all():
+        mat = c.material
+        rows.append({
+            "claim_id": c.id,
+            "material_id": c.material_id,
+            "material_code": mat.code if mat else "",
+            "material_name": mat.name if mat else "",
+            "spec": mat.spec or "" if mat else "",
+            "unit": mat.unit or "" if mat else "",
+            "batch_no": c.batch_no or "",
+            "quantity": c.quantity or 0,
+            "unit_cost": c.unit_cost or 0,
+            "created_at": str(c.created_at) if c.created_at else "",
+        })
+    return rows
+
+
+@router.get("/claims", tags=["委外管理"])
+def list_claims(
+    sales_item_id: int = Query(...),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    """订单级认领数据：BOM 材料清单（认领弹窗用）+ 该行已认领记录"""
+    from app.models.sales import SalesOrderItem
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == sales_item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    bom_items = db.query(BomItem).filter(
+        BomItem.product_id == si.product_id,
+        BomItem.is_active == 1,
+    ).order_by(BomItem.sort_order.asc(), BomItem.id.asc()).all()
+    bom_materials = []
+    for b in bom_items:
+        mat = b.material
+        bom_materials.append({
+            "material_id": b.material_id,
+            "code": mat.code if mat else "",
+            "name": mat.name if mat else "",
+            "spec": mat.spec or "" if mat else "",
+            "unit": mat.unit or "" if mat else "",
+            "quantity": b.quantity or 1,
+            "loss_rate": b.loss_rate or 0,
+        })
+    return {
+        "sales_item_id": si.id,
+        "supply_type": si.supply_type or "己方提供",
+        "need_qty": si.quantity or 0,
+        "bom_materials": bom_materials,
+        "claims": _claim_rows(db, si.id),
+    }
+
+
+@router.post("/claims", tags=["委外管理"])
+def create_claims(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """订单级材料认领：只管总发料
+    data: { sales_item_id, supply_type?: '己方提供', materials: [{material_id, batch_no, quantity}], loss_pct?: 10 }
+    校验: 供料方式==己方提供(否则400)、材料在BOM内、每种BOM材料认领量(含历史累计) ≥ 销售数量×BOM用量×(1+损耗%)、
+    库存足够; 写 os_claim_material(同材料同批次累计) + 扣库存 + 原料出库流水(source_doc_no=销售单号)"""
+    from app.models.sales import SalesOrderItem
+    sales_item_id = data.get("sales_item_id")
+    materials = data.get("materials") or []
+    if not sales_item_id or not materials:
+        raise HTTPException(400, "参数不完整")
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == sales_item_id).first()
+    if not si:
+        raise HTTPException(404, "销售明细行不存在")
+    if si.production_status in ("已入库", "已停售"):
+        raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能认领原料")
+    # 供料方式：请求可带（转委外页订单级选择），未带则用订单已设值；包工包料不认领
+    supply_type = str(data.get("supply_type") or "").strip() or (si.supply_type or "")
+    if supply_type == "包工包料":
+        raise HTTPException(400, "供料方式为「包工包料」，材料由加工厂提供，无需认领原料")
+    if supply_type != "己方提供":
+        raise HTTPException(400, "请先在转委外页面选择供料方式「己方提供」，再认领原料")
+    si.supply_type = "己方提供"
+    # 损耗
+    loss_pct = float(data.get("loss_pct", 10) or 10)
+    if loss_pct < 0 or loss_pct > 50:
+        raise HTTPException(400, "损耗率须在 0~50% 之间")
+    # BOM 材料集合
+    bom_items = db.query(BomItem).filter(
+        BomItem.product_id == si.product_id, BomItem.is_active == 1).all()
+    bom_mats = {b.material_id: (b.quantity or 1) for b in bom_items}
+    if not bom_mats:
+        raise HTTPException(400, "该产品未配置 BOM 材料，无需认领原料")
+    # 校验请求明细：材料在 BOM 内、数量>0、有批次
+    req = []  # (material_id, batch_no, quantity)
+    for m in materials:
+        mid = m.get("material_id")
+        batch = str(m.get("batch_no") or "").strip()
+        qty = float(m.get("quantity") or 0)
+        if mid not in bom_mats:
+            raise HTTPException(400, f"材料(id={mid})不在该产品 BOM 内，不能认领")
+        if qty <= 0:
+            raise HTTPException(400, "认领数量必须大于0")
+        if not batch:
+            raise HTTPException(400, "认领材料未选择批次")
+        req.append((mid, batch, round(qty, 2)))
+    # 现有认领累计（同材料跨批次）
+    existing_qty = {}
+    for c in db.query(OsClaimMaterial).filter(OsClaimMaterial.sales_item_id == si.id).all():
+        existing_qty[c.material_id] = round(existing_qty.get(c.material_id, 0) + (c.quantity or 0), 2)
+    # 需求 = 销售数量 × BOM用量 × (1+损耗%)
+    need_qty = {mid: round((si.quantity or 0) * qty * (1 + loss_pct / 100), 2) for mid, qty in bom_mats.items()}
+    # 批次库存预检（FIFO 跨多条库存记录）
+    stock_invs = {}
+    for mid, batch, qty in req:
+        invs = db.query(WarehouseInventory).filter(
+            WarehouseInventory.material_id == mid,
+            WarehouseInventory.batch_no == batch,
+        ).order_by(WarehouseInventory.id).all()
+        stock = round(sum((i.quantity or 0) for i in invs), 2)
+        if stock <= 0:
+            raise HTTPException(400, f"材料批次库存不足（当前 0）")
+        if qty > stock:
+            raise HTTPException(400, f"材料批次库存不足（当前 {stock}，需认领 {qty}）")
+        stock_invs[(mid, batch)] = invs
+    # 每种本次认领的材料累计量 ≥ 需求（含历史累计；未认领的材料不强制，转委外时统一校验）
+    req_qty = {}
+    for mid, batch, qty in req:
+        req_qty[mid] = round(req_qty.get(mid, 0) + qty, 2)
+    for mid, total_req in req_qty.items():
+        need = need_qty.get(mid, 0)
+        total = round(existing_qty.get(mid, 0) + total_req, 2)
+        if total < need:
+            mat = db.query(Material).filter(Material.id == mid).first()
+            mat_name = mat.name if mat else str(mid)
+            raise HTTPException(400, f"材料「{mat_name}」己方提供，认领量不足（需 {need}，已认领 {round(existing_qty.get(mid, 0), 2)}）")
+    # 执行：扣库存 + 流水 + 写认领（同材料同批次累计）
+    operator = current_user.display_name or current_user.username
+    sales_no = si.order.order_no if si.order else ""
+    try:
+        for mid, batch, qty in req:
+            invs = stock_invs[(mid, batch)]
+            remaining = qty
+            total_cost = 0.0
+            for inv in invs:
+                if remaining <= 0:
+                    break
+                take = round(min(inv.quantity or 0, remaining), 2)
+                if take <= 0:
+                    continue
+                unit_cost = inv.unit_cost or 0
+                old_qty = round(inv.quantity or 0, 2)
+                inv.quantity = round(old_qty - take, 2)
+                inv.total_cost = round(inv.quantity * unit_cost, 2)
+                total_cost += round(take * unit_cost, 2)
+                db.add(StockTransaction(
+                    trans_type="material_out",
+                    warehouse_id=inv.warehouse_id,
+                    material_id=mid,
+                    batch_no=batch,
+                    quantity=-take,
+                    unit_cost=unit_cost,
+                    total_amount=round(-take * unit_cost, 2),
+                    before_qty=old_qty,
+                    after_qty=inv.quantity,
+                    before_cost=round(old_qty * unit_cost, 2),
+                    after_cost=round(inv.quantity * unit_cost, 2),
+                    source_doc_type="原料出库",
+                    source_doc_no=sales_no,
+                    trans_no=generate_doc_no(db, "ST"),
+                    operator=operator,
+                ))
+                remaining = round(remaining - take, 2)
+            # 同材料同批次累计：已有记录则数量累加，否则新建
+            exist = db.query(OsClaimMaterial).filter(
+                OsClaimMaterial.sales_item_id == si.id,
+                OsClaimMaterial.material_id == mid,
+                OsClaimMaterial.batch_no == batch,
+            ).first()
+            if exist:
+                exist.quantity = round((exist.quantity or 0) + qty, 2)
+            else:
+                db.add(OsClaimMaterial(
+                    sales_item_id=si.id,
+                    material_id=mid,
+                    batch_no=batch,
+                    quantity=qty,
+                    unit_cost=round(total_cost / qty, 6) if qty else 0,
+                ))
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"message": f"已认领 {len(req)} 项材料（销售单 {sales_no}），原料出库流水已生成", "claims": _claim_rows(db, si.id)}
+
+
+@router.delete("/claims/{claim_id}", tags=["委外管理"])
+def delete_claim(claim_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """删除订单级认领记录：材料退回原批次（加回库存 + 认领退回流水）"""
+    c = db.query(OsClaimMaterial).filter(OsClaimMaterial.id == claim_id).first()
+    if not c:
+        raise HTTPException(404, "认领记录不存在")
+    operator = current_user.display_name or current_user.username
+    sales_no = ""
+    si = db.query(SalesOrderItem).filter(SalesOrderItem.id == c.sales_item_id).first()
+    if si and si.order:
+        sales_no = si.order.order_no
+    try:
+        invs = db.query(WarehouseInventory).filter(
+            WarehouseInventory.material_id == c.material_id,
+            WarehouseInventory.batch_no == c.batch_no,
+        ).order_by(WarehouseInventory.id).all()
+        if invs:
+            inv = invs[0]
+            unit_cost = c.unit_cost or inv.unit_cost or 0
+            old_qty = round(inv.quantity or 0, 2)
+            inv.quantity = round(old_qty + (c.quantity or 0), 2)
+            inv.total_cost = round(inv.quantity * unit_cost, 2)
+            db.add(StockTransaction(
+                trans_type="material_in",
+                warehouse_id=inv.warehouse_id,
+                material_id=c.material_id,
+                batch_no=c.batch_no,
+                quantity=round(c.quantity or 0, 2),
+                unit_cost=unit_cost,
+                total_amount=round((c.quantity or 0) * unit_cost, 2),
+                before_qty=old_qty,
+                after_qty=inv.quantity,
+                before_cost=round(old_qty * unit_cost, 2),
+                after_cost=round(inv.quantity * unit_cost, 2),
+                source_doc_type="认领退回",
+                source_doc_no=sales_no,
+                trans_no=generate_doc_no(db, "ST"),
+                operator=operator,
+            ))
+        db.delete(c)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return {"message": "认领记录已删除，材料已退回原批次"}
+
+
 @router.post("/orders/from-sales-process", tags=["委外管理"])
 def create_outsource_from_sales_process(
     data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    """销售订单转委外（按工序拆单）：每道工序生成一张委外订单 + 材料认领自动出库
-    data: { sales_order_id: int, sales_item_id: int, loss_pct?: float,
-            rows: [{process_id, outsourcer_id, unit_price, quantity, supply_type,
-                    materials: [{material_id, batch_no, quantity, supply_type?}]}] }
-    材料级供料方式（工序默认+材料级可覆盖）：materials[].supply_type 缺省=工序级 rows[].supply_type，
-    再缺省='己方提供'；「包工包料」材料不校验数量、不写 os_order_material、不出库（由加工厂提供）。
-    每张委外单：product_id=产品、quantity=委外数量、process_id=工序、outsourcer_id=加工商、
-    unit_price=加工单价、amount=单价×数量、sales_order_id/sales_item_id、status=待确认；
-    认领材料写入 os_order_material 并自动生成原料出库（扣库存 + StockTransaction 流水）。"""
-    from app.models.foundation import ProductProcess, BomItem
+    """销售订单转委外（订单级简化）：每道工序生成一张委外订单
+    data: { sales_order_id: int, sales_item_id: int, supply_type?: '己方提供'/'包工包料', loss_pct?: 10,
+            rows: [{process_id, outsourcer_id, unit_price, quantity}] }
+    供料方式订单级：提交带 supply_type 写入 so_order_item（未带则用已设置值，未设置 400）。
+    己方提供：校验该行全部 BOM 材料已在 /outsource/claims 认领且量≥需求（缺材料 400 提示材料名+需N已认领M）；
+    包工包料：不校验认领。每张 WO: process_id/outsourcer_id/unit_price/quantity/amount/supply_type=订单供料方式。
+    不再写 os_order_material、不再在此出库（材料认领已走订单级 claims 接口）。"""
+    from app.models.foundation import ProductProcess
+    from app.models.sales import SalesOrderItem
     sales_order_id = data.get("sales_order_id")
     sales_item_id = data.get("sales_item_id")
     rows = data.get("rows") or []
@@ -657,21 +895,41 @@ def create_outsource_from_sales_process(
     if loss_pct < 0 or loss_pct > 50:
         raise HTTPException(400, "损耗率须在 0~50% 之间")
 
-    # 该产品工艺路线工序集合 + BOM 材料集合（认领校验用）
+    # 供料方式（订单级）：请求带 supply_type 则写入 so_order_item；否则用已设置值
+    supply_type = str(data.get("supply_type") or "").strip() or (si.supply_type or "")
+    if supply_type not in ("己方提供", "包工包料"):
+        raise HTTPException(400, "请先选择订单级供料方式（己方提供/包工包料）")
+    si.supply_type = supply_type
+
+    # 该产品工艺路线工序集合（校验 rows 里的工序）
     pp_rows = db.query(ProductProcess).filter(ProductProcess.product_id == si.product_id).all()
     valid_procs = {p.process_id for p in pp_rows}
-    bom_mats = {
-        b.material_id: (b.quantity or 1) for b in db.query(BomItem).filter(
-            BomItem.product_id == si.product_id, BomItem.is_active == 1).all()
-    }
-    # 已有非退回委外单（分批追加校验按工序维度：同工序已生成量 + 本次 ≤ 销售数量×(1+损耗)）
+    # 已有非退回委外单（按工序分批追加：同工序已生成量 + 本次 ≤ 销售数量×(1+损耗)）
     os_orders = db.query(OutsourceOrder).filter(
         OutsourceOrder.sales_item_id == si.id,
         OutsourceOrder.status != "已退回",
     ).all()
+
+    # 己方提供：校验订单级认领（os_claim_material）全部 BOM 材料认领量 ≥ 需求
+    if supply_type == "己方提供":
+        bom_mats = {
+            b.material_id: (b.quantity or 1) for b in db.query(BomItem).filter(
+                BomItem.product_id == si.product_id, BomItem.is_active == 1).all()
+        }
+        if bom_mats:
+            claimed_qty = {}
+            for c in db.query(OsClaimMaterial).filter(OsClaimMaterial.sales_item_id == si.id).all():
+                claimed_qty[c.material_id] = round(claimed_qty.get(c.material_id, 0) + (c.quantity or 0), 2)
+            for mid, bqty in bom_mats.items():
+                need = round((si.quantity or 0) * bqty * (1 + loss_pct / 100), 2)
+                claimed = round(claimed_qty.get(mid, 0), 2)
+                if claimed < need:
+                    mat = db.query(Material).filter(Material.id == mid).first()
+                    mat_name = mat.name if mat else str(mid)
+                    raise HTTPException(400, f"材料「{mat_name}」己方提供，认领量不足（需 {need}，已认领 {claimed}），请先完成认领原料")
+
     operator = current_user.display_name or current_user.username
     created = []
-
     try:
         for r in rows:
             process_id = r.get("process_id")
@@ -680,66 +938,17 @@ def create_outsource_from_sales_process(
                 raise HTTPException(400, "委外数量必须大于0")
             if process_id not in valid_procs:
                 raise HTTPException(400, "工序不在该产品的工艺路线内，不能生成委外订单")
-            supply_type = r.get("supply_type")
-            if supply_type not in ("己方提供", "包工包料"):
-                raise HTTPException(400, "供料方式必须为「己方提供」或「包工包料」")
             outsourcer_id = r.get("outsourcer_id")
+            if not outsourcer_id:
+                raise HTTPException(400, "请选择加工商（供应商）")
             unit_price = float(r.get("unit_price") or 0)
-            # 材料认领汇总（同材料+批次合并；按材料级供料方式分流：「包工包料」跳过）
-            claims = {}
-            material_supply = {}  # material_id -> 材料级供料方式（己方提供/包工包料）
-            for m in r.get("materials") or []:
-                mid = m.get("material_id")
-                if mid not in bom_mats:
-                    raise HTTPException(400, f"材料(id={mid})不在该产品BOM内，不能认领")
-                m_supply = (str(m.get("supply_type") or "").strip()) or supply_type or "己方提供"
-                if m_supply not in ("己方提供", "包工包料"):
-                    raise HTTPException(400, "材料供料方式必须为「己方提供」或「包工包料」")
-                if mid in material_supply and material_supply[mid] != m_supply:
-                    raise HTTPException(400, f"材料(id={mid})供料方式冲突，同一种材料只能选一种供料方式")
-                material_supply[mid] = m_supply
-                if m_supply == "包工包料":
-                    # 包工包料：由加工厂提供，我方不备料——不校验数量、不写认领记录、不出库
-                    continue
-                batch = str(m.get("batch_no") or "").strip()
-                mqty = float(m.get("quantity") or 0)
-                if mqty <= 0:
-                    raise HTTPException(400, "认领材料数量必须大于0")
-                if not batch:
-                    raise HTTPException(400, "认领材料未选择批次")
-                key = (mid, batch)
-                claims[key] = round(claims.get(key, 0) + mqty, 2)
-            # 材料级供料方式硬校验：「己方提供」材料认领数量须 ≥ 委外数量×BOM用量×(1+损耗%)，
-            # 不足 400（提示材料名+需N已领M）；全部材料都标包工包料时无己方提供材料，不强制认领（等价于包工包料）
-            if claims:
-                proc_name = "工序"
-                proc_row = db.query(Process).filter(Process.id == process_id).first()
-                if proc_row:
-                    proc_name = proc_row.name
-                for (mid, batch), mqty in claims.items():
-                    need = round(qty * (1 + loss_pct / 100) * bom_mats.get(mid, 1), 2)
-                    if mqty < need:
-                        mat_row = db.query(Material).filter(Material.id == mid).first()
-                        mat_name = mat_row.name if mat_row else str(mid)
-                        raise HTTPException(400, f"工序「{proc_name}」材料「{mat_name}」己方提供，认领数量不足（需 {need}，已领 {mqty}）")
-            # 批次库存预检
-            stock_invs = {}
-            for (mid, batch), mqty in claims.items():
-                invs = db.query(WarehouseInventory).filter(
-                    WarehouseInventory.material_id == mid,
-                    WarehouseInventory.batch_no == batch,
-                ).order_by(WarehouseInventory.id).all()
-                stock = round(sum((i.quantity or 0) for i in invs), 2)
-                if stock <= 0:
-                    raise HTTPException(400, f"材料批次库存不足（当前 0）")
-                if mqty > stock:
-                    raise HTTPException(400, f"材料批次库存不足（当前 {stock}，需认领 {mqty}）")
-                stock_invs[(mid, batch)] = invs
-            # 数量上限校验（按工序分批追加：同工序累计不超销售数量×（1+损耗））
+            if unit_price <= 0:
+                raise HTTPException(400, "加工单价必须大于0")
+            # 数量上限校验（按工序分批追加）
             proc_already = round(sum((o.quantity or 0) for o in os_orders if o.process_id == process_id), 2)
             if qty + proc_already > (si.quantity or 0) * (1 + loss_pct / 100):
                 raise HTTPException(400, f"工序(第{process_id}道)委外数量超过销售数量×（1+损耗{loss_pct:.0f}%）（还可转 {round((si.quantity or 0) * (1 + loss_pct / 100) - proc_already, 2)}）")
-            # 生成委外订单（一工序一单）
+            # 生成委外订单（一工序一单，供料方式=订单级）
             os_order = OutsourceOrder(
                 outsource_no=generate_doc_no(db, "WO", OutsourceOrder, "outsource_no"),
                 sales_order_id=sales_order_id,
@@ -755,50 +964,6 @@ def create_outsource_from_sales_process(
                 created_by=operator,
             )
             db.add(os_order)
-            db.flush()
-            # 材料认领 → 原料出库（FIFO 扣减批次库存 + 流水）
-            for (mid, batch), mqty in claims.items():
-                invs = stock_invs[(mid, batch)]
-                remaining = mqty
-                total_cost = 0.0
-                for inv in invs:
-                    if remaining <= 0:
-                        break
-                    take = round(min(inv.quantity or 0, remaining), 2)
-                    if take <= 0:
-                        continue
-                    unit_cost = inv.unit_cost or 0
-                    old_qty = inv.quantity
-                    inv.quantity = round(old_qty - take, 2)
-                    inv.total_cost = round(inv.quantity * unit_cost, 2)
-                    total_cost += round(take * unit_cost, 2)
-                    db.add(StockTransaction(
-                        trans_type="material_out",
-                        warehouse_id=inv.warehouse_id,
-                        material_id=mid,
-                        batch_no=batch,
-                        quantity=-take,
-                        unit_cost=unit_cost,
-                        total_amount=round(-take * unit_cost, 2),
-                        before_qty=old_qty,
-                        after_qty=inv.quantity,
-                        before_cost=round(old_qty * unit_cost, 2),
-                        after_cost=round(inv.quantity * unit_cost, 2),
-                        source_doc_type="原料出库",
-                        source_doc_no=os_order.outsource_no,
-                        trans_no=generate_doc_no(db, "ST"),
-                        operator=operator,
-                    ))
-                    remaining = round(remaining - take, 2)
-                # 认领明细（同材料同批次合并一行，成本取该批次加权成本）
-                db.add(OutsourceMaterial(
-                    outsource_order_id=os_order.id,
-                    material_id=mid,
-                    batch_no=batch,
-                    quantity=mqty,
-                    unit_cost=round(total_cost / mqty, 6) if mqty else 0,
-                    supply_type="己方提供",
-                ))
             if si.production_status in (None, "", "未生产"):
                 si.production_status = "已通知外发"
             created.append({

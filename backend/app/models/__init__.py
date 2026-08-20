@@ -28,6 +28,7 @@ from app.models.production import (
     OutsourcingOrder,
     OutsourceOrder,
     OutsourceMaterial,
+    OsClaimMaterial,
     MaterialIssueItem,
 )
 from app.models.sales import (
@@ -66,6 +67,7 @@ __all__ = [
     "OutsourcingOrder",
     "OutsourceOrder",
     "OutsourceMaterial",
+    "OsClaimMaterial",
     "MaterialIssueItem",
     "SalesQuote", "SalesOrder",
     "SalesDelivery", "CustomsDeclaration",
