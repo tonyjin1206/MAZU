@@ -3,10 +3,13 @@
         <!-- 上卡片：库存汇总表（高度可拖） -->
         <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
           <template #header>
-            <div style="display: flex; justify-content: flex-end; gap: 8px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <span style="font-weight: 600">库存汇总（按原料名称）</span>
+              <div style="display: flex; gap: 8px">
               <el-button type="primary" @click="fetchBalance">查询</el-button>
               <el-button @click="resetBalance">重置</el-button>
               <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+              </div>
             </div>
           </template>
           <el-form :inline="true" label-width="70px" style="flex: none">
@@ -35,7 +38,7 @@
             </el-form-item>
           </el-form>
           <div style="flex: 1; min-height: 0; overflow: auto">
-          <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border height="100%" @row-click="openBatchReceipts" :show-summary="true" :summary-method="getBalanceSummary">
+          <el-table ref="balanceTableRef" class="drag-table-balance" :key="columnVersion" :data="balanceList" v-loading="balanceLoading" stripe border height="100%" @row-click="openMaterialReceipts" :show-summary="true" :summary-method="getBalanceSummary">
             <el-table-column v-for="col in visibleBalanceColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -94,16 +97,16 @@
           <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
         </div>
 
-        <!-- 下卡片：批次收货明细（点击上方行穿透） -->
+        <!-- 下卡片：入库明细（每次收货，点击上方汇总行穿透） -->
         <el-card :style="{ flex: '1', minHeight: '140px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
           <template #header>
             <div style="display: flex; align-items: center; justify-content: space-between">
-              <span style="font-weight: 600">批次收货明细</span>
+              <span style="font-weight: 600">入库明细（每次收货）</span>
               <el-button size="small" @click="openReceiptColumnSettings">⚙ 列设置</el-button>
             </div>
           </template>
           <div style="flex: 1; min-height: 0; overflow: auto">
-            <el-table class="drag-table-receipt" :key="receiptColumnVersion" :data="batchReceiptList" v-loading="receiptLoading" stripe border size="small" height="100%" show-summary :summary-method="batchReceiptSummary" empty-text="点击上方行查看该批次的入库记录">
+            <el-table class="drag-table-receipt" :key="receiptColumnVersion" :data="batchReceiptList" v-loading="receiptLoading" stripe border size="small" height="100%" show-summary :summary-method="batchReceiptSummary" empty-text="点击上方汇总行查看该物料的每次入库记录">
               <el-table-column v-for="col in visibleReceiptColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
                 <template #header>
                   <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -152,7 +155,7 @@ const defaultColumns = [
   { prop: 'material_code', label: '物料编码', minWidth: 90, sortable: true, measureKeys: ['material_code', 'product_code'] },
   { prop: 'material_spec', label: '规格', minWidth: 80, sortable: true, measureKeys: ['material_spec', 'product_spec'] },
   { prop: 'material_model', label: '型号', minWidth: 80, sortable: true, measureKeys: ['material_model', 'product_model'] },
-  { prop: 'batch_no', label: '批次号', width: 140, sortable: true },
+  { prop: 'batch_no', label: '批次号', width: 140, sortable: true, hideInSummary: true },
   { prop: 'quantity', label: '数量', width: 100, align: 'right', group: 'snapshot', sortable: true, fmt: 'qty' },
   { prop: 'unit_cost', label: '单价(¥)', width: 90, align: 'right', group: 'snapshot', sortable: true, fmt: 'money' },
   { prop: 'total_cost', label: '金额(¥)', width: 110, align: 'right', group: 'snapshot', sortable: true, fmt: 'money' },
@@ -166,7 +169,8 @@ const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, o
 const { fitTable } = useColumnAutoFit()
 const balanceTableRef = ref(null)
 const transTableRef = ref(null)
-const balanceColumns = computed(() => columns.value.filter(c => balancePeriod.value ? c.group !== 'snapshot' : c.group !== 'period'))
+// 汇总视图不显示批次号（每行=一种物料，批次在下方入库明细里）
+const balanceColumns = computed(() => columns.value.filter(c => !c.hideInSummary && (balancePeriod.value ? c.group !== 'snapshot' : c.group !== 'period')))
 const { visibleColumns: visibleBalanceColumns, allColumns: allBalanceColumns, toggleColumn: toggleBalanceColumn, initColumnVisible: initBalanceVisible } = useColumnCustomize(balanceColumns, STORAGE_KEY)
 
 // ===== 列设置弹窗（注入当前显隐状态）=====
@@ -200,6 +204,7 @@ const defaultReceiptColumns = [
   { prop: 'in_date', label: '入库日期', width: 120, sortable: true },
   { prop: 'warehouse', label: '仓库', width: 120, sortable: true },
   { prop: 'receipt_no', label: '入库单号', minWidth: 140, sortable: true },
+  { prop: 'batch_no', label: '批次号', width: 140, sortable: true },
   { prop: 'quantity', label: '本次数量', width: 110, align: 'right', sortable: true },
 ]
 const { columns: receiptColumns, columnVersion: receiptColumnVersion, initColumnDrag: initReceiptColumnDrag, settingsVisible: receiptSettingsVisible, settingsList: receiptSettingsList, openColumnSettings: openReceiptColumnSettingsRaw, confirmSettings: confirmReceiptSettings } = useColumnDrag(defaultReceiptColumns, RECEIPT_STORAGE_KEY, '.drag-table-receipt .el-table__header-wrapper thead tr')
@@ -220,9 +225,35 @@ const balanceList = ref([])
 const balanceLoading = ref(false)
 const balanceTotal = ref(0)
 const balancePage = ref(1)
-const balancePageSize = ref(100)
+const balancePageSize = ref(200)
 const balanceQuery = reactive({ warehouse_id: null, type: '', code: '', keyword: '', dateRange: null })
 const balancePeriod = ref(false) // 是否显示期间视图
+
+function round2(v) { return Math.round((parseFloat(v) || 0) * 100) / 100 }
+
+// ===== 按原料/产品汇总：上面表每行=一种物料，数量=所有批次合计，金额=合计 =====
+function aggregateBalance(rawRows) {
+  const map = new Map()
+  for (const r of rawRows) {
+    const key = r.material_id ? `mat-${r.material_id}` : r.product_id ? `prod-${r.product_id}` : `row-${r.id}`
+    let agg = map.get(key)
+    if (!agg) {
+      agg = { ...r, batch_no: '', quantity: 0, total_cost: 0, unit_cost: 0 }
+      map.set(key, agg)
+    }
+    // 快照视图取 quantity/total_cost，期间视图取 closing_qty/closing_cost
+    const qty = parseFloat(r.closing_qty ?? r.quantity) || 0
+    const cost = parseFloat(r.closing_cost ?? r.total_cost) || 0
+    agg.quantity = round2((agg.quantity || 0) + qty)
+    agg.total_cost = round2((agg.total_cost || 0) + cost)
+    agg.unit_cost = agg.quantity ? round2(agg.total_cost / agg.quantity) : 0
+    // 期间视图数值列跨仓库合并时同步累加
+    for (const p of ['opening_qty', 'opening_cost', 'period_in_qty', 'period_out_qty', 'period_in_cost', 'period_out_cost', 'closing_qty', 'closing_cost']) {
+      if (r[p] !== undefined && r[p] !== null) agg[p] = round2((agg[p] || 0) + (parseFloat(r[p]) || 0))
+    }
+  }
+  return [...map.values()]
+}
 
 async function fetchBalance() {
   balanceLoading.value = true
@@ -238,15 +269,15 @@ async function fetchBalance() {
       params.end_date = balanceQuery.dateRange[1]
     }
     const res = await request.get('/inventory/balance', { params })
-    balanceList.value = res.items || []
-    balanceTotal.value = res.total || 0
+    balanceList.value = aggregateBalance(res.items || [])
+    balanceTotal.value = balanceList.value.length
   } catch (e) { ElMessage.error('加载失败') } finally {
     balanceLoading.value = false
     nextTick(() => {
       initColumnDrag()
       fitTable(balanceTableRef.value, visibleBalanceColumns, balanceList)
       // 默认选中第一行加载明细
-      if (balanceList.value.length) openBatchReceipts(balanceList.value[0])
+      if (balanceList.value.length) openMaterialReceipts(balanceList.value[0])
     })
   }
 }
@@ -382,16 +413,19 @@ function onSplitterDown(e) {
   e.preventDefault()
 }
 
-// ===== 批次收货明细（点击上方行穿透，常驻下卡片） =====
+// ===== 入库明细（点击上方汇总行 → 该物料/产品每次入库，常驻下卡片） =====
 const batchReceiptList = ref([])
 const receiptLoading = ref(false)
 
-async function openBatchReceipts(row) {
-  if (!row || !row.batch_no) return
+async function openMaterialReceipts(row) {
+  if (!row || (!row.material_id && !row.product_id)) return
   batchReceiptList.value = []
   receiptLoading.value = true
   try {
-    const res = await request.get('/inventory/batch-receipts', { params: { batch_no: row.batch_no } })
+    const params = {}
+    if (row.material_id) params.material_id = row.material_id
+    if (row.product_id) params.product_id = row.product_id
+    const res = await request.get('/inventory/material-receipts', { params })
     batchReceiptList.value = res.items || []
   } catch { batchReceiptList.value = [] } finally {
     receiptLoading.value = false

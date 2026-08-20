@@ -293,6 +293,48 @@ def get_batch_receipts(
     return {"batch_no": batch_no, "items": items}
 
 
+@router.get("/material-receipts", tags=["库存管理"])
+def get_material_receipts(
+    material_id: int | None = Query(None, description="原料ID（与 product_id 二选一）"),
+    product_id: int | None = Query(None, description="产品ID（与 material_id 二选一）"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """入库明细：某原料/产品所有批次的所有入库记录（每次收货一条，按入库日期倒序）
+
+    粒度与 batch-receipts 一致：inv_inventory 每行=一次入库（receipt_no 每次入库唯一，
+    同一批次多次收货分行），故按物料直接查行即可还原"每次入库"。
+    """
+    if not material_id and not product_id:
+        raise HTTPException(400, "请提供 material_id 或 product_id")
+    query = db.query(WarehouseInventory).filter(WarehouseInventory.quantity > 0)
+    if material_id:
+        query = query.filter(WarehouseInventory.material_id == material_id)
+    if product_id:
+        query = query.filter(WarehouseInventory.product_id == product_id)
+    records = query.order_by(WarehouseInventory.in_date.desc(), WarehouseInventory.id.desc()).all()
+
+    items = []
+    for inv in records:
+        wh = db.query(Warehouse).filter(Warehouse.id == inv.warehouse_id).first()
+        mat = db.query(Material).filter(Material.id == inv.material_id).first() if inv.material_id else None
+        prod = db.query(Product).filter(Product.id == inv.product_id).first() if inv.product_id else None
+        items.append({
+            "in_date": str(inv.in_date),
+            "warehouse": wh.name if wh else "",
+            "receipt_no": inv.receipt_no or "",
+            "quantity": round(inv.quantity or 0, 2),
+            "batch_no": inv.batch_no or "",
+            "unit_cost": round(inv.unit_cost or 0, 2),
+            "total_cost": round(inv.total_cost or 0, 2),
+            "material_name": mat.name if mat else "",
+            "material_code": mat.code if mat else "",
+            "product_name": prod.name_cn if prod else "",
+            "product_code": prod.code if prod else "",
+        })
+    return {"material_id": material_id, "product_id": product_id, "total": len(items), "items": items}
+
+
 @router.get("/summary", tags=["库存管理"])
 def get_inventory_summary(
     group_by: str = Query("material", description="group by: material/warehouse/batch"),
