@@ -947,10 +947,16 @@ def _call_llm(messages: list[dict], bot_config: BotConfig, api_key: str,
         "tool_choice": "auto",
     }
     try:
-        with httpx.Client(timeout=120) as client:
-            resp = client.post(f"{base_url}/v1/chat/completions", headers=headers, json=payload)
-            resp.raise_for_status()
-            return resp.json()
+        # 直连优先（trust_env=False 忽略环境代理，不依赖 VPN 开关）；
+        # 直连被拒（网络隔离/需代理）时回退走环境代理重试一次
+        try:
+            with httpx.Client(timeout=120, trust_env=False) as client:
+                resp = client.post(f"{base_url}/v1/chat/completions", headers=headers, json=payload)
+        except (httpx.ConnectError, httpx.ProxyError, httpx.NetworkError):
+            with httpx.Client(timeout=120, trust_env=True) as client:
+                resp = client.post(f"{base_url}/v1/chat/completions", headers=headers, json=payload)
+        resp.raise_for_status()
+        return resp.json()
     except httpx.HTTPStatusError as e:
         import logging
         logger = logging.getLogger("ai_chat")
