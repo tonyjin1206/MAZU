@@ -195,7 +195,7 @@ class OutsourcingOrder(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     outsource_no = Column(String(64), unique=True, nullable=False, comment="委外单号: OS-YYYYMMDD-NNN")
     production_id = Column(Integer, ForeignKey("mo_production.id"), nullable=False, comment="关联生产订单")
-    outsourcer_id = Column(Integer, ForeignKey("fd_outsourcer.id"), nullable=False, comment="委外商")
+    outsourcer_id = Column(Integer, ForeignKey("fd_supplier.id"), nullable=False, comment="委外商(供应商)")
     product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False)
     quantity = Column(Float, nullable=False, comment="加工数量")
     unit_price = Column(Float, default=0, comment="加工单价")

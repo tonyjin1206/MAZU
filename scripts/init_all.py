@@ -26,9 +26,8 @@ print(f"✅ 登录成功\n")
 # ===== 基础档案 =====
 print("═" * 50 + "\n  基础档案\n" + "═" * 50)
 
-api("POST", "/foundation/currencies", {"code":"CNY","name":"人民币","symbol":"¥","is_base":1})
-api("POST", "/foundation/currencies", {"code":"USD","name":"美元","symbol":"$"})
-api("POST", "/foundation/trade-terms", {"code":"FOB","name":"FOB"})
+# 币种：后端启动已预置 7 个常用币种（CNY/USD...），无需重复创建
+api("POST", "/foundation/trade-terms", {"code": "FOB", "name": "FOB"})
 api("POST", "/foundation/warehouses", {"code":"RM","name":"原料仓","wh_type":"原料仓"})
 api("POST", "/foundation/warehouses", {"code":"FG","name":"成品仓","wh_type":"成品仓"})
 api("POST", "/foundation/suppliers", {"code":"S001","name":"深圳电子材料","supplier_type":"原材料","contact_person":"张三","phone":"0755-12345678","tax_id":"91440300123456789X","address":"深圳市南山区科技园"})
@@ -63,7 +62,7 @@ so = api("POST", "/sales/orders", {
 print(f"✅ 销售订单: {so['order_no']} (2个产品)")
 
 appr = api("POST", f"/sales/orders/{so['id']}/approve")
-print(f"✅ 审核完成 → {appr['production_order_nos']}")
+print(f"✅ 审核完成 → {appr.get('message', appr)}")
 
 prods = api("GET", "/production/productions")
 print(f"✅ 生产订单: {prods['items'][0]['order_no']} & {prods['items'][1]['order_no']}")
