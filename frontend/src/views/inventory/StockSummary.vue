@@ -117,7 +117,7 @@ onMounted(async () => {
   try {
     const res = await request.get('/foundation/warehouses', { params: { page_size: 100 } })
     warehouseList.value = res.items || []
-  } catch {}
+  } catch (e) {}
   // 默认本月
   const now = new Date()
   query.dateRange = [`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`, now.toISOString().slice(0,10)]

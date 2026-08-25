@@ -214,7 +214,7 @@ async function fetchList() {
     const res = await request.get('/sales/customs', { params })
     list.value = res.items || []
     total.value = res.total || 0
-  } catch { ElMessage.error('加载失败') }
+  } catch (e) { ElMessage.error('加载失败') }
   finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
@@ -222,21 +222,21 @@ async function fetchOrders() {
   try {
     const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
     orderList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchHsCodes() {
   try {
     const res = await request.get('/foundation/hs-codes', { params: { page: 1, page_size: 200 } })
     hsCodeList.value = res.items || res.list || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchCurrencies() {
   try {
     const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 50 } })
     currencyList.value = res.items || res.list || []
-  } catch {}
+  } catch (e) {}
 }
 
 function onOrderChange(orderId) {
@@ -264,7 +264,7 @@ async function openEdit(row) {
       customs_broker: res.customs_broker, remark: res.remark || '',
     })
     dialogVisible.value = true
-  } catch { ElMessage.error('加载详情失败') }
+  } catch (e) { ElMessage.error('加载详情失败') }
 }
 
 async function submitForm() {
@@ -282,7 +282,7 @@ async function submitForm() {
     dialogVisible.value = false
     fetchList()
   } catch (e) {
-    ElMessage.error('保存失败')
+    ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally { submitting.value = false }
 }
 

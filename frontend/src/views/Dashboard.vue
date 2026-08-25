@@ -272,7 +272,7 @@ async function fetchData() {
     cashIn.value = res.cash_in || []; cashOut.value = res.cash_out || []
     arAging.value = res.ar_aging || []; apAging.value = res.ap_aging || []
     profitList.value = res.profit || []
-  } catch { ElMessage.error('加载驾驶舱数据失败') }
+  } catch (e) { ElMessage.error('加载驾驶舱数据失败') }
 }
 
 function drillCollection(month) { router.push({ path: '/sales/collections', query: { month } }) }
@@ -284,7 +284,7 @@ async function drillAR(row) {
   try {
     const res = await salesApi.ar.list({ page_size: 100 })
     arDetailItems.value = (res.items || []).filter(a => a.customer_name === row.customer_name && a.balance > 0)
-  } catch {}
+  } catch (e) {}
 }
 async function drillAP(row) {
   apDetailTitle.value = `应付账款明细 — ${row.supplier_name}`
@@ -293,20 +293,20 @@ async function drillAP(row) {
   try {
     const res = await purchaseApi.ap.list({ page_size: 100 })
     apDetailItems.value = (res.items || []).filter(a => a.supplier_name === row.supplier_name && a.balance > 0)
-  } catch {}
+  } catch (e) {}
 }
 
 async function drillCollectionMonth(month) {
   netCashMonth.value = month; netCashActiveTab.value = 'collections'; netCashVisible.value = true
-  try { netCashDetail.value = await dashboardApi.netCashDetail(month, month) } catch {}
+  try { netCashDetail.value = await dashboardApi.netCashDetail(month, month) } catch (e) {}
 }
 async function drillPaymentMonth(month) {
   netCashMonth.value = month; netCashActiveTab.value = 'payments'; netCashVisible.value = true
-  try { netCashDetail.value = await dashboardApi.netCashDetail(month, month) } catch {}
+  try { netCashDetail.value = await dashboardApi.netCashDetail(month, month) } catch (e) {}
 }
 async function drillNetCash(month) {
   netCashMonth.value = month; netCashActiveTab.value = 'collections'; netCashVisible.value = true
-  try { netCashDetail.value = await dashboardApi.netCashDetail(month, month) } catch {}
+  try { netCashDetail.value = await dashboardApi.netCashDetail(month, month) } catch (e) {}
 }
 
 function openProfitDetail(row) {
@@ -320,7 +320,7 @@ async function openDeliveryDetail(deliveryNo) {
     const res = await salesApi.deliveries.list({ keyword: deliveryNo, deliveryNo })
     deliveryData.value = (res.items || []).find(d => d.delivery_no === deliveryNo) || null
     deliveryVisible.value = true
-  } catch { ElMessage.error('加载发货单失败') }
+  } catch (e) { ElMessage.error('加载发货单失败') }
 }
 
 async function openOrderDetail(orderNo) {
@@ -328,7 +328,7 @@ async function openOrderDetail(orderNo) {
     const res = await salesApi.orders.list({ keyword: orderNo, orderNo })
     orderData.value = (res.items || []).find(d => d.order_no === orderNo) || null
     orderVisible.value = true
-  } catch { ElMessage.error('加载订单失败') }
+  } catch (e) { ElMessage.error('加载订单失败') }
 }
 
 async function openTransDetail(transNo) {
@@ -336,7 +336,7 @@ async function openTransDetail(transNo) {
     const res = await inventoryApi.transactions({ keyword: transNo, transNo })
     transData.value = (res.items || []).find(d => d.trans_no === transNo) || null
     transVisible.value = true
-  } catch { ElMessage.error('加载流水失败') }
+  } catch (e) { ElMessage.error('加载流水失败') }
 }
 
 async function openInvoiceDetail(invoiceNo) {
@@ -344,7 +344,7 @@ async function openInvoiceDetail(invoiceNo) {
     const res = await salesApi.invoices.list({ keyword: invoiceNo, invoiceNo })
     invoiceData.value = (res.items || []).find(d => d.invoice_no === invoiceNo) || null
     invoiceVisible.value = true
-  } catch { ElMessage.error('加载发票失败') }
+  } catch (e) { ElMessage.error('加载发票失败') }
 }
 
 onMounted(fetchData)

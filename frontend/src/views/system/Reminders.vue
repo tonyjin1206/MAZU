@@ -123,14 +123,14 @@ const rules = {
 
 async function fetchData() {
   loading.value = true
-  try { list.value = await systemConfigApi.reminders.list() || [] } catch { list.value = [] }
+  try { list.value = await systemConfigApi.reminders.list() || [] } catch (e) { list.value = [] }
   loading.value = false
   nextTick(initColumnDrag)
 }
 
 async function fetchMeta() {
-  try { typeList.value = await systemConfigApi.reminders.types() || [] } catch {}
-  try { userList.value = await authApi.listUsers() || [] } catch {}
+  try { typeList.value = await systemConfigApi.reminders.types() || [] } catch (e) {}
+  try { userList.value = await authApi.listUsers() || [] } catch (e) {}
 }
 
 function openCreate() {
@@ -143,7 +143,7 @@ async function toggleEnable(row, val) {
     await systemConfigApi.reminders.update(row.id, { enabled: val ? 1 : 0 })
     row.enabled = val ? 1 : 0
     ElMessage.success(val ? '已启用' : '已停用')
-  } catch {}
+  } catch (e) {}
 }
 
 async function handleSave() {
@@ -159,7 +159,7 @@ async function handleSave() {
     ElMessage.success('已创建')
     dialogVisible.value = false
     fetchData()
-  } catch {}
+  } catch (e) {}
   saving.value = false
 }
 
@@ -169,7 +169,7 @@ async function handleDelete(row) {
     await systemConfigApi.reminders.delete(row.id)
     ElMessage.success('已删除')
     fetchData()
-  } catch {}
+  } catch (e) {}
 }
 
 

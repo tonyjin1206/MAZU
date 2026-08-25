@@ -266,8 +266,16 @@ def process_refund(decl_id: int, data: dict, db: Session = Depends(get_db), curr
         raise HTTPException(404, "申报不存在")
     if d.status != "已申报":
         raise HTTPException(400, "只有已申报状态可以退税")
+    try:
+        amount = float(data.get("amount", 0) or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "退税金额必须为数字")
+    if amount <= 0:
+        raise HTTPException(400, "退税金额必须大于 0")
+    if amount > (d.actual_refund or 0):
+        raise HTTPException(400, f"退税金额不能超过应退税额 ¥{d.actual_refund or 0:,.2f}")
     d.status = "已退税"
-    d.actual_refund_amount = data.get("amount", 0) or 0
+    d.actual_refund_amount = amount
     db.commit()
     return {"message": "退税完成"}
 
@@ -288,10 +296,12 @@ def cancel_refund(decl_id: int, db: Session = Depends(get_db), current_user: Use
 
 @router.delete("/declarations/{decl_id}", tags=["退税管理"])
 def delete_declaration(decl_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """删除退税申报"""
+    """删除退税申报（仅待申报可删；已申报/已退税须先走取消流程）"""
     d = db.query(TaxRefundDeclaration).filter(TaxRefundDeclaration.id == decl_id).first()
     if not d:
         raise HTTPException(404, "申报不存在")
+    if d.status != "待申报":
+        raise HTTPException(400, f"仅待申报状态可删除（当前 {d.status}），请先取消申报/取消退税")
     # 回滚关联进项发票状态
     rows = db.query(TaxRefundDeclarationRow).filter(TaxRefundDeclarationRow.declaration_id == decl_id).all()
     for row in rows:
@@ -393,7 +403,13 @@ def update_declaration_row(decl_id: int, row_id: int, data: dict, db: Session = 
         raise HTTPException(404, "明细行不存在")
     for field in ["product_code", "product_name", "unit", "quantity", "taxable_amount", "tax_rate", "refund_rate"]:
         if field in data:
-            setattr(row, field, data[field])
+            if field in ("quantity", "taxable_amount", "tax_rate", "refund_rate"):
+                try:
+                    setattr(row, field, float(data[field]))
+                except (TypeError, ValueError):
+                    raise HTTPException(400, f"{field} 必须为数字")
+            else:
+                setattr(row, field, data[field])
     row.refundable_amount = round((row.taxable_amount or 0) * (row.refund_rate or 0) / 100, 2)
     db.commit()
     return {"message": "明细行已更新"}

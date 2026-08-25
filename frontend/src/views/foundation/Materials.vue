@@ -182,9 +182,9 @@ const subCategoryOptions = computed(() => {
 })
 function onMainCategoryChange() { form.category_sub = '' }
 async function loadParamOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
-  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch { mainCategoryOptions.value = [] }
-  try { subCategoryOptionsRaw.value = await request.get('/foundation/params/options', { params: { group: 'material_sub_category' } }) || [] } catch { subCategoryOptionsRaw.value = [] }
+  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch (e) { unitOptions.value = [] }
+  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch (e) { mainCategoryOptions.value = [] }
+  try { subCategoryOptionsRaw.value = await request.get('/foundation/params/options', { params: { group: 'material_sub_category' } }) || [] } catch (e) { subCategoryOptionsRaw.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -281,7 +281,7 @@ async function handleSave() {
     dialogVisible.value = false
     fetchData()
   } catch (e) {
-    ElMessage.error('保存失败')
+    ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
     dialogLoading.value = false
   }

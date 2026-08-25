@@ -59,7 +59,7 @@ async function login() {
     try {
       const permRes = await authApi.getMyPermissions()
       localStorage.setItem('permissions', JSON.stringify(permRes.permissions || []))
-    } catch {
+    } catch (e) {
       localStorage.setItem('permissions', '[]')
     }
     ElMessage.success('登录成功')

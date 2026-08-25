@@ -291,7 +291,7 @@ async function loadMaterialTree() {
         sort_order: s.sort_order, remark: s.remark || '',
       })),
     }))
-  } catch { materialTree.value = [] } finally { loading.value = false }
+  } catch (e) { materialTree.value = [] } finally { loading.value = false }
 }
 
 async function loadGroup() {
@@ -303,7 +303,7 @@ async function loadGroup() {
   try {
     const res = await request.get(`/foundation/params/group/${activeGroup.value}`)
     list.value = res.items || []
-  } catch { list.value = [] } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, list) }) }
+  } catch (e) { list.value = [] } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, list) }) }
 }
 
 // ===== 仓库（参数设置内维护，编码自动 WH+流水）=====
@@ -319,7 +319,7 @@ async function loadWarehouses() {
   try {
     const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
     warehouseList.value = res.items || []
-  } catch { warehouseList.value = [] } finally { loading.value = false }
+  } catch (e) { warehouseList.value = [] } finally { loading.value = false }
 }
 
 function nextWarehouseCode() {
@@ -397,7 +397,7 @@ async function loadProcesses() {
   try {
     const res = await request.get('/foundation/processes', { params: { page: 1, page_size: 100 } })
     processList.value = res.items || []
-  } catch { processList.value = [] } finally { loading.value = false }
+  } catch (e) { processList.value = [] } finally { loading.value = false }
 }
 
 function nextProcessCode() {
@@ -464,7 +464,7 @@ async function handleProcessDelete(row) {
 }
 
 async function loadGroups() {
-  try { groups.value = await request.get('/foundation/params/groups') || [] } catch { groups.value = [] }
+  try { groups.value = await request.get('/foundation/params/groups') || [] } catch (e) { groups.value = [] }
   if (!activeGroup.value && groups.value.length) {
     activeGroup.value = groups.value[0]
     loadGroup()
@@ -472,7 +472,7 @@ async function loadGroups() {
 }
 
 async function loadMainCategories() {
-  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch { mainCategoryOptions.value = [] }
+  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch (e) { mainCategoryOptions.value = [] }
 }
 
 async function onTabChange() {
@@ -572,7 +572,7 @@ async function toggleActive(row, v) {
     await request.put(`/foundation/params/${row.id}`, { is_active: v ? 1 : 0 })
     row.is_active = v ? 1 : 0
     ElMessage.success(v ? '已启用' : '已停用')
-  } catch { }
+  } catch (e) { }
 }
 
 function toggleActiveButton(row) {

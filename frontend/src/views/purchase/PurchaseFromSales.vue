@@ -155,7 +155,7 @@ async function fetchData() {
     const res = await request.get('/purchase/sales-to-purchase', { params })
     dataList.value = res.items || []
     total.value = res.total || 0
-  } catch { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
+  } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
 }
 
 function resetSearch() {
@@ -285,7 +285,7 @@ async function searchSuppliers() {
     const res = await request.get('/foundation/suppliers', { params })
     pickerSupplierList.value = res.items || []
     supplierTotal.value = res.total || 0
-  } catch {}
+  } catch (e) {}
 }
 
 function openSupplierPicker(row) {

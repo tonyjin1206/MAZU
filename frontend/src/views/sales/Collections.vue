@@ -131,7 +131,7 @@ import request from '../../api/request'
 const tableRef = ref(null)
 const paymentMethodOptions = ref([])
 async function loadPaymentMethods() {
-  try { paymentMethodOptions.value = await request.get('/foundation/params/options', { params: { group: 'payment_method' } }) || [] } catch { paymentMethodOptions.value = [] }
+  try { paymentMethodOptions.value = await request.get('/foundation/params/options', { params: { group: 'payment_method' } }) || [] } catch (e) { paymentMethodOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -184,7 +184,7 @@ async function fetchList() {
     const res = await request.get('/sales/collections', { params })
     list.value = res.items || []
     total.value = res.total || 0
-  } catch { ElMessage.error('加载失败') }
+  } catch (e) { ElMessage.error('加载失败') }
   finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
@@ -193,7 +193,7 @@ async function openDetail(row) {
     const res = await request.get(`/sales/collections/${row.id}`)
     detail.value = res
     detailVisible.value = true
-  } catch { ElMessage.error('加载详情失败') }
+  } catch (e) { ElMessage.error('加载详情失败') }
 }
 
 function openEdit(row) {
@@ -218,7 +218,7 @@ async function submitEdit() {
     ElMessage.success('修改成功')
     editVisible.value = false
     fetchList()
-  } catch { ElMessage.error('修改失败') }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '修改失败') }
   finally { submitting.value = false }
 }
 

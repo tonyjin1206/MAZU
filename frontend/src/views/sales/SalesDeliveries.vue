@@ -277,7 +277,7 @@ async function loadDeliveries(itemId) {
     const ret = (res.items || []).filter(i => i.is_return).reduce((s, i) => s + (i.quantity || 0), 0)
     returnedTotal.value = ret
     returnMax.value = Math.max(0, (selectedRow.value?.delivered_qty || 0) - ret)
-  } catch { deliveryList.value = [] } finally {
+  } catch (e) { deliveryList.value = [] } finally {
     itemLoading.value = false
     nextTick(() => { initItemDrag(); fitTable(itemTableRef.value, itemColumns.value, deliveryList.value) })
   }
@@ -298,7 +298,7 @@ async function openShipDialog(row) {
     const detail = await request.get(`/sales/orders/${row.order_id}`)
     const it = (detail.items || []).find(i => i.id === row.item_id)
     if (it) shipForm.unit_price = it.unit_price || 0
-  } catch {}
+  } catch (e) {}
   shipVisible.value = true
 }
 
@@ -357,7 +357,7 @@ async function confirmDone(row) {
       `确认「${row.product_name}」已发货完成？\n确认后该产品不能再发货，剩余库存将开放给其他订单。`,
       '确认发货完成', { type: 'warning', confirmButtonText: '确认完成', cancelButtonText: '取消' }
     )
-  } catch { return }
+  } catch (e) { return }
   try {
     await request.post(`/sales/orders/${row.order_id}/items/${row.item_id}/delivery-confirm`, { confirmed: true })
     ElMessage.success('已确认发货完成')
@@ -371,7 +371,7 @@ async function cancelDone(row) {
       `撤销「${row.product_name}」的发货完成确认？\n撤销后可继续发货，并恢复库存锁定。`,
       '撤销确认', { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' }
     )
-  } catch { return }
+  } catch (e) { return }
   try {
     await request.post(`/sales/orders/${row.order_id}/items/${row.item_id}/delivery-confirm`, { confirmed: false })
     ElMessage.success('已撤销确认')

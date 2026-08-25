@@ -327,11 +327,11 @@ async function fetchData() {
     if (searchForm.status) params.status = searchForm.status
     const res = await productionApi.productions.workspace(params)
     list.value = res.items || []
-  } catch {} finally { loading.value = false }
+  } catch (e) {} finally { loading.value = false }
 }
 
 async function loadOptions() {
-  try { warehouseOptions.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch {}
+  try { warehouseOptions.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch (e) {}
 }
 
 // ===== 操作函数（通过 flatRow 反向查找 order 和 process） =====
@@ -358,7 +358,7 @@ async function handleCancelReceiptByRow(row) {
   try {
     const res = await productionApi.productions.listReceipts(o.id)
     cancelReceiptList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 function onCancelReceiptSelect(rows) { cancelReceiptSelected.value = rows }
@@ -467,7 +467,7 @@ async function openBatchPicker(row) {
     }
     recalcBatchPicker()
     batchPickerVisible.value = true
-  } catch { ElMessage.error('获取批次失败') }
+  } catch (e) { ElMessage.error('获取批次失败') }
 }
 
 function confirmBatchPicker() {
@@ -489,7 +489,7 @@ async function openIssue(proc, prod) {
     issueMaterialOptions.value = mats
     issueRows.value = mats.map(m => ({ material_id: m.material_id, _prevMaterialId: m.material_id, planned_qty: m.planned_qty || 0, actual_qty: m.actual_qty || 0, issue_qty: 0, _selectedBatches: null }))
     if (!issueRows.value.length) issueRows.value.push({ material_id: null, _prevMaterialId: null, planned_qty: 0, actual_qty: 0, issue_qty: 0, _selectedBatches: null })
-  } catch {
+  } catch (e) {
     issueMaterialOptions.value = []
     issueRows.value = [{ material_id: null, _prevMaterialId: null, planned_qty: 0, actual_qty: 0, issue_qty: 0, _selectedBatches: null }]
   }
@@ -503,7 +503,7 @@ async function openCancelIssue(proc, prod) {
   try {
     const res = await productionApi.productions.listIssues(prod.id, proc.id)
     cancelIssueList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function doCancelIssue(row) {

@@ -129,9 +129,14 @@ def requisition_to_purchase(req_id: int, data: dict, db: Session = Depends(get_d
     if not supplier_id:
         raise HTTPException(400, "请选择供应商")
 
-    quantity = float(data.get("quantity", r.quantity) or r.quantity)
-    unit_price = float(data.get("unit_price", 0) or 0)
-    tax_rate = float(data.get("tax_rate", 13) or 13)
+    try:
+        quantity = float(data.get("quantity", r.quantity) or r.quantity)
+        unit_price = float(data.get("unit_price", 0) or 0)
+        tax_rate = float(data.get("tax_rate", 13) or 13)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "数量/单价/税率必须为数字")
+    if quantity <= 0:
+        raise HTTPException(400, "采购数量必须大于 0")
     total_amount = unit_price * quantity
     total_amount_excl_tax = round(total_amount / (1 + tax_rate / 100), 2)
     tax_amount = round(total_amount - total_amount_excl_tax, 2)

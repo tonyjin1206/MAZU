@@ -259,7 +259,7 @@ async function fetchList() {
     if (searchForm.dateRange) { params.date_from = searchForm.dateRange[0]; params.date_to = searchForm.dateRange[1] }
     const res = await request.get('/tax-refund/declarations', { params })
     list.value = res.items || []; total.value = res.total || 0
-  } catch { ElMessage.error('加载失败') }
+  } catch (e) { ElMessage.error('加载失败') }
   finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
@@ -267,7 +267,7 @@ async function fetchInvoices() {
   try {
     const res = await request.get('/tax-refund/input-invoices', { params: { page: 1, page_size: 100 } })
     invoiceList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 function openCreate() {
@@ -313,7 +313,7 @@ async function loadDraft(id) {
     const res = await request.get(`/tax-refund/declarations/${id}`)
     currentDecl.value = res
     draftRows.value = (res.rows || []).map(r => ({ ...r, _isNew: false, _pendingDelete: false }))
-  } catch {}
+  } catch (e) {}
 }
 
 function closeEdit() {

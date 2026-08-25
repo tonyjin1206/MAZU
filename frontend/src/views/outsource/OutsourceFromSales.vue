@@ -266,7 +266,7 @@ async function fetchData() {
       if (selectedItem.value) loadDetail(selectedItem.value)
       nextTick(() => { tableRef.value?.setCurrentRow(dataList.value[0] || null) })
     }
-  } catch { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
+  } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
 }
 
 function resetSearch() {
@@ -404,7 +404,7 @@ async function loadDetail(row) {
       supplyType.value = claimsRes.supply_type || '己方提供'
       bomMaterials.value = claimsRes.bom_materials || []
       claims.value = claimsRes.claims || []
-    } catch { supplyType.value = '己方提供'; bomMaterials.value = []; claims.value = [] }
+    } catch (e) { supplyType.value = '己方提供'; bomMaterials.value = []; claims.value = [] }
     initEditors()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载工序信息失败') } finally { loadingDetail.value = false }
 }
@@ -435,7 +435,7 @@ function initEditors() {
 async function onRemoveProcess(proc) {
   try {
     await ElMessageBox.confirm(`确认删除工序「${proc.process_name}」?删除后本次转委外将不生成该工序的委外单,删除工序不影响已认领的原料`, '删除工序', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
-  } catch { return }
+  } catch (e) { return }
   const d = detail.value
   if (!d) return
   d.processes = d.processes.filter(p => p.process_id !== proc.process_id)
@@ -462,7 +462,7 @@ async function searchSuppliers() {
   try {
     const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
     suppliers.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 认领原料（订单级弹窗：BOM全部材料，按仓库总数量认领，不选批次） ==========
@@ -589,7 +589,7 @@ async function submitTransfer() {
   if (!rows.length) { ElMessage.warning('没有待配置的工序'); return }
   try {
     await ElMessageBox.confirm(`将为 ${rows.length} 道工序生成委外订单，是否继续？`, '转委外确认', { type: 'info' })
-  } catch { return }
+  } catch (e) { return }
   submitting.value = true
   try {
     const payload = {

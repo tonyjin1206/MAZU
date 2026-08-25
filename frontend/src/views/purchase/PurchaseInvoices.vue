@@ -197,7 +197,7 @@ async function fetchList() {
     const res = await request.get('/purchase/invoices', { params })
     list.value = res.items || res.list || []
     total.value = res.total || 0
-  } catch {
+  } catch (e) {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
@@ -209,14 +209,14 @@ async function fetchSuppliers() {
   try {
     const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
     supplierList.value = res.items || res.list || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchOrders() {
   try {
     const res = await request.get('/purchase/orders', { params: { page: 1, page_size: 100 } })
     orderList.value = (res.items || []).filter(o => ['已审核', '部分入库', '待开票', '已开票', '部分付款'].includes(o.status) && (o.uninvoiced_amount || 0) > 0)
-  } catch {}
+  } catch (e) {}
 }
 
 function onSupplierChange() {
@@ -301,7 +301,7 @@ async function submitForm() {
     dialogVisible.value = false
     fetchList()
     fetchOrders()
-  } catch {
+  } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
     submitting.value = false

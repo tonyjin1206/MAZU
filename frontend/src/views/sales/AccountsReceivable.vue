@@ -174,7 +174,7 @@ async function fetchData() {
     const res = await request.get('/sales/ar', { params: { page: 1, page_size: 100 } })
     list.value = res.items || []
     total.value = res.total || 0
-  } catch {} finally { loading.value = false; nextTick(initColumnDrag) }
+  } catch (e) {} finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 watch(activeTab, (tab) => { if (tab === 'detail') { if (!cdFilter.value) cdFilter.value = ' '; fetchCD() } })
@@ -254,7 +254,7 @@ async function handleSubmit() {
   try {
     await request.post('/sales/collections', {
       customer_id: form.customer_id,
-      amount, amount_fc: amount, currency_id: 2, exchange_rate: 7.2,
+      amount, amount_fc: amount, currency_id: form.currency_id || 1, exchange_rate: form.exchange_rate || 1,
       collection_date: form.collection_date || new Date().toISOString().slice(0, 10),
       payment_method: form.payment_method, remark: form.remark,
       ar_account_id: form.ar_id,
@@ -283,7 +283,7 @@ async function viewCollection(row) {
     const res = await request.get(`/sales/collections/${row.collection_id}`)
     collectionDetail.value = res
     collectionDetailVisible.value = true
-  } catch {
+  } catch (e) {
     ElMessage.error('加载收款单详情失败')
   }
 }

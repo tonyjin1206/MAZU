@@ -440,7 +440,7 @@ async function loadOrderDetail(orderId) {
   try {
     const res = await request.get(`/purchase/orders/${orderId}`)
     orderDetailList.value = res.items || []
-  } catch {} finally {
+  } catch (e) {} finally {
     itemLoading.value = false
     nextTick(() => {
       initItemColumnDrag()
@@ -525,7 +525,7 @@ async function searchSuppliers() {
     const res = await request.get('/foundation/suppliers', { params })
     pickerSupplierList.value = res.items || []
     supplierTotal.value = res.total || 0
-  } catch {}
+  } catch (e) {}
 }
 
 function openSupplierPicker() {
@@ -572,7 +572,7 @@ async function searchPicker() {
       const res = await request.get('/foundation/materials', { params })
       pickerMaterialList.value = res.items || []
       materialTotal.value = res.total || 0
-    } catch {}
+    } catch (e) {}
   } else {
     try {
       const params = { page: materialPage.value, page_size: materialPageSize.value }
@@ -580,7 +580,7 @@ async function searchPicker() {
       const res = await request.get('/foundation/products', { params })
       pickerProductList.value = res.items || []
       materialTotal.value = res.total || 0
-    } catch {}
+    } catch (e) {}
   }
 }
 
@@ -633,7 +633,7 @@ async function loadSuppliers() {
   try {
     const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
     supplierList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 采购明细去向：转成品库入库 / 转原料库入库 ==========
@@ -663,14 +663,14 @@ async function refreshOrderForm() {
   try {
     const res = await request.get(`/purchase/orders/${orderForm.id}`)
     Object.assign(orderForm, { items: res.items || [], status: res.status })
-  } catch {}
+  } catch (e) {}
 }
 
 async function loadMaterials() {
   try {
     const res = await request.get('/foundation/materials', { params: { page: 1, page_size: 100 } })
     materialList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 新建/编辑/详情 ==========
@@ -697,7 +697,7 @@ async function openEdit(row) {
       tax_rate: res.tax_rate || 13, payment_terms: res.payment_terms || '', remark: res.remark || '',
       items: res.items || [],
     })
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 
@@ -714,7 +714,7 @@ async function openDetail(row) {
       tax_rate: res.tax_rate || 13, payment_terms: res.payment_terms || '', remark: res.remark || '',
       items: res.items || [],
     })
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 

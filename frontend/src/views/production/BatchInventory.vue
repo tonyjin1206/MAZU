@@ -170,7 +170,7 @@ watch(columnVersion, () => {
 
 onMounted(async () => {
   initColumnVisible()
-  try { warehouseList.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch {}
+  try { warehouseList.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch (e) {}
 })
 
 function getBatchSummary({ columns, data }) {

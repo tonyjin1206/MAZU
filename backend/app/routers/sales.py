@@ -36,14 +36,22 @@ def create_quote(data: dict, db: Session = Depends(get_db), current_user: User =
     """创建报价单"""
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import SalesQuote
+    # 类型兜底 + 数量校验（审计 B1）
+    try:
+        quantity = float(data.get("quantity") or 0)
+        unit_price = float(data.get("unit_price") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "数量/单价必须为数字")
+    if quantity <= 0:
+        raise HTTPException(400, "报价数量必须大于 0")
     quote_no = generate_doc_no(db, "QT", SalesQuote, "quote_no")
     quote = SalesQuote(
         quote_no=quote_no,
         customer_id=data["customer_id"],
         product_id=data["product_id"],
-        quantity=data["quantity"],
-        unit_price=data["unit_price"],
-        total_amount=data["quantity"] * data["unit_price"],
+        quantity=quantity,
+        unit_price=unit_price,
+        total_amount=round(quantity * unit_price, 2),
         currency_id=data.get("currency_id"),
         trade_term_id=data.get("trade_term_id"),
         valid_until=data.get("valid_until"),
@@ -94,7 +102,12 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
     from app.models.sales import SalesOrder
     order_no = generate_doc_no(db, "SO", SalesOrder, "order_no")
 
-    exchange_rate = data.get("exchange_rate") or 1
+    try:
+        exchange_rate = float(data.get("exchange_rate") or 1)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "汇率必须为数字")
+    if exchange_rate <= 0:
+        raise HTTPException(400, "汇率必须大于 0")
     # 汇总明细行金额
     items_data = data.get("items", [])
     if not items_data:
@@ -313,6 +326,15 @@ def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_use
         raise HTTPException(404, "订单不存在")
     if order.status != "待审核":
         raise HTTPException(400, "仅待审核状态的订单允许删除")
+    # 下游保护（审计 A4）：有发货/报关/发票/应收/收款的生产外记录禁删
+    for model, col, label in [
+        (SalesDelivery, "order_id", "发货单"),
+        (CustomsDeclaration, "order_id", "报关单"),
+        (SalesInvoice, "order_id", "销售发票"),
+        (AccountsReceivable, "order_id", "应收账款"),
+    ]:
+        if db.query(model).filter(getattr(model, col) == order_id).first():
+            raise HTTPException(400, f"订单 {order.order_no} 已生成{label}，不能删除（请先处理下游单据）")
     db.delete(order)
     db.commit()
     return {"message": "销售订单已删除"}
@@ -359,9 +381,17 @@ def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db),
             )
             db.add(item)
         if "quantity" in item_data:
-            item.quantity = float(item_data["quantity"])
+            try:
+                item.quantity = float(item_data["quantity"])
+            except (TypeError, ValueError):
+                raise HTTPException(400, "明细数量必须为数字")
+            if item.quantity <= 0:
+                raise HTTPException(400, "明细数量必须大于 0")
         if "unit_price" in item_data:
-            item.unit_price = float(item_data["unit_price"])
+            try:
+                item.unit_price = float(item_data["unit_price"])
+            except (TypeError, ValueError):
+                raise HTTPException(400, "明细单价必须为数字")
         if "tax_rate" in item_data:
             item.tax_rate = float(item_data["tax_rate"])
         if "product_id" in item_data and item_data["product_id"]:
@@ -1210,6 +1240,17 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
     if not (item.delivered_qty or 0) > 0:
         raise HTTPException(400, "该产品尚未出库，无法退货（需先通知发货并由库管出库）")
 
+    # 已退税拦截（审计 A6）：发货已报关且退税已申报/已退税，退货会导致退税数据失真
+    shipped_deliveries = db.query(SalesDelivery).filter(
+        SalesDelivery.order_item_id == item.id,
+        SalesDelivery.is_return == 0,
+    ).all()
+    from app.models.sales import CustomsDeclaration
+    for sd in shipped_deliveries:
+        customs = db.query(CustomsDeclaration).filter(CustomsDeclaration.delivery_id == sd.id).first()
+        if customs and customs.refund_status in ("已申报", "已退税", "已退库"):
+            raise HTTPException(400, f"该发货（{sd.delivery_no}）已关联报关单 {customs.customs_no} 且退税{('已' + customs.refund_status[1:] if customs.refund_status.startswith('已') else '已申报')}，不能退货（请先处理报关/退税）")
+
     qty = float(data["quantity"])
     if qty <= 0:
         raise HTTPException(400, "退货数量必须大于0")
@@ -1570,12 +1611,19 @@ def create_customs(data: dict, db: Session = Depends(get_db), current_user: User
     if not order:
         raise HTTPException(404, "订单不存在")
 
+    try:
+        declare_amount = float(data.get("declare_amount") or order.total_amount or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "报关金额必须为数字")
+    if declare_amount <= 0:
+        raise HTTPException(400, "报关金额必须大于 0")
+
     customs = CustomsDeclaration(
         customs_no=data["customs_no"],
         order_id=order.id,
         delivery_id=data.get("delivery_id"),
         hs_code_id=data["hs_code_id"] or order.hs_code_id,
-        declare_amount=data["declare_amount"] or order.total_amount,
+        declare_amount=declare_amount,
         declare_currency=data.get("declare_currency") or order.currency_id,
         declare_date=_parse_date(data.get("declare_date")) or date.today(),
         customs_broker=data.get("customs_broker", ""),
@@ -1670,6 +1718,19 @@ def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user:
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
+    # 下游保护：已进退税申报的报关单禁删（审计 A1）
+    from app.models.tax_refund import TaxRefundDetail, TaxRefundDeclarationRow
+    ref_detail = db.query(TaxRefundDetail).filter(
+        (TaxRefundDetail.customs_id == customs_id)).first()
+    ref_row = db.query(TaxRefundDeclarationRow).filter(
+        TaxRefundDeclarationRow.voucher_no == c.customs_no).first()
+    if ref_detail or ref_row:
+        raise HTTPException(400, f"报关单 {c.customs_no} 已关联退税申报，不能删除（请先在退税管理处理）")
+    # 回退发货单已报关状态
+    if c.delivery_id:
+        delivery = db.query(SalesDelivery).filter(SalesDelivery.id == c.delivery_id).first()
+        if delivery and delivery.status == "已报关":
+            delivery.status = "已发货"
     db.delete(c)
     db.commit()
     return {"message": "报关单已删除"}
@@ -1684,7 +1745,12 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     # 确保金额字段为 float
     for k in ["amount", "amount_fc", "tax_amount", "total_amount"]:
         if k in data and data[k] is not None:
-            data[k] = float(data[k])
+            try:
+                data[k] = float(data[k])
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{k} 必须为数字")
+    if float(data.get("amount") or 0) <= 0:
+        raise HTTPException(400, "开票金额必须大于 0")
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
@@ -1921,7 +1987,12 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
     """收款登记 → 核销应收"""
     for k in ["amount", "amount_fc"]:
         if k in data and data[k] is not None:
-            data[k] = float(data[k])
+            try:
+                data[k] = float(data[k])
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{k} 必须为数字")
+    if float(data.get("amount") or 0) <= 0:
+        raise HTTPException(400, "收款金额必须大于 0")
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import Collection
     coll_no = generate_doc_no(db, "CR", Collection, "collection_no")

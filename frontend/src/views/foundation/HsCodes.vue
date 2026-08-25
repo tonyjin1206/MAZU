@@ -131,7 +131,7 @@ import request from '../../api/request'
 const tableRef = ref(null)
 const unitOptions = ref([])
 async function loadUnitOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
+  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch (e) { unitOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -249,7 +249,7 @@ async function handleDelete(row) {
     ElMessage.success('删除成功')
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败')
   }
 }
 

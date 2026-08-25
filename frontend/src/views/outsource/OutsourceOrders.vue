@@ -187,7 +187,7 @@ async function loadSuppliers() {
   try {
     const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
     supplierList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 维护 ==========
@@ -260,7 +260,7 @@ async function openDetail(row) {
   try {
     const res = await request.get(`/outsource/orders/${row.id}`)
     Object.assign(detailForm, res)
-  } catch {}
+  } catch (e) {}
   detailVisible.value = true
 }
 

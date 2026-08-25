@@ -177,7 +177,7 @@ import request from '../../api/request'
 const tableRef = ref(null)
 const unitOptions = ref([])
 async function loadUnitOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
+  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch (e) { unitOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -228,7 +228,7 @@ async function loadCustomers() {
   try {
     const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 200 } })
     customerOptions.value = res.items || []
-  } catch { customerOptions.value = [] }
+  } catch (e) { customerOptions.value = [] }
 }
 
 async function loadHsCodes() {
@@ -299,7 +299,7 @@ async function openDialog(mode, row = {}) {
     try {
       const detail = await request.get(`/foundation/products/${row.id}`)
       form.customers = (detail.customers || []).map(c => ({ customer_id: c.id }))
-    } catch { /* ignore */ }
+    } catch (e) { /* ignore */ }
   } else {
     form.id = null
     form.name_cn = ''

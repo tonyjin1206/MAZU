@@ -427,7 +427,7 @@ async function openMaterialReceipts(row) {
     if (row.product_id) params.product_id = row.product_id
     const res = await request.get('/inventory/material-receipts', { params })
     batchReceiptList.value = res.items || []
-  } catch { batchReceiptList.value = [] } finally {
+  } catch (e) { batchReceiptList.value = [] } finally {
     receiptLoading.value = false
     nextTick(initReceiptColumnDrag)
   }

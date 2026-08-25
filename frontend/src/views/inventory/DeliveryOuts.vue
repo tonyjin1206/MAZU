@@ -190,7 +190,7 @@ async function openIssueDialog(row) {
   try {
     const res = await request.get('/inventory/available-batches', { params: { product_id: row.product_id, order_id: null } })
     issueBatchList.value = res.items || []
-  } catch { issueBatchList.value = [] }
+  } catch (e) { issueBatchList.value = [] }
   issueVisible.value = true
 }
 

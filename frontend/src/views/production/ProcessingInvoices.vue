@@ -129,7 +129,7 @@ async function openCreate() {
   try {
     const res = await productionApi.productions.processingInvoices.candidates()
     candidates.value = res.items || []
-  } catch {} finally { candLoading.value = false }
+  } catch (e) {} finally { candLoading.value = false }
 }
 
 function openInvoiceForm(row) {

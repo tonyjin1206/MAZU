@@ -285,7 +285,7 @@ async function viewPayment(row) {
     const res = await request.get(`/purchase/payments/${row.payment_id}`)
     paymentDetail.value = res
     paymentDetailVisible.value = true
-  } catch {
+  } catch (e) {
     ElMessage.error('加载付款单详情失败')
   }
 }

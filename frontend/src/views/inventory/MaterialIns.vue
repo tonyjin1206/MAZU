@@ -198,7 +198,7 @@ async function loadWarehouses() {
   try {
     const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
     warehouseList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 入库 ==========
@@ -326,7 +326,7 @@ async function openDetail(row) {
   try {
     const res = await request.get(`/stock-in/${row.id}/records`)
     detailList.value = res.items || []
-  } catch { detailList.value = [] } finally { detailLoading.value = false }
+  } catch (e) { detailList.value = [] } finally { detailLoading.value = false }
 }
 
 function detailSummary({ columns, data }) {

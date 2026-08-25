@@ -480,7 +480,7 @@ async function loadOrderDetail(orderId) {
   try {
     const res = await request.get(`/sales/orders/${orderId}`)
     orderDetailList.value = res.items || []
-  } catch {} finally {
+  } catch (e) {} finally {
     itemLoading.value = false
     nextTick(() => {
       initItemColumnDrag()
@@ -602,7 +602,7 @@ async function fetchData() {
       selectedOrder.value = null
       orderDetailList.value = []
     }
-  } catch {} finally {
+  } catch (e) {} finally {
     loading.value = false
     nextTick(() => {
       initColumnDrag()
@@ -612,16 +612,16 @@ async function fetchData() {
 }
 
 async function loadCustomers() {
-  try { const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } }); customerList.value = res.items || [] } catch {}
+  try { const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } }); customerList.value = res.items || [] } catch (e) {}
 }
 async function loadCurrencies() {
-  try { const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 100 } }); currencyList.value = res.items || [] } catch {}
+  try { const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 100 } }); currencyList.value = res.items || [] } catch (e) {}
 }
 async function loadTradeTerms() {
-  try { const res = await request.get('/foundation/trade-terms', { params: { page: 1, page_size: 100 } }); tradeTermList.value = res.items || [] } catch {}
+  try { const res = await request.get('/foundation/trade-terms', { params: { page: 1, page_size: 100 } }); tradeTermList.value = res.items || [] } catch (e) {}
 }
 async function loadProducts() {
-  try { const res = await request.get('/foundation/products', { params: { page: 1, page_size: 100 } }); productList.value = res.items || [] } catch {}
+  try { const res = await request.get('/foundation/products', { params: { page: 1, page_size: 100 } }); productList.value = res.items || [] } catch (e) {}
 }
 
 // ========== 客户选择弹窗 ==========
@@ -639,7 +639,7 @@ async function searchCustomers() {
     const res = await request.get('/foundation/customers', { params })
     pickerCustomerList.value = res.items || []
     customerTotal.value = res.total || 0
-  } catch {}
+  } catch (e) {}
 }
 
 function openCustomerPicker() {
@@ -681,7 +681,7 @@ async function searchProducts() {
     const res = await request.get('/foundation/products', { params })
     pickerProductList.value = res.items || []
     productTotal.value = res.total || 0
-  } catch {}
+  } catch (e) {}
 }
 
 function openProductPicker(target) {
@@ -736,7 +736,7 @@ async function openDialog(row) {
     const res = await request.get(`/sales/orders/${row.id}`)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 
@@ -814,7 +814,7 @@ async function handleDelete(row) {
     await request.delete(`/sales/orders/${row.id}`)
     ElMessage.success('删除成功')
     fetchData()
-  } catch {}
+  } catch (e) {}
 }
 
 async function openEdit(row) {
@@ -824,7 +824,7 @@ async function openEdit(row) {
     const res = await request.get(`/sales/orders/${row.id}`)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 

@@ -222,12 +222,12 @@ async function loadCountries() {
   try {
     const opts = await request.get('/foundation/params/options', { params: { group: 'country' } }) || []
     countryList.value = opts.map(o => o.label)
-  } catch { countryList.value = [] }
+  } catch (e) { countryList.value = [] }
 }
 // 供应商类型选项（来自参数设置）
 const supplierTypeOptions = ref([])
 async function loadSupplierTypes() {
-  try { supplierTypeOptions.value = await request.get('/foundation/params/options', { params: { group: 'supplier_type' } }) || [] } catch { supplierTypeOptions.value = [] }
+  try { supplierTypeOptions.value = await request.get('/foundation/params/options', { params: { group: 'supplier_type' } }) || [] } catch (e) { supplierTypeOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序，localStorage 记住个人偏好）=====
@@ -407,7 +407,7 @@ async function handleToggle(row) {
     ElMessage.success(`${action}成功`)
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(`${action}失败`)
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || `${action}失败`)
   }
 }
 

@@ -230,23 +230,23 @@ async function fetchIssues() {
   try {
     const res = await productionApi.productions.listIssues(route.params.id)
     issueItems.value = res.items || []
-  } catch { issueItems.value = [] }
+  } catch (e) { issueItems.value = [] }
 }
 
 async function fetchReceipts() {
   try {
     const res = await productionApi.productions.listReceipts(route.params.id)
     receiptItems.value = res.items || []
-  } catch { receiptItems.value = [] }
+  } catch (e) { receiptItems.value = [] }
 }
 
 async function loadOptions() {
-  try { materialOptions.value = (await foundationApi.materials.list({ page_size: 200 })).items || [] } catch {}
+  try { materialOptions.value = (await foundationApi.materials.list({ page_size: 200 })).items || [] } catch (e) {}
   try {
     const res = await foundationApi.processes.list({ page_size: 200 })
     processOptions.value = res.items || []
-  } catch {}
-  try { outsourcerOptions.value = (await foundationApi.outsourcers.select()) || [] } catch {}
+  } catch (e) {}
+  try { outsourcerOptions.value = (await foundationApi.outsourcers.select()) || [] } catch (e) {}
 }
 
 async function saveOrder() {
@@ -295,7 +295,7 @@ async function openMaterialDetail(row) {
     const res = await productionApi.productions.listMaterialIssues(order.id, row.material_id)
     matDetailItems.value = res.items || []
     matDetailSummary.value = res.summary || null
-  } catch {}
+  } catch (e) {}
 }
 
 function addMaterialRow() {

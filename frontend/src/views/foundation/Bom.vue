@@ -86,8 +86,8 @@
           </el-select>
         </el-form-item>
         <el-form-item label="规格"><el-input v-model="form.material_spec" disabled /></el-form-item>
-        <el-form-item label="用量" prop="quantity"><el-input type="number" v-model="form.quantity" :min="0" :precision="4" style="width: 100%" /></el-form-item>
-        <el-form-item label="损耗率(%)" prop="loss_rate"><el-input type="number" v-model="form.loss_rate" :min="0" :max="100" :precision="2" style="width: 100%" /></el-form-item>
+        <el-form-item label="用量" prop="quantity"><el-input-number v-model="form.quantity" :min="0" :precision="4" style="width: 100%" /></el-form-item>
+        <el-form-item label="损耗率(%)" prop="loss_rate"><el-input-number v-model="form.loss_rate" :min="0" :max="100" :precision="2" style="width: 100%" /></el-form-item>
         <el-form-item label="工序" prop="process_id">
           <el-select v-model="form.process_id" placeholder="请选择工序" style="width: 100%">
             <el-option v-for="p in processList" :key="p.id" :label="p.name" :value="p.id" />
@@ -189,7 +189,7 @@ async function fetchProducts() {
       productTableRef.value?.setCurrentRow(productList.value[0] || null)
       onProductSelect(productList.value[0])
     })
-  } catch {} finally { productLoading.value = false }
+  } catch (e) {} finally { productLoading.value = false }
 }
 
 async function fetchBom() {
@@ -198,7 +198,7 @@ async function fetchBom() {
   try {
     const res = await foundationApi.getBomByProduct(selectedProductId.value)
     bomData.value = res.items || res.data || []
-  } catch { ElMessage.error('加载 BOM 失败') } finally { bomLoading.value = false }
+  } catch (e) { ElMessage.error('加载 BOM 失败') } finally { bomLoading.value = false }
 }
 
 function findProcess(id) {
@@ -216,28 +216,28 @@ async function fetchProcessTemplates() {
       const p = findProcess(row.process_id)
       return { ...row, process_code: p?.code || '', process_name: p?.name || '' }
     })
-  } catch { ElMessage.error('加载工艺流程失败') } finally { processLoading.value = false }
+  } catch (e) { ElMessage.error('加载工艺流程失败') } finally { processLoading.value = false }
 }
 
 async function fetchMaterials() {
   try {
     const res = await foundationApi.materials.select('')
     materialList.value = Array.isArray(res) ? res : []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchProcesses() {
   try {
     const res = await foundationApi.processes.select('')
     processList.value = Array.isArray(res) ? res : []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchSupplierList() {
   try {
     const res = await request.get('/foundation/suppliers-select')
     supplierList.value = Array.isArray(res) ? res : []
-  } catch {}
+  } catch (e) {}
 }
 
 function onProductSelect(row) {
@@ -305,7 +305,7 @@ async function saveProcessTemplates() {
     await request.put(`/foundation/products/${selectedProductId.value}/processes`, payload)
     ElMessage.success('保存成功')
     await fetchProcessTemplates()
-  } catch { ElMessage.error('保存失败') } finally { processLoading.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { processLoading.value = false }
 }
 
 function moveProcess(idx, dir) {
@@ -324,7 +324,7 @@ async function handleProcessDelete(row) {
     await ElMessageBox.confirm('确认删除该工序？', '删除确认', { type: 'warning' })
     processData.value = processData.value.filter(x => x !== row)
     saveProcessTemplates()
-  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败') }
 }
 
 function onMaterialChange(id) {
@@ -356,7 +356,7 @@ async function handleSave() {
     ElMessage.success(dialogMode.value === 'create' ? '新增成功' : '更新成功')
     dialogVisible.value = false
     fetchBom()
-  } catch (e) { ElMessage.error('保存失败') } finally { dialogLoading.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { dialogLoading.value = false }
 }
 
 async function handleDelete(row) {
@@ -365,7 +365,7 @@ async function handleDelete(row) {
     await foundationApi.deleteBomItem(row.id)
     ElMessage.success('删除成功')
     fetchBom()
-  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败') }
 }
 
 onMounted(() => { fetchProducts(); fetchMaterials(); fetchProcesses(); fetchSupplierList() })

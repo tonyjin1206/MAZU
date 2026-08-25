@@ -29,7 +29,7 @@ from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionReceipt, MaterialIssueItem,
 )
 from app.models.inventory import (
-    WarehouseInventory, StockTransaction, StockCheckItem,
+    WarehouseInventory, StockTransaction, StockCheckItem, StockInOrder,
 )
 from app.models.tax_refund import TaxRefundInputInvoice
 from app.schemas.foundation import (
@@ -504,6 +504,10 @@ def _has_business_refs(db: Session, model, item_id: int, refs: list) -> str | No
         try:
             exists = db.query(table_name).filter(getattr(table_name, field_name) == item_id).first()
         except Exception:
+            # 审计 A7：引用表查询失败不得静默放行（fail-closed）
+            import logging
+            logging.getLogger("foundation").error(
+                "删除保护引用检查失败: %s.%s", getattr(table_name, "__name__", table_name), field_name)
             continue
         if exists:
             return biz_name
@@ -533,7 +537,7 @@ SUPPLIER_REFS = [
     (TaxRefundInputInvoice, "supplier_id", "进项发票"),
 ]
 
-# 材料被引用的业务表：采购明细/入库明细/BOM/生产物料/发料/库存/流水/盘点
+# 材料被引用的业务表：采购明细/入库明细/BOM/生产物料/发料/库存/流水/盘点/待入库单
 MATERIAL_REFS = [
     (PurchaseOrderItem, "material_id", "采购订单"),
     (PurchaseReceiptItem, "material_id", "采购入库"),
@@ -543,6 +547,7 @@ MATERIAL_REFS = [
     (WarehouseInventory, "material_id", "库存"),
     (StockTransaction, "material_id", "库存流水"),
     (StockCheckItem, "material_id", "盘点单"),
+    (StockInOrder, "material_id", "待入库单"),
 ]
 
 # 产品被引用的业务表：报价/销售明细/发货/BOM/工艺/生产/完工入库/委外/加工费/库存/流水/进项发票
@@ -557,6 +562,7 @@ PRODUCT_REFS = [
     (ProductionReceipt, "product_id", "完工入库"),
     (OutsourcingOrder, "product_id", "委外工单"),
     (ProcessingInvoice, "product_id", "加工费发票"),
+    (StockInOrder, "product_id", "待入库单"),
     (WarehouseInventory, "product_id", "库存"),
     (StockTransaction, "product_id", "库存流水"),
     (StockCheckItem, "product_id", "盘点单"),

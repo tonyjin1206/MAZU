@@ -220,7 +220,7 @@ async function fetchList() {
     const res = await request.get('/sales/invoices', { params })
     list.value = res.items || res.list || []
     total.value = res.total || 0
-  } catch {
+  } catch (e) {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
@@ -232,14 +232,14 @@ async function fetchCustomers() {
   try {
     const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } })
     customerList.value = res.items || res.list || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchOrders() {
   try {
     const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
     orderList.value = (res.items || []).filter(o => (o.uninvoiced_amount || 0) > 0)
-  } catch {}
+  } catch (e) {}
 }
 
 function onCustomerChange() {
@@ -317,8 +317,8 @@ async function submitForm() {
     dialogVisible.value = false
     fetchList()
     fetchOrders()
-  } catch {
-    ElMessage.error('保存失败')
+  } catch (e) {
+    ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
     submitting.value = false
   }

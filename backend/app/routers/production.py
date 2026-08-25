@@ -316,7 +316,12 @@ def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), c
         if req and req.status != "已关闭":
             raise HTTPException(400, f"该生产订单已有关联采购需求（{req.requisition_no}，状态：{req.status}）")
 
-    quantity = float(data.get("quantity", prod.quantity) or prod.quantity)
+    try:
+        quantity = float(data.get("quantity", prod.quantity) or prod.quantity)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "需求数量必须为数字")
+    if quantity <= 0:
+        raise HTTPException(400, "需求数量必须大于 0")
     remark = data.get("remark", "")
 
     from app.utils.batch_no import generate_doc_no
@@ -482,6 +487,14 @@ def delete_production(prod_id: int, db: Session = Depends(get_db), current_user:
         raise HTTPException(404, "生产订单不存在")
     if prod.status != "待排产":
         raise HTTPException(400, "仅待排产状态的订单允许删除")
+    # 下游保护（审计 A5）：已发料/已完工入库/已开加工费发票禁删
+    from app.models.production import MaterialIssueItem, ProductionReceipt, ProcessingInvoice
+    if db.query(MaterialIssueItem).filter(MaterialIssueItem.production_id == prod_id).first():
+        raise HTTPException(400, f"生产订单 {prod.order_no} 已发料，不能删除")
+    if db.query(ProductionReceipt).filter(ProductionReceipt.production_id == prod_id).first():
+        raise HTTPException(400, f"生产订单 {prod.order_no} 已完工入库，不能删除")
+    if db.query(ProcessingInvoice).filter(ProcessingInvoice.production_id == prod_id).first():
+        raise HTTPException(400, f"生产订单 {prod.order_no} 已开加工费发票，不能删除")
     prod_id_sales = prod.sales_order_id
     prod_id_item = prod.sales_order_item_id
     db.delete(prod)
@@ -588,7 +601,12 @@ def issue_material_to_process(
         raise HTTPException(404, "工序不存在")
 
     material_id = data["material_id"]
-    qty = float(data["quantity"])
+    try:
+        qty = float(data["quantity"])
+    except (TypeError, ValueError):
+        raise HTTPException(400, "发料数量必须为数字")
+    if qty <= 0:
+        raise HTTPException(400, "发料数量必须大于 0")
     batch_no = data["batch_no"]
     warehouse_id = data.get("warehouse_id")
 
@@ -948,8 +966,11 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     auto_proc = remaining_proc if qty >= remaining_qty else round(remaining_proc * ratio, 2)
     mc_raw = data.get("material_cost")
     pc_raw = data.get("process_cost")
-    material_cost = auto_mat if mc_raw in (None, "") else float(mc_raw)
-    process_cost = auto_proc if pc_raw in (None, "") else float(pc_raw)
+    try:
+        material_cost = auto_mat if mc_raw in (None, "") else float(mc_raw)
+        process_cost = auto_proc if pc_raw in (None, "") else float(pc_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "转出成本必须为数字")
     if material_cost < 0 or process_cost < 0:
         raise HTTPException(400, "转出成本不能为负数")
 
@@ -1387,15 +1408,20 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
 
 @router.delete("/processing-invoices/{invoice_id}", tags=["生产管理-加工费发票"])
 def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """删除加工费发票（同时删除关联的应付账款）"""
+    """删除加工费发票（同时删除关联的应付账款；已付款禁删）"""
     inv = db.query(ProcessingInvoice).filter(ProcessingInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(404, "发票不存在")
-    # 删除关联应付
-    db.query(AccountsPayable).filter(
+    # 已付款拦截（审计 A3）：付款单已核销应付时删除会导致付款记录孤儿
+    ap = db.query(AccountsPayable).filter(
         AccountsPayable.source_type == "processing_invoice",
         AccountsPayable.source_id == invoice_id,
-    ).delete()
+    ).first()
+    if ap and (ap.paid_amount or 0) > 0:
+        raise HTTPException(400, f"加工费发票 {inv.invoice_no} 已付款 ¥{ap.paid_amount:,.2f}，不能删除（请先撤销付款）")
+    # 删除关联应付
+    if ap:
+        db.delete(ap)
     db.delete(inv)
     db.commit()
     return {"message": "加工费发票已删除"}

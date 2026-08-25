@@ -119,7 +119,7 @@ const rules = {
 
 async function fetchData() {
   loading.value = true
-  try { list.value = await systemConfigApi.wecom.list() || [] } catch { list.value = [] }
+  try { list.value = await systemConfigApi.wecom.list() || [] } catch (e) { list.value = [] }
   loading.value = false
   nextTick(initColumnDrag)
 }
@@ -152,7 +152,7 @@ async function handleSave() {
     }
     dialogVisible.value = false
     fetchData()
-  } catch {}
+  } catch (e) {}
   saving.value = false
 }
 
@@ -162,7 +162,7 @@ async function handleDelete(row) {
     await systemConfigApi.wecom.delete(row.id)
     ElMessage.success('已删除')
     fetchData()
-  } catch {}
+  } catch (e) {}
 }
 
 

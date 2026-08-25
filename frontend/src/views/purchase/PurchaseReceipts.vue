@@ -330,7 +330,7 @@ async function loadReceiptDetail(receiptId) {
   try {
     const res = await request.get(`/purchase/receipts/${receiptId}`)
     receiptDetailList.value = res.items || []
-  } catch {} finally {
+  } catch (e) {} finally {
     itemLoading.value = false
     nextTick(() => {
       initItemColumnDrag()
@@ -408,14 +408,14 @@ async function loadOrders() {
     orderList.value = (res.items || res.list || res.data || []).filter((o) =>
       ['已审核', '部分入库', '待开票'].includes(o.status) && (o.item_count || 0) > 0
     )
-  } catch {}
+  } catch (e) {}
 }
 
 async function loadWarehouses() {
   try {
     const res = await foundationApi.warehouses.list({ page: 1, pageSize: 100 })
     warehouseList.value = res.items || res.list || res.data || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchData() {

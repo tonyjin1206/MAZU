@@ -175,7 +175,7 @@ async function searchMaterial() {
   try {
     const res = await request.get('/foundation/materials-select', { params: { keyword: materialSearch.value, page: 1, page_size: 100 } })
     materialList.value = res || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function pickMaterial(m) {
@@ -193,7 +193,7 @@ async function loadBatches(row) {
   try {
     const res = await request.get('/inventory/available-batches', { params: { material_id: row.material_id } })
     row.batches = (res.items || []).filter(b => b.available > 0)
-  } catch {} finally { row.batchLoading = false }
+  } catch (e) {} finally { row.batchLoading = false }
 }
 
 async function handleSubmit() {
