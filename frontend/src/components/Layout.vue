@@ -33,12 +33,6 @@
           <span>预警提醒设置</span>
         </el-menu-item>
 
-                <!-- 工作台 -->
-        <el-menu-item index="/dashboard" v-if="hasPerm('menu:dashboard')">
-          <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-diagnose"/></svg>
-          <span>工作台</span>
-        </el-menu-item>
-
         <!-- 系统管理 -->
         <el-sub-menu index="system" v-if="hasPerm('menu:system:users') || hasPerm('menu:system:roles') || hasPerm('menu:system:wecom') || hasPerm('menu:system:bot') || hasPerm('menu:system:bot-chat') || hasPerm('menu:system:reminders')">
           <template #title>

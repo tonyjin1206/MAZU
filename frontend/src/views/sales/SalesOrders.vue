@@ -800,7 +800,7 @@ async function handleSubmit() {
 }
 
 async function handleApprove(row) {
-  await ElMessageBox.confirm(`审核订单 ${row.order_no}？审核后将生成生产订单。`, '提示', { type: 'info' })
+  await ElMessageBox.confirm(`审核订单 ${row.order_no}？审核后明细行可转入库（转直采）/转外发（转委外）。`, '提示', { type: 'info' })
   try {
     const res = await request.post(`/sales/orders/${row.id}/approve`)
     ElMessage.success(res.message || '审核成功')
