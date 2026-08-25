@@ -75,7 +75,7 @@
           </el-col>
         </el-row>
         <el-form-item label="API Key" prop="api_key">
-          <el-input v-model="form.api_key" type="password" show-password />
+          <el-input v-model="form.api_key" type="password" show-password :placeholder="isEdit ? '留空则不修改' : '请输入 API Key'" />
         </el-form-item>
         <el-form-item label="API 地址" prop="base_url">
           <el-input v-model="form.base_url" placeholder="留空使用官方地址" />
@@ -135,7 +135,7 @@ const form = reactive({
 })
 const rules = {
   provider: [{ required: true, message: '必选', trigger: 'change' }],
-  api_key: [{ required: true, message: '必填', trigger: 'blur' }],
+  api_key: isEdit.value ? [] : [{ required: true, message: '必填', trigger: 'blur' }],
   model: [{ required: true, message: '必填', trigger: 'blur' }],
 }
 
@@ -163,7 +163,7 @@ function openCreate() {
 function openEdit(row) {
   isEdit.value = true; editId.value = row.id
   Object.assign(form, {
-    provider: row.provider, api_key: row.api_key, base_url: row.base_url || '',
+    provider: row.provider, api_key: '', base_url: row.base_url || '',
     model: row.model, temperature: row.temperature, system_prompt: row.system_prompt || '',
   })
   dialogVisible.value = true
@@ -180,7 +180,9 @@ async function handleSave() {
   saving.value = true
   try {
     if (isEdit.value) {
-      await systemConfigApi.bot.update(editId.value, { ...form })
+      const payload = { ...form }
+      if (!payload.api_key) delete payload.api_key   // 留空不修改
+      await systemConfigApi.bot.update(editId.value, payload)
       ElMessage.success('已更新')
     } else {
       await systemConfigApi.bot.create({ ...form })

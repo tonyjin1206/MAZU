@@ -35,3 +35,12 @@ def decrypt(ciphertext: str) -> str:
         return f.decrypt(ciphertext.encode()).decode()
     except Exception:
         return ciphertext  # 兜底：可能未加密的旧数据
+
+
+def is_ciphertext(val: str) -> bool:
+    """判断字符串是否为 Fernet 密文（gAAAAA 开头 + 合理长度）
+
+    用于更新接口识别「前端回传的旧密文」，避免把密文当明文二次加密。
+    脱敏串（如 gAAA****kDw=）因含 **** 且不以 gAAAAA 开头，不会被误判。
+    """
+    return isinstance(val, str) and val.startswith("gAAAAA") and len(val) > 40
