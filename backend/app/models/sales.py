@@ -115,6 +115,7 @@ class SalesDelivery(Base):
     status = Column(String(16), default="待出库", comment="状态: 待出库/部分出库/已出库/已退货")
     is_return = Column(Integer, default=0, comment="是否退货单: 0正常发货/1退货")
     return_of_delivery_id = Column(Integer, ForeignKey("so_delivery.id"), comment="原发货单ID(退货时)")
+    refund_declared = Column(Integer, default=0, comment="已报税退货标记(负数申报用)")
     remark = Column(Text)
     operator = Column(String(32))
     created_at = Column(DateTime, default=func.now())
@@ -167,6 +168,8 @@ class SalesInvoice(Base):
     tax_amount = Column(Float, default=0, comment="税额")
     total_amount = Column(Float, default=0, comment="价税合计")
     status = Column(String(16), default="已开票", comment="状态: 已开票/已作废")
+    is_red = Column(Integer, default=0, comment="红字标记: 0蓝字/1红字")
+    red_of_invoice_id = Column(Integer, ForeignKey("so_invoice.id"), comment="原发票ID(红字时)")
     remark = Column(Text)
     created_at = Column(DateTime, default=func.now())
 
@@ -190,6 +193,8 @@ class AccountsReceivable(Base):
     balance = Column(Float, default=0, comment="余额")
     due_date = Column(Date, comment="到期日")
     status = Column(String(16), default="未收款", comment="状态: 未收款/部分收款/已收款")
+    is_red = Column(Integer, default=0, comment="红字标记: 0正常/1红字")
+    red_of_ar_id = Column(Integer, ForeignKey("ar_account.id"), comment="原应收ID(红字时)")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -220,4 +225,21 @@ class CollectionAllocation(Base):
     collection_id = Column(Integer, ForeignKey("ar_collection.id"), nullable=False)
     ar_account_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False)
     allocated_amount = Column(Float, default=0, comment="核销金额")
+    created_at = Column(DateTime, default=func.now())
+
+
+class ArAdjustment(Base):
+    """核销转移审计（应收余额调整留痕）"""
+    __tablename__ = "ar_adjustment"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    adjust_no = Column(String(64), comment="调整单号: ADJ-YYYYMMDD-NNN")
+    ar_id = Column(Integer, ForeignKey("ar_account.id"), comment="被调整应收ID")
+    customer_id = Column(Integer, ForeignKey("fd_customer.id"))
+    adjust_type = Column(String(32), comment="类型: transfer_in/transfer_out")
+    amount = Column(Float, default=0, comment="调整金额")
+    old_value = Column(Float, default=0, comment="调整前余额")
+    new_value = Column(Float, default=0, comment="调整后余额")
+    operator = Column(String(32))
+    remark = Column(Text)
     created_at = Column(DateTime, default=func.now())

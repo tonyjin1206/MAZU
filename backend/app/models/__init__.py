@@ -35,7 +35,7 @@ from app.models.sales import (
     SalesQuote, SalesOrder,
     SalesDelivery, CustomsDeclaration,
     SalesInvoice,
-    AccountsReceivable, Collection, CollectionAllocation,
+    AccountsReceivable, Collection, CollectionAllocation, ArAdjustment,
 )
 from app.models.tax_refund import (
     TaxRefundInputInvoice, TaxRefundDeclaration,
@@ -72,7 +72,7 @@ __all__ = [
     "SalesQuote", "SalesOrder",
     "SalesDelivery", "CustomsDeclaration",
     "SalesInvoice",
-    "AccountsReceivable", "Collection", "CollectionAllocation",
+    "AccountsReceivable", "Collection", "CollectionAllocation", "ArAdjustment",
     "TaxRefundInputInvoice", "TaxRefundDeclaration",
     "TaxRefundDetail", "TaxRefundProgress",
     "WecomConfig", "BotConfig", "BotConversation",
