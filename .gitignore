@@ -62,3 +62,12 @@ AI_HANDOVER.md
 
 # 数据库备份
 backend/data/*.bak*
+
+# generated docs (do not commit)
+docs/erp-architecture.html
+docs/mts-mindmap.html
+docs/gen_product_doc.py
+
+# tool config dirs
+.codex/
+.hermes/
