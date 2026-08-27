@@ -39,7 +39,10 @@
                   </template>
                 </el-dropdown>
               </template>
-          <template v-if="col.prop === 'amount'" #default="{ row }">{{ $fm(row.amount) }}</template>
+          <template v-if="col.prop === 'amount'" #default="{ row }">
+            <span :style="{ color: row.amount < 0 ? '#f56c6c' : '' }">{{ $fm(row.amount) }}</span>
+            <el-tag v-if="row.amount < 0" type="danger" size="small" style="margin-left: 4px">退款</el-tag>
+          </template>
           <template v-else-if="col.prop === 'allocated_amount'" #default="{ row }">{{ $fm(row.allocated_amount) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
@@ -69,7 +72,7 @@
         <el-descriptions-item label="收款单号" span="2">{{ detail.collection_no }}</el-descriptions-item>
         <el-descriptions-item label="客户">{{ detail.customer_name }}</el-descriptions-item>
         <el-descriptions-item label="收款日期">{{ detail.collection_date }}</el-descriptions-item>
-        <el-descriptions-item label="金额">{{ $fm(detail.amount) }}</el-descriptions-item>
+        <el-descriptions-item label="金额"><span :style="{ color: detail.amount < 0 ? '#f56c6c' : '', fontWeight: 'bold' }">{{ $fm(detail.amount) }}</span></el-descriptions-item>
         <el-descriptions-item label="外币金额">{{ $fm(detail.amount_fc) }}</el-descriptions-item>
         <el-descriptions-item label="付款方式">{{ detail.payment_method }}</el-descriptions-item>
         <el-descriptions-item label="操作人">{{ detail.operator }}</el-descriptions-item>

@@ -26,7 +26,7 @@
               <template v-else-if="col.prop === 'total_amount'" #default="{ row }">{{ $fm(row.total_amount) }}</template>
               <template v-else-if="col.prop === 'total_collected'" #default="{ row }">{{ $fm(row.total_collected) }}</template>
               <template v-else-if="col.prop === 'balance'" #default="{ row }">
-                <span :style="{ color: row.balance > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.balance) }}</span>
+                <span :style="{ color: row.balance < 0 ? '#f56c6c' : '#67c23a' }">{{ $fm(row.balance) }}</span>
               </template>
             </el-table-column>
           </el-table>
@@ -51,13 +51,17 @@
               <template v-if="col.prop === 'ar_amount'" #default="{ row }">{{ $fm(row.ar_amount) }}</template>
               <template v-else-if="col.prop === 'collected_amount'" #default="{ row }">{{ $fm(row.collected_amount) }}</template>
               <template v-else-if="col.prop === 'balance'" #default="{ row }">
-                <span :style="{ color: (row.ar_amount - row.collected_amount) > 0 ? '#e6a23c' : '#67c23a' }">{{ $fm(row.ar_amount - row.collected_amount) }}</span>
+                <span :style="{ color: (row.ar_amount - row.collected_amount) < 0 ? '#f56c6c' : '#67c23a' }">{{ $fm(row.ar_amount - row.collected_amount) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" align="center" fixed="right">
+            <el-table-column label="操作" width="200" align="center" fixed="right">
               <template #default="{ row }">
-                <el-button v-if="!row.collection_no" type="primary" size="small" @click="openCollectionByDetail(row)">收款</el-button>
-                <el-button v-else type="success" size="small" @click="viewCollection(row)">查看收款单</el-button>
+                <template v-if="row.is_red">
+                  <el-button v-if="(row.ar_amount - row.collected_amount) < -0.01" link type="warning" @click="openRefund(row)">退款</el-button>
+                  <el-button v-if="(row.ar_amount - row.collected_amount) < -0.01" link type="danger" @click="openTransfer(row)">核销转移</el-button>
+                </template>
+                <el-button v-else-if="!row.collection_no" link type="primary" @click="openCollectionByDetail(row)">收款</el-button>
+                <el-button v-else link type="success" @click="viewCollection(row)">查看收款单</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -105,6 +109,53 @@
         <el-table-column label="核销金额" width="120"><template #default="{ row }">{{ $fm(row.allocated_amount) }}</template></el-table-column>
       </el-table>
       <span v-else style="color: #909399">无核销明细</span>
+    </el-dialog>
+
+    <!-- 退款弹窗（红字应收 → 负数收款单）-->
+    <el-dialog v-model="refundVisible" title="退款（红字应收）" width="480px" destroy-on-close>
+      <el-alert type="warning" :closable="false" title="退款将生成负数收款单并核销红字应收（应退余额向 0 靠拢）。实际退款请线下办理。" />
+      <el-form :model="refundForm" label-width="100px">
+        <el-form-item label="红字应收单"><span>{{ refundForm.ar_no }}</span></el-form-item>
+        <el-form-item label="应退余额"><span style="color: #f56c6c; font-weight: bold">{{ $fm(refundForm.max_refund) }}</span></el-form-item>
+        <el-form-item label="退款金额" required>
+          <el-input v-model="refundForm.amount" type="number" :min="0.01" :max="refundForm.max_refund" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="退款方式">
+          <el-select v-model="refundForm.payment_method" style="width: 100%">
+            <el-option label="电汇退款" value="电汇退款" /><el-option label="银行转账" value="银行转账" /><el-option label="现金" value="现金" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="退款日期">
+          <el-date-picker v-model="refundForm.refund_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注"><el-input v-model="refundForm.remark" type="textarea" :rows="2" placeholder="选填" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="refundVisible = false">取消</el-button>
+        <el-button type="warning" :loading="refundLoading" @click="handleRefund">确认退款</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 核销转移弹窗（红字应收 → 同客户正余额应收）-->
+    <el-dialog v-model="transferVisible" title="核销转移" width="520px" destroy-on-close>
+      <el-alert type="warning" :closable="false" title="把红字应收（应退客户）余额转移到同客户其他应收（货款抵扣）。钱不动，纯账务合并。" />
+      <el-form :model="transferForm" label-width="100px">
+        <el-form-item label="源应收（红字）"><span style="color: #f56c6c">{{ transferForm.source_ar_no }}</span></el-form-item>
+        <el-form-item label="可转移余额"><span style="color: #f56c6c; font-weight: bold">{{ $fm(transferForm.max_amount) }}</span></el-form-item>
+        <el-form-item label="目标应收" required>
+          <el-select v-model="transferForm.target_ar_id" filterable placeholder="选择同客户正余额应收" style="width: 100%">
+            <el-option v-for="t in transferTargets" :key="t.id" :label="`${t.ar_no}（余额 ${$fm(t.balance)}）`" :value="t.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="转移金额" required>
+          <el-input v-model="transferForm.amount" type="number" :min="0.01" :max="transferForm.max_amount" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="备注"><el-input v-model="transferForm.remark" type="textarea" :rows="2" placeholder="选填" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="transferVisible = false">取消</el-button>
+        <el-button type="danger" :loading="transferLoading" @click="handleTransfer">确认转移</el-button>
+      </template>
     </el-dialog>
     
     <!-- 列排序弹窗 -->
@@ -297,6 +348,81 @@ watch(columnVersion, () => {
 watch(cdColumnVersion, () => {
   nextTick(() => { initCdColumnDrag() })
 })
+
+// ===== 退款（红字应收 → 负数收款单）=====
+const refundVisible = ref(false)
+const refundLoading = ref(false)
+const refundForm = reactive({ ar_id: null, ar_no: '', customer_id: null, max_refund: 0, amount: 0, payment_method: '电汇退款', refund_date: '', remark: '' })
+
+function openRefund(row) {
+  const balance = (row.ar_amount || 0) - (row.collected_amount || 0)
+  refundForm.ar_id = row.ar_id
+  refundForm.ar_no = row.ar_no || ''
+  refundForm.customer_id = row.customer_id
+  refundForm.max_refund = Math.abs(balance)
+  refundForm.amount = refundForm.max_refund
+  refundForm.payment_method = '电汇退款'
+  refundForm.refund_date = new Date().toISOString().slice(0, 10)
+  refundForm.remark = ''
+  refundVisible.value = true
+}
+
+async function handleRefund() {
+  const amount = parseFloat(refundForm.amount)
+  if (!amount || amount <= 0) { ElMessage.warning('请输入有效退款金额'); return }
+  if (amount > refundForm.max_refund + 0.01) { ElMessage.warning('退款金额不能超过应退余额'); return }
+  refundLoading.value = true
+  try {
+    await request.post('/sales/collections', {
+      customer_id: refundForm.customer_id,
+      amount: -amount, amount_fc: -amount,
+      currency_id: 1, exchange_rate: 1,
+      collection_date: refundForm.refund_date || new Date().toISOString().slice(0, 10),
+      payment_method: refundForm.payment_method, remark: refundForm.remark,
+      ar_account_id: refundForm.ar_id,
+    })
+    ElMessage.success('退款成功，红字应收已核销')
+    refundVisible.value = false; fetchData(); fetchCD()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '退款失败') } finally { refundLoading.value = false }
+}
+
+// ===== 核销转移（红字应收 → 同客户正余额应收）=====
+const transferVisible = ref(false)
+const transferLoading = ref(false)
+const transferTargets = ref([])
+const transferForm = reactive({ source_ar_id: null, source_ar_no: '', max_amount: 0, target_ar_id: null, amount: 0, remark: '' })
+
+async function openTransfer(row) {
+  const balance = (row.ar_amount || 0) - (row.collected_amount || 0)
+  transferForm.source_ar_id = row.ar_id
+  transferForm.source_ar_no = row.ar_no || ''
+  transferForm.max_amount = Math.abs(balance)
+  transferForm.target_ar_id = null
+  transferForm.amount = transferForm.max_amount
+  transferForm.remark = ''
+  transferVisible.value = true
+  try {
+    const res = await request.get('/sales/ar', { params: { page: 1, page_size: 100 } })
+    transferTargets.value = (res.items || []).filter(t => t.customer_id === row.customer_id && (t.balance || 0) > 0.01 && t.id !== row.ar_id)
+  } catch { transferTargets.value = [] }
+}
+
+async function handleTransfer() {
+  const amount = parseFloat(transferForm.amount)
+  if (!transferForm.target_ar_id) { ElMessage.warning('请选择目标应收'); return }
+  if (!amount || amount <= 0) { ElMessage.warning('请输入有效转移金额'); return }
+  if (amount > transferForm.max_amount + 0.01) { ElMessage.warning('转移金额超过可转移余额'); return }
+  transferLoading.value = true
+  try {
+    const res = await request.post('/sales/ar/transfer', {
+      source_ar_id: transferForm.source_ar_id,
+      target_ar_id: transferForm.target_ar_id,
+      amount, remark: transferForm.remark,
+    })
+    ElMessage.success(res.message || '核销转移成功')
+    transferVisible.value = false; fetchData(); fetchCD()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '核销转移失败') } finally { transferLoading.value = false }
+}
 </script>
 
 <style scoped>

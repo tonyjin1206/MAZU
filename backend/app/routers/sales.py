@@ -2190,6 +2190,7 @@ def list_ar_collection_detail(db: Session = Depends(get_db)):
             "collection_no": coll.collection_no if coll else "",
             "collection_id": coll.id if coll else None,
             "collected_amount": ca.allocated_amount if ca else 0,
+            "is_red": getattr(ar, "is_red", 0) or 0,
         })
     result.sort(key=lambda r: r["ar_date"])
     return {"items": result}

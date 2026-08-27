@@ -59,6 +59,7 @@ export const salesApi = {
     issue: (id, data) => request.post(`/sales/deliveries/${id}/issue`, data),
     outs: (params) => request.get('/sales/deliveries/outs', { params }),
     return: (id, data) => request.post(`/sales/deliveries/${id}/return`, data),
+    returnCandidates: (params) => request.get('/sales/deliveries/return-candidates', { params }),
   },
   customs: {
     list: (params) => request.get('/sales/customs', { params }),
@@ -76,6 +77,8 @@ export const salesApi = {
   ar: {
     list: (params) => request.get('/sales/ar', { params }),
     collectionDetail: (params) => request.get('/sales/ar/collection-detail', { params }),
+    transfer: (data) => request.post('/sales/ar/transfer', data),
+    cancelTransfer: (adjId) => request.post(`/sales/ar/transfer/${adjId}/cancel`),
   },
   collections: {
     list: (params) => request.get('/sales/collections', { params }),
@@ -156,6 +159,8 @@ export const taxRefundApi = {
     addRow: (declId, data) => request.post(`/tax-refund/declarations/${declId}/rows`, data),
     updateRow: (declId, rowId, data) => request.put(`/tax-refund/declarations/${declId}/rows/${rowId}`, data),
     deleteRow: (declId, rowId) => request.delete(`/tax-refund/declarations/${declId}/rows/${rowId}`),
+    returnCandidates: (declId) => request.get(`/tax-refund/declarations/${declId}/return-candidates`),
+    returnAdjustments: (declId, data) => request.post(`/tax-refund/declarations/${declId}/return-adjustments`, data),
   },
   calculate: (data) => request.post('/tax-refund/calculate', data),
   customsForRefund: (params) => request.get('/tax-refund/customs-for-refund', { params }),

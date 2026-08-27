@@ -337,14 +337,25 @@ async function handleReturnSubmit() {
   if (!selectedRow.value || !returnForm.batch_no) { ElMessage.warning('请选择批次'); return }
   returnSubmitting.value = true
   try {
-    await request.post('/sales/deliveries/return', {
+    const res = await request.post('/sales/deliveries/return', {
       order_item_id: selectedRow.value.item_id,
       batch_no: returnForm.batch_no,
       quantity: returnForm.quantity,
       delivery_date: returnForm.return_date,
       remark: returnForm.remark,
     })
-    ElMessage.success('退货成功，库存已加回')
+    let msg = res.message || '退货成功，库存已加回'
+    if (res.invoice_status) {
+      const st = res.invoice_status
+      if (st.invoiced_amount > 0) {
+        let invMsg = `已开票 ¥${st.invoiced_amount.toFixed(2)}`
+        if (st.red_reversed_amount > 0) invMsg += `（已红冲 ¥${st.red_reversed_amount.toFixed(2)}）`
+        if (st.return_amount > 0) invMsg += `，本次退货 ¥${st.return_amount.toFixed(2)}`
+        invMsg += '。若已开票请同步红冲发票'
+        msg += `\n${invMsg}`
+      }
+    }
+    ElMessage.success(msg)
     returnVisible.value = false
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退货失败') } finally { returnSubmitting.value = false }
