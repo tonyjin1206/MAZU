@@ -229,17 +229,14 @@ class CollectionAllocation(Base):
 
 
 class ArAdjustment(Base):
-    """核销转移审计（应收余额调整留痕）"""
+    """核销转移审计（红字应收→同客户正余额应收，无收款单参与）
+    2026-08-27 定案：改用 AO 双字段语义（source_ar_id 源红字应收 / target_ar_id 目标正余额应收）"""
     __tablename__ = "ar_adjustment"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    adjust_no = Column(String(64), comment="调整单号: ADJ-YYYYMMDD-NNN")
-    ar_id = Column(Integer, ForeignKey("ar_account.id"), comment="被调整应收ID")
-    customer_id = Column(Integer, ForeignKey("fd_customer.id"))
-    adjust_type = Column(String(32), comment="类型: transfer_in/transfer_out")
-    amount = Column(Float, default=0, comment="调整金额")
-    old_value = Column(Float, default=0, comment="调整前余额")
-    new_value = Column(Float, default=0, comment="调整后余额")
-    operator = Column(String(32))
+    source_ar_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False, comment="源应收(红字应收,负余额)")
+    target_ar_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False, comment="目标应收(同客户,正余额)")
+    amount = Column(Float, default=0, comment="转移金额")
     remark = Column(Text)
+    operator = Column(String(32))
     created_at = Column(DateTime, default=func.now())

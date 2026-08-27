@@ -20,7 +20,7 @@ from app.models.sales import (
     SalesQuote, SalesOrder, SalesOrderItem,
     SalesDelivery, CustomsDeclaration,
     SalesInvoice,
-    AccountsReceivable, Collection, CollectionAllocation,
+    AccountsReceivable, Collection, CollectionAllocation, ArAdjustment,
 )
 from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder
 from app.utils.auth import get_current_user, require_permission
@@ -1276,6 +1276,18 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
     # 生成退货发货单（红字单：is_return=1）
     delivery_no = generate_doc_no(db, "SD", SalesDelivery, "delivery_no")
     src = shipped[0]
+    # 报关退税状态 → 标记已报税（负数申报用）。已申报/已退税在上方已拦截，此处为待申报/未报关。
+    from app.models.sales import CustomsDeclaration
+    _rd_customs = db.query(CustomsDeclaration).filter(CustomsDeclaration.delivery_id == src.id).first()
+    _refund_declared = 0
+    _refund_warning = ""
+    if _rd_customs:
+        if _rd_customs.refund_status in ("已申报", "审核中", "审核通过", "已退税", "已退库"):
+            _refund_declared = 1
+            _refund_warning = ("该发货单关联报关单退税已申报：退税数据冻结不动，本次退货将在次月申报时自动带出做负数申报（发票红冲不受影响）")
+        elif _rd_customs.refund_status == "待申报":
+            _refund_warning = "该发货单关联报关单退税待申报，退货后请同步更新申报明细"
+
     ret = SalesDelivery(
         delivery_no=delivery_no,
         order_id=item.order_id,
@@ -1292,6 +1304,7 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
         status="已退货",
         is_return=1,
         return_of_delivery_id=src.id,
+        refund_declared=_refund_declared,
     )
     db.add(ret)
     db.flush()
@@ -1356,7 +1369,27 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
         item.delivery_confirmed = 0
     _update_order_delivery_status(item.order)
     db.commit()
-    return {"id": ret.id, "delivery_no": delivery_no, "message": "退货成功，库存已加回"}
+
+    # 订单发票状态提示（操作员判断是否需要全额红冲发票 / 补开新票）
+    msg = "退货成功，库存已加回"
+    if _refund_warning:
+        msg += f"。{_refund_warning}"
+    invoiced = db.query(sa_func.coalesce(sa_func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.order_id == item.order_id,
+        SalesInvoice.is_red == 0,
+    ).scalar() or 0
+    red_invoiced = db.query(sa_func.coalesce(sa_func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.order_id == item.order_id,
+        SalesInvoice.is_red == 1,
+    ).scalar() or 0
+    return {
+        "id": ret.id, "delivery_no": delivery_no, "message": msg,
+        "invoice_status": {
+            "invoiced_amount": round(float(invoiced), 2),
+            "red_reversed_amount": round(abs(float(red_invoiced)), 2),
+            "return_amount": round(qty * (item.unit_price or 0), 2),
+        },
+    }
 
 
 @router.post("/deliveries/{delivery_id}/issue-return", tags=["销售管理"])
@@ -1740,7 +1773,11 @@ def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user:
 
 @router.post("/invoices", tags=["销售管理"])
 def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """开票 → 自动生成应收"""
+    """开票 → 自动生成应收；支持红字发票手工录入（red_of_invoice_id）
+
+    红字录入：发票号手填（客户开票系统生成），金额强制 = 原票全额负数，
+    原票标记已红冲，自动生成等额红字应收。蓝字开票有未开票金额上限校验。
+    """
     order_id = data.get("order_id") or data.get("sales_order_id")
     # 确保金额字段为 float
     for k in ["amount", "amount_fc", "tax_amount", "total_amount"]:
@@ -1749,11 +1786,86 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
                 data[k] = float(data[k])
             except (TypeError, ValueError):
                 raise HTTPException(400, f"{k} 必须为数字")
-    if float(data.get("amount") or 0) <= 0:
-        raise HTTPException(400, "开票金额必须大于 0")
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
+
+    red_of_id = data.get("red_of_invoice_id")
+    if red_of_id:
+        # ===== 红字发票（手工录入，全额红冲） =====
+        src = db.query(SalesInvoice).filter(SalesInvoice.id == red_of_id).first()
+        if not src:
+            raise HTTPException(404, "被红冲的原发票不存在")
+        if src.is_red:
+            raise HTTPException(400, "红字发票不能再次红冲")
+        if src.status == "已红冲":
+            raise HTTPException(400, f"原发票 {src.invoice_no} 已红冲，不能重复红冲")
+        # 金额必须 = 原票全额负数（不允许手工干预金额）
+        for k, label in [("total_amount", "价税合计"), ("amount", "不含税金额"), ("tax_amount", "税额")]:
+            diff = abs((data.get(k) or 0) + (getattr(src, k) or 0))
+            if diff > 0.01:
+                raise HTTPException(400, f"红字发票{label}必须等于原发票全额负数（{label}应为 {-(getattr(src, k) or 0):.2f}）")
+
+        invoice = SalesInvoice(
+            invoice_no=data["invoice_no"],
+            order_id=order.id,
+            customer_id=order.customer_id,
+            invoice_date=_parse_date(data.get("invoice_date")) or date.today(),
+            invoice_type=data.get("invoice_type", src.invoice_type or "出口发票"),
+            amount=data.get("amount", 0),
+            amount_fc=data.get("amount_fc", data.get("amount", 0)),
+            tax_rate=data.get("tax_rate", 13),
+            tax_amount=data.get("tax_amount", 0),
+            total_amount=data.get("total_amount", 0),
+            currency_id=order.currency_id,
+            remark=data.get("remark", ""),
+            is_red=1,
+            red_of_invoice_id=src.id,
+        )
+        db.add(invoice)
+        db.flush()
+        # 原发票标记已红冲
+        src.status = "已红冲"
+
+        # 生成红字应收（等额负数，关联原应收）
+        src_ar = db.query(AccountsReceivable).filter(
+            AccountsReceivable.source_type == "sales_invoice",
+            AccountsReceivable.source_id == src.id,
+        ).first()
+        customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
+        due_days = customer.account_period if customer else 30
+        due_date = (invoice.invoice_date or date.today()) + timedelta(days=due_days)
+        ar_no_str = generate_doc_no(db, "AR", AccountsReceivable, "ar_no")
+        ar = AccountsReceivable(
+            ar_no=ar_no_str,
+            source_type="sales_invoice",
+            source_id=invoice.id,
+            customer_id=order.customer_id,
+            amount=data.get("total_amount") or data["amount"],
+            amount_fc=data.get("amount_fc", data.get("total_amount", data["amount"])),
+            currency_id=order.currency_id,
+            collected_amount=0,
+            balance=data.get("total_amount") or data["amount"],
+            due_date=due_date,
+            status="未收款",
+            is_red=1,
+            red_of_ar_id=src_ar.id if src_ar else None,
+        )
+        db.add(ar)
+        db.commit()
+        return {"id": invoice.id, "invoice_no": data["invoice_no"], "ar_no": ar_no_str,
+                "message": "红字发票已登记，原发票已红冲，红字应收已生成"}
+
+    # ===== 蓝字发票 =====
+    if float(data.get("amount") or 0) <= 0:
+        raise HTTPException(400, "开票金额必须大于 0")
+    # 校验：开票金额 ≤ 未开票金额（SUM 含红字发票负数，全额红冲后额度自动返还）
+    invoiced = db.query(sa_func.coalesce(sa_func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.order_id == order.id).scalar() or 0
+    uninvoiced = max(0, (order.total_amount or 0) - float(invoiced))
+    new_total = data.get("total_amount") or data["amount"] or 0
+    if new_total > uninvoiced + 0.01:
+        raise HTTPException(400, f"开票金额 {new_total:.2f} 超过未开票金额 {uninvoiced:.2f}，请先红冲或调整开票金额")
 
     invoice = SalesInvoice(
         invoice_no=data["invoice_no"],
@@ -1776,8 +1888,6 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
     due_days = customer.account_period if customer else 30
     due_date = (invoice.invoice_date or date.today()) + timedelta(days=due_days)
-    from app.utils.batch_no import generate_doc_no
-    from app.models.sales import AccountsReceivable
     ar_no_str = generate_doc_no(db, "AR", AccountsReceivable, "ar_no")
     ar = AccountsReceivable(
         ar_no=ar_no_str,
@@ -1837,6 +1947,11 @@ def list_sales_invoices(
     for inv in items:
         order = db.query(SalesOrder).filter(SalesOrder.id == inv.order_id).first() if inv.order_id else None
         customer = db.query(Customer).filter(Customer.id == inv.customer_id).first() if inv.customer_id else None
+        # 红字原票号
+        red_of_no = ""
+        if getattr(inv, "red_of_invoice_id", None):
+            src = db.query(SalesInvoice).filter(SalesInvoice.id == inv.red_of_invoice_id).first()
+            red_of_no = src.invoice_no if src else ""
         result.append({
             "id": inv.id, "invoice_no": inv.invoice_no,
             "customer_id": inv.customer_id,
@@ -1848,6 +1963,9 @@ def list_sales_invoices(
             "total_amount": (inv.amount or 0) + (inv.tax_amount or 0),
             "invoice_date": str(inv.invoice_date) if inv.invoice_date else "",
             "status": inv.status, "remark": inv.remark or "",
+            "is_red": getattr(inv, "is_red", 0) or 0,
+            "red_of_invoice_id": getattr(inv, "red_of_invoice_id", None),
+            "red_of_invoice_no": red_of_no,
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
@@ -1861,6 +1979,8 @@ def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_
     inv = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(404, "发票不存在")
+    if getattr(inv, "is_red", 0):
+        raise HTTPException(400, "红字发票不可修改")
     
     # 已收款的发票禁止改金额（先退收款单，保证应收一致）
     ar0 = db.query(AccountsReceivable).filter(
@@ -1895,11 +2015,16 @@ def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_
 
 @router.delete("/invoices/{invoice_id}", tags=["销售管理"])
 def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """删除销售发票（同步删除应收单、回滚订单已开票金额）"""
+    """删除销售发票（同步删除应收单、回滚订单已开票金额）
+    红字票禁删；已红冲的蓝字票禁删（需先删红字票）。"""
     inv = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(404, "发票不存在")
-    
+    if getattr(inv, "is_red", 0):
+        raise HTTPException(400, "红字发票不可删除（红冲审计轨迹需保留）")
+    if inv.status == "已红冲":
+        raise HTTPException(400, f"原发票 {inv.invoice_no} 已红冲，需先删除对应红字发票")
+
     # 删除对应的应收单
     ar = db.query(AccountsReceivable).filter(
         AccountsReceivable.source_type == "sales_invoice",
@@ -1939,6 +2064,11 @@ def list_ar(
             inv = db.query(SalesInvoice).filter(SalesInvoice.id == ar.source_id).first()
             if inv:
                 invoice_date = str(inv.invoice_date) if inv.invoice_date else ""
+        # 红字原应收号
+        red_of_no = ""
+        if getattr(ar, "red_of_ar_id", None):
+            src_ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == ar.red_of_ar_id).first()
+            red_of_no = src_ar.ar_no if src_ar else ""
         result.append({
             "id": ar.id, "ar_no": ar.ar_no or "",
             "source_type": ar.source_type,
@@ -1951,8 +2081,91 @@ def list_ar(
             "payment_terms": payment_terms,
             "account_period": account_period,
             "collection_id": ar.source_id if ar.source_type == "sales_collection" else None,
+            "is_red": getattr(ar, "is_red", 0) or 0,
+            "red_of_ar_id": getattr(ar, "red_of_ar_id", None),
+            "red_of_ar_no": red_of_no,
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
+
+
+@router.post("/ar/transfer", tags=["销售管理"])
+def transfer_ar(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """核销转移：红字应收负余额 → 同客户正余额应收（账务清理，无收款单参与）
+
+    body: {"source_ar_id": 1, "target_ar_id": 2, "amount": 4000, "remark": "..."}
+    账务：source 已退增加（collected 向负）；target 视同已收（collected 增加），
+          balance = amount - collected 公式两端保持成立。
+    """
+    source_ar_id = data.get("source_ar_id")
+    target_ar_id = data.get("target_ar_id")
+    amount = float(data.get("amount") or 0)
+    if not source_ar_id or not target_ar_id:
+        raise HTTPException(400, "source_ar_id / target_ar_id 必填")
+    if source_ar_id == target_ar_id:
+        raise HTTPException(400, "源与目标不能是同一张应收")
+    if amount <= 0:
+        raise HTTPException(400, "转移金额必须大于 0")
+
+    source = db.query(AccountsReceivable).filter(AccountsReceivable.id == source_ar_id).first()
+    target = db.query(AccountsReceivable).filter(AccountsReceivable.id == target_ar_id).first()
+    if not source:
+        raise HTTPException(404, "源应收不存在")
+    if not target:
+        raise HTTPException(404, "目标应收不存在")
+    if not source.is_red:
+        raise HTTPException(400, "源应收必须是红字应收（负数余额）")
+    if (source.balance or 0) >= 0:
+        raise HTTPException(400, "源应收无负余额可转移")
+    if source.customer_id != target.customer_id:
+        raise HTTPException(400, "跨客户核销转移禁止（三角债需线下处理）")
+    if (target.balance or 0) <= 0:
+        raise HTTPException(400, "目标应收余额必须为正")
+    max_amt = min(abs(source.balance), target.balance)
+    if amount > max_amt + 0.01:
+        raise HTTPException(400, f"转移金额 {amount:.2f} 超过可转移上限 {max_amt:.2f}")
+
+    # 账务：source 已退增加（collected 向负）；target 视同已收（collected 增加）
+    source.collected_amount = (source.collected_amount or 0) - amount
+    target.collected_amount = (target.collected_amount or 0) + amount
+    source.balance = source.amount - source.collected_amount
+    target.balance = target.amount - target.collected_amount
+    source.status = "已收款" if abs(source.balance or 0) < 0.01 else ("部分收款" if (source.collected_amount or 0) != 0 else "未收款")
+    target.status = "已收款" if abs(target.balance or 0) < 0.01 else ("部分收款" if (target.collected_amount or 0) != 0 else "未收款")
+
+    adj = ArAdjustment(
+        source_ar_id=source.id, target_ar_id=target.id, amount=amount,
+        remark=data.get("remark", ""),
+        operator=current_user.display_name or current_user.username,
+    )
+    db.add(adj)
+    db.commit()
+    return {"id": adj.id, "source_ar_no": source.ar_no or "", "target_ar_no": target.ar_no or "",
+            "amount": amount, "message": f"核销转移成功：{source.ar_no} → {target.ar_no}（{amount:.2f}）"}
+
+
+@router.post("/ar/transfer/{adj_id}/cancel", tags=["销售管理"])
+def cancel_transfer_ar(adj_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """撤销核销转移 — 回滚转移账务（source 已退回加、target 已收回减）并删除调整记录"""
+    adj = db.query(ArAdjustment).filter(ArAdjustment.id == adj_id).first()
+    if not adj:
+        raise HTTPException(404, "核销转移记录不存在")
+    source = db.query(AccountsReceivable).filter(AccountsReceivable.id == adj.source_ar_id).first()
+    target = db.query(AccountsReceivable).filter(AccountsReceivable.id == adj.target_ar_id).first()
+    if not source or not target:
+        raise HTTPException(400, "关联应收记录不存在，无法撤销")
+    amt = adj.amount or 0
+    if (target.collected_amount or 0) < amt - 0.01:
+        raise HTTPException(400, f"目标应收已收 {target.collected_amount:.2f} 不足回退 {amt:.2f}，无法撤销（先撤销后续收款）")
+    # 回滚账务：balance = amount - collected 两端公式恢复
+    source.collected_amount = (source.collected_amount or 0) + amt
+    target.collected_amount = (target.collected_amount or 0) - amt
+    source.balance = source.amount - source.collected_amount
+    target.balance = target.amount - target.collected_amount
+    source.status = "已收款" if abs(source.balance or 0) < 0.01 else ("部分收款" if (source.collected_amount or 0) != 0 else "未收款")
+    target.status = "已收款" if abs(target.balance or 0) < 0.01 else ("部分收款" if (target.collected_amount or 0) != 0 else "未收款")
+    db.delete(adj)
+    db.commit()
+    return {"message": f"已撤销核销转移：{source.ar_no} → {target.ar_no}（{amt:.2f}）"}
 
 
 @router.get("/ar/collection-detail", tags=["销售管理"])
@@ -1984,15 +2197,16 @@ def list_ar_collection_detail(db: Session = Depends(get_db)):
 
 @router.post("/collections", tags=["销售管理"])
 def create_collection(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """收款登记 → 核销应收"""
+    """收款登记 → 核销应收；amount<0 = 退款登记（核销红字应收，负余额向 0 靠拢）"""
+    amount = float(data.get("amount") or 0)
     for k in ["amount", "amount_fc"]:
         if k in data and data[k] is not None:
             try:
                 data[k] = float(data[k])
             except (TypeError, ValueError):
                 raise HTTPException(400, f"{k} 必须为数字")
-    if float(data.get("amount") or 0) <= 0:
-        raise HTTPException(400, "收款金额必须大于 0")
+    if amount == 0:
+        raise HTTPException(400, "收款金额不能为 0")
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import Collection
     coll_no = generate_doc_no(db, "CR", Collection, "collection_no")
@@ -2001,8 +2215,8 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
         collection_no=coll_no,
         customer_id=data["customer_id"],
         collection_date=_parse_date(data.get("collection_date")) or date.today(),
-        amount=data["amount"],
-        amount_fc=data.get("amount_fc", data["amount"]),
+        amount=amount,
+        amount_fc=data.get("amount_fc", amount),
         currency_id=data.get("currency_id"),
         exchange_rate=data.get("exchange_rate", 1),
         payment_method=data.get("payment_method", "银行转账"),
@@ -2016,17 +2230,43 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
     ar_id = data.get("ar_account_id")
     if ar_id:
         ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == ar_id).first()
-        if ar:
-            alloc_amount = min(data["amount"], ar.balance)
+        if not ar:
+            raise HTTPException(404, "应收记录不存在")
+        if amount < 0:
+            # ===== 退款：核销红字应收（负余额向 0 靠拢） =====
+            if not ar.is_red:
+                raise HTTPException(400, "退款必须核销红字应收（负数应收）")
+            if (ar.balance or 0) >= 0:
+                raise HTTPException(400, "该红字应收无负余额可退")
+            refund_amt = abs(amount)
+            max_refund = abs(ar.balance)
+            if refund_amt > max_refund + 0.01:
+                raise HTTPException(400, f"退款金额 {refund_amt:.2f} 超过可退余额 {max_refund:.2f}")
             alloc = CollectionAllocation(
                 collection_id=collection.id,
                 ar_account_id=ar.id,
-                allocated_amount=alloc_amount,
+                allocated_amount=refund_amt,
             )
             db.add(alloc)
-            ar.collected_amount = (ar.collected_amount or 0) + alloc_amount
+            ar.collected_amount = (ar.collected_amount or 0) - refund_amt
             ar.balance = ar.amount - ar.collected_amount
-            ar.status = "已收款" if ar.balance <= 0 else "部分收款"
+            ar.status = "已收款" if abs(ar.balance or 0) < 0.01 else ("部分收款" if (ar.collected_amount or 0) != 0 else "未收款")
+            db.commit()
+            return {"id": collection.id, "collection_no": coll_no, "message": f"退款登记成功（退款 {refund_amt:.2f}，红字应收已核销）"}
+
+        # ===== 正常收款 =====
+        if (ar.balance or 0) <= 0:
+            raise HTTPException(400, "该应收余额已为 0，无需收款")
+        alloc_amount = min(amount, ar.balance)
+        alloc = CollectionAllocation(
+            collection_id=collection.id,
+            ar_account_id=ar.id,
+            allocated_amount=alloc_amount,
+        )
+        db.add(alloc)
+        ar.collected_amount = (ar.collected_amount or 0) + alloc_amount
+        ar.balance = ar.amount - ar.collected_amount
+        ar.status = "已收款" if ar.balance <= 0 else "部分收款"
 
     db.commit()
     return {"id": collection.id, "collection_no": coll_no, "message": "收款登记成功"}
@@ -2120,14 +2360,20 @@ def delete_collection(collection_id: int, db: Session = Depends(get_db), current
     if not c:
         raise HTTPException(404, "收款单不存在")
 
-    # 获取核销记录并回滚应收
+    # 获取核销记录并回滚应收（按收款单金额方向适配：正数收款减回、负数退款加回向0靠拢）
     allocs = db.query(CollectionAllocation).filter(CollectionAllocation.collection_id == c.id).all()
     for alloc in allocs:
         ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == alloc.ar_account_id).first()
         if ar:
-            ar.collected_amount = max(0, (ar.collected_amount or 0) - (alloc.allocated_amount or 0))
+            amt = alloc.allocated_amount or 0
+            if (c.amount or 0) < 0:
+                # 负数退款删除：已退减少 → collected 向 0 回滚（加回）
+                ar.collected_amount = (ar.collected_amount or 0) + amt
+            else:
+                # 正数收款删除：已收减少 → collected 减回（实际不超原值，勿夹0）
+                ar.collected_amount = (ar.collected_amount or 0) - amt
             ar.balance = ar.amount - ar.collected_amount
-            ar.status = "已收款" if ar.balance <= 0 else ("部分收款" if ar.collected_amount > 0 else "未收款")
+            ar.status = "已收款" if abs(ar.balance or 0) < 0.01 else ("部分收款" if (ar.collected_amount or 0) != 0 else "未收款")
         db.delete(alloc)
 
     db.flush()

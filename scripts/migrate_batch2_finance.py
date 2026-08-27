@@ -26,18 +26,14 @@ ALTERS = [
 CREATE_AR_ADJUSTMENT = """
 CREATE TABLE IF NOT EXISTS ar_adjustment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    adjust_no VARCHAR(64),
-    ar_id INTEGER,
-    customer_id INTEGER,
-    adjust_type VARCHAR(32),
+    source_ar_id INTEGER NOT NULL,
+    target_ar_id INTEGER NOT NULL,
     amount FLOAT DEFAULT 0,
-    old_value FLOAT DEFAULT 0,
-    new_value FLOAT DEFAULT 0,
     operator VARCHAR(32),
     remark TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (ar_id) REFERENCES ar_account(id),
-    FOREIGN KEY (customer_id) REFERENCES fd_customer(id)
+    FOREIGN KEY (source_ar_id) REFERENCES ar_account(id),
+    FOREIGN KEY (target_ar_id) REFERENCES ar_account(id)
 )
 """
 
@@ -67,11 +63,20 @@ def main():
             print(f"[执行] ALTER TABLE {table} ADD COLUMN {column} {coldef}")
             done += 1
 
-    # ---- 2. 建表（幂等） ----
+    # ---- 2. 建表（幂等 + 旧单字段版重建为双字段） ----
     cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ar_adjustment'")
     if cur.fetchone():
-        print("[跳过] ar_adjustment 表已存在")
-        skipped += 1
+        # 检查是否为旧单字段结构（有 ar_id 列但无 source_ar_id）→ 重建为双字段
+        cur.execute("PRAGMA table_info(ar_adjustment)")
+        cols = [row[1] for row in cur.fetchall()]
+        if "source_ar_id" not in cols:
+            print("[重建] ar_adjustment 旧单字段结构 → 重建为双字段(source_ar_id/target_ar_id)")
+            cur.execute("DROP TABLE ar_adjustment")
+            cur.execute(CREATE_AR_ADJUSTMENT)
+            done += 1
+        else:
+            print("[跳过] ar_adjustment 表已存在(双字段)")
+            skipped += 1
     else:
         cur.execute(CREATE_AR_ADJUSTMENT)
         print("[执行] CREATE TABLE ar_adjustment")

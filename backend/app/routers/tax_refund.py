@@ -2,11 +2,12 @@
 
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.auth import User
 from app.models.foundation import HsCode, Product, Supplier
-from app.models.sales import CustomsDeclaration, SalesOrder
+from app.models.sales import CustomsDeclaration, SalesOrder, SalesDelivery
 from app.models.tax_refund import (
     TaxRefundInputInvoice, TaxRefundDeclaration,
     TaxRefundDetail, TaxRefundProgress,
@@ -55,6 +56,28 @@ def calculate_exempt_credit_refund(
         "actual_refund": round(actual_refund, 2),
         "exemption_amount": round(exemption, 2),
     }
+
+
+def _recalc_declaration(db: Session, decl):
+    """重算申报表：出口FOB = 明细行 taxable_amount 汇总（含负数冲减行）+ 免抵退计算"""
+    db.flush()  # session autoflush=False，需显式 flush 让 pending 行可见
+    total_fob = db.query(sa_func.coalesce(sa_func.sum(TaxRefundDeclarationRow.taxable_amount), 0)).filter(
+        TaxRefundDeclarationRow.declaration_id == decl.id).scalar() or 0
+    decl.export_amount_fob = round(float(total_fob), 2)
+    calc = calculate_exempt_credit_refund(
+        export_amount_fob=decl.export_amount_fob,
+        refund_rate=decl.refund_rate or 13,
+        tax_rate=decl.tax_rate or 13,
+        domestic_tax=decl.domestic_tax or 0,
+        input_tax=decl.input_tax or 0,
+        last_period_deduction=decl.last_period_deduction or 0,
+    )
+    decl.non_deductible_amount = calc["non_deductible_amount"]
+    decl.current_tax_due = calc["taxable_amount"]
+    decl.current_deduction = calc["current_deduction"]
+    decl.refundable_amount = calc["refundable_amount"]
+    decl.actual_refund = calc["actual_refund"]
+    decl.exemption_amount = calc["exemption_amount"]
 
 
 @router.post("/calculate", response_model=TaxRefundCalculationResult, tags=["退税管理"])
@@ -354,9 +377,105 @@ def create_declaration_row(decl_id: int, data: TaxRefundDeclarationRowCreate,
             pi = db.query(PurchaseInvoice).filter(PurchaseInvoice.id == inv.purchase_invoice_id).first()
             if pi:
                 pi.status = "已匹配(退税)"
+    _recalc_declaration(db, decl)
     db.commit()
     db.refresh(row)
     return {"id": row.id, "assoc_no": assoc_no, "seq": seq, "message": "明细行已添加"}
+
+
+@router.get("/declarations/{decl_id}/return-candidates", tags=["退税管理"])
+def list_return_candidates(decl_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """列出可做负数申报冲减的已报税退货单（refund_declared=1，未在本申报表添加过）"""
+    decl = db.query(TaxRefundDeclaration).filter(TaxRefundDeclaration.id == decl_id).first()
+    if not decl:
+        raise HTTPException(404, "申报不存在")
+    added_nos = set(r.voucher_no or "" for r in db.query(TaxRefundDeclarationRow).filter(
+        TaxRefundDeclarationRow.declaration_id == decl_id).all())
+    returns = db.query(SalesDelivery).filter(
+        SalesDelivery.is_return == 1,
+        SalesDelivery.refund_declared == 1,
+    ).all()
+    result = []
+    from app.models.foundation import Product, HsCode
+    for rd in returns:
+        if rd.delivery_no in added_nos:
+            continue
+        customs = db.query(CustomsDeclaration).filter(
+            CustomsDeclaration.delivery_id == rd.return_of_delivery_id).first()
+        if not customs:
+            continue
+        product = db.query(Product).filter(Product.id == rd.product_id).first()
+        hs = db.query(HsCode).filter(HsCode.id == customs.hs_code_id).first()
+        result.append({
+            "delivery_id": rd.id, "return_no": rd.delivery_no,
+            "customs_no": customs.customs_no,
+            "return_date": str(rd.created_at)[:10] if rd.created_at else "",
+            "product_code": product.code if product else "",
+            "product_name": product.name_cn if product else "",
+            "unit": (product.unit if product and product.unit else (hs.unit if hs else "")),
+            "quantity": rd.quantity or 0,            # 负
+            "taxable_amount": rd.amount or 0,        # 负（退货金额）
+            "refund_rate": hs.refund_rate if hs else 13,
+            "refundable_amount": round((rd.amount or 0) * (hs.refund_rate if hs else 13) / 100, 2),
+        })
+    return {"items": result}
+
+
+@router.post("/declarations/{decl_id}/return-adjustments", tags=["退税管理"])
+def add_return_adjustment(decl_id: int, data: dict, db: Session = Depends(get_db),
+                          current_user: User = Depends(get_current_user)):
+    """添加退货冲减负数行（出口货物退运，负数申报）— 自动重算申报表出口金额与免抵退结果"""
+    decl = db.query(TaxRefundDeclaration).filter(TaxRefundDeclaration.id == decl_id).first()
+    if not decl:
+        raise HTTPException(404, "申报不存在")
+    delivery_id = data.get("delivery_id")
+    rd = db.query(SalesDelivery).filter(
+        SalesDelivery.id == delivery_id,
+        SalesDelivery.is_return == 1,
+        SalesDelivery.refund_declared == 1,
+    ).first()
+    if not rd:
+        raise HTTPException(404, "退货单不存在或未标记已报税（refund_declared=1）")
+    existing = db.query(TaxRefundDeclarationRow).filter(
+        TaxRefundDeclarationRow.declaration_id == decl_id,
+        TaxRefundDeclarationRow.voucher_no == rd.delivery_no,
+    ).count()
+    if existing:
+        raise HTTPException(400, f"退货单 {rd.delivery_no} 已在本申报表添加过冲减")
+
+    customs = db.query(CustomsDeclaration).filter(
+        CustomsDeclaration.delivery_id == rd.return_of_delivery_id).first()
+    from app.models.foundation import Product, HsCode
+    product = db.query(Product).filter(Product.id == rd.product_id).first()
+    hs = db.query(HsCode).filter(HsCode.id == customs.hs_code_id if customs else None).first()
+    refund_rate = hs.refund_rate if hs else 13
+    taxable = rd.amount or 0  # 负
+    refundable = round(taxable * refund_rate / 100, 2)
+
+    rows_count = db.query(TaxRefundDeclarationRow).filter(
+        TaxRefundDeclarationRow.declaration_id == decl_id).count()
+    seq = f"{rows_count + 1:08d}"
+    assoc_no = f"{decl.period}{decl.batch or 1:03d}{rows_count + 1}"
+    row = TaxRefundDeclarationRow(
+        declaration_id=decl_id, seq=seq, assoc_no=assoc_no,
+        tax_type="V", voucher_type="出口货物退运",
+        voucher_no=rd.delivery_no,
+        invoice_date=rd.created_at.date() if rd.created_at else None,
+        product_code=product.code if product else "",
+        product_name=product.name_cn if product else "",
+        unit=(product.unit if product and product.unit else (hs.unit if hs else "")),
+        quantity=rd.quantity or 0, taxable_amount=taxable,
+        tax_rate=hs.tax_rate if hs else 13, refund_rate=refund_rate,
+        refundable_amount=refundable, input_invoice_id=None,
+    )
+    db.add(row)
+
+    # 自动重算申报表出口金额（原值 + 退货负额）与免抵退结果
+    _recalc_declaration(db, decl)
+    db.commit()
+    return {"id": row.id, "assoc_no": assoc_no, "seq": seq, "return_no": rd.delivery_no,
+            "export_amount_fob": decl.export_amount_fob,
+            "message": f"退货冲减已添加（{rd.delivery_no}，冲减出口额 {abs(rd.amount or 0):.2f}）"}
 
 
 @router.delete("/declarations/{decl_id}/rows/{row_id}", tags=["退税管理"])
