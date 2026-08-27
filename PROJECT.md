@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.5.0** | A Lightweight Trade Management Platform
+> **v2.6.0** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
@@ -123,19 +123,26 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 ### 销售发票 (`/invoices`)
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/invoices` | GET/POST | 列表/创建（生成应收）|
-| `/invoices/{id}` | GET/DELETE | 详情/删除（级联删除应收）|
+| `/invoices` | GET/POST | 列表/创建（生成应收；支持红字，`red_of_invoice_id` 全额负数红冲，v2.6.0） |
+| `/invoices/{id}` | GET/DELETE | 详情/删除（级联删除应收；红字票禁改禁删、已红冲蓝字票禁删，v2.6.0） |
+| `/invoices/{id}` | PUT | 修改（**红字票禁改**，v2.6.0） |
 
 ### 收款 (`/collections`)
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/collections` | GET/POST | 列表/创建（收款并核销应收）|
-| `/collections/{id}` | GET/DELETE | 详情/删除（回滚应收核销）|
+| `/collections` | GET/POST | 列表/创建（收款并核销应收；`amount<0` = 退款登记核销红字应收，v2.6.0） |
+| `/collections/{id}` | GET/DELETE | 详情/删除（回滚应收核销） |
 
 ### 应收账款 (`/ar`)
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/ar` | GET | 列表（汇总+明细双视图）|
+| `/ar` | GET | 列表（汇总+明细双视图；含 `is_red` 红字应收，v2.6.0） |
+| `/ar/transfer` | POST | **核销转移**：红字应收(负)→同客户正余额应收，写 `ar_adjustment` 审计（v2.6.0） |
+| `/ar/transfer/{adj_id}/cancel` | POST | **撤销核销转移**：回滚两端账务并删除调整记录（v2.6.0） |
+| `/ar/{ar_id}/cancel-collection` | POST | 按应收 id 撤销收款 |
+| `/ar/collection-detail` | GET | 应收账款收付款明细（应收×收款配对） |
+
+> **v2.6.0 销售退货财务层**：发票红冲（全额负数红字票 + 自动生成红字应收 `is_red`）、退款（负数收款核销红字应收）、核销转移（红字→正余额账务清理）、退货联动（已开票提示红冲、已报税打标 `refund_declared`）、负数申报（已报税退货 → 次月申报冲减）。详见 CHANGELOG v2.6.0。
 
 ---
 
@@ -220,8 +227,10 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/declarations/{id}/cancel-submit` | PUT | 取消申报（状态→待申报）|
 | `/declarations/{id}/refund` | PUT | 完成退税（输入实际金额）|
 | `/declarations/{id}/cancel-refund` | PUT | 取消退税 |
-| `/declarations/{id}/rows` | POST | 添加明细行（自动编号+更新发票状态）|
-| `/declarations/{id}/rows/{row_id}` | PUT/DELETE | 修改/删除明细行（回滚发票状态）|
+| `/declarations/{id}/rows` | POST | 添加明细行（自动编号+更新发票状态） |
+| `/declarations/{id}/rows/{row_id}` | PUT/DELETE | 修改/删除明细行（回滚发票状态） |
+| `/declarations/{id}/return-candidates` | GET | **负数申报候选**：已报税退货单清单（`refund_declared=1` 且关联报关单，v2.6.0） |
+| `/declarations/{id}/return-adjustments` | POST | **添加退货冲减负数行**（出口货物退运，自动重算出口金额与免抵退结果，v2.6.0） |
 
 状态流程: 待申报 → 已申报 → 已退税（支持取消申报/取消退税）
 
@@ -405,6 +414,18 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 ---
 
 ## 十三、版本变更记录
+
+### v2.6.0 (2026-08-27)
+- **批1（AO→SP 基底适配 + SP 健壮性审计）**：登录背景换 AO 集装箱船图；菜单图标沿用 AO；AI 直连优先+代理兜底；AI 密钥防双加密；SP 健壮性审计修复（删除保护/校验/前端错误提示/传参）；SP 环境初始化修复（mo_outsourcing 外键/init 脚本/test.sh 平台自适应）；测试基线 test_config_secret_guard.py
+- **批2（销售退货财务层补强）**：
+  - **发票红冲**：蓝字开票上限校验（≤ 未开票金额，红字全额冲后额度返还）；红字手工录入（全额负数、原票标记已红冲）；红字票禁改禁删；已红冲蓝字票禁删；自动生成等额红字应收（`is_red`/`red_of_ar_id`）
+  - **退款**：`create_collection` 支持 `amount<0` 退款登记，核销红字应收、负余额向 0 靠拢、退超拦截
+  - **核销转移**：`POST /ar/transfer`（红字→同客户正余额，双向上限）+ `POST /ar/transfer/{id}/cancel`（撤销回滚），写 `ar_adjustment` 审计
+  - **退货联动**：已开票提示红冲；关联报关单退税已申报打标 `refund_declared=1` 提示次月负数申报
+  - **负数申报**：`GET /declarations/{id}/return-candidates` + `POST /declarations/{id}/return-adjustments`（出口货物退运负数行，自动重算出口金额/免抵退）
+  - **前端 5 页**：SalesInvoices（红冲/红冲票号列/红字票删除隐藏/状态色）、AccountsReceivable（红负绿正/退款/核销转移弹窗）、Collections（负数标红+退款 tag）、SalesDeliveries（已开票提示）、TaxRefundDeclarations（退货冲减入口）+ api/business.js
+  - **测试**：`backend/tests/test_sales_return_red.py` 6 场景；全量回归绿
+- **模型**：`so_invoice`(+is_red/red_of_invoice_id)、`ar_account`(+is_red/red_of_ar_id)、`so_delivery`(+refund_declared)、新建 `ar_adjustment`；迁移脚本 `scripts/migrate_batch2_finance.py`
 
 ### v2.5.0 (2026-07-31)
 - **新功能**: 备货方式确认（生产订单 `production_type`: 自产/委外/外购）— MO 审核后先确认备货方式才能继续；外购型不进入生产工作台，仅推采购需求

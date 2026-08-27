@@ -1,8 +1,9 @@
 # Mazu Trade System (MTS)
 
-> **v2.5.0** — Mazu Trade System — A Lightweight Trade Management Platform  
+> **v2.6.0** — Mazu Trade System — A Lightweight Trade Management Platform  
 > 采购 · 销售 · 生产 · 库存 · 财务 · 退税 — 全链路数字化  
-> **支持 AI 智能助手对话式操作**
+> **支持 AI 智能助手对话式操作**  
+> v2.6.0 新增**销售退货财务层**：发票红冲 · 红字应收 · 退款 · 核销转移 · 退货联动 · 负数申报
 
 ---
 

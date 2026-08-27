@@ -1,5 +1,61 @@
 # Changelog
 
+## v2.6.0 (2026-08-27)
+
+> 本版本为 **SP 为基底的 AO 功能移植 + 销售退货财务层补强**（SP 分支批次 1/2）。以下按批次记录。
+
+### 批1：AO→SP 基底适配 + SP 健壮性审计
+
+- **AO 高价值项移植**：登录背景换 AO 集装箱船图；登录后左侧菜单图标沿用 AO；AI 调用改**直连优先 + 代理兜底**（`all_proxy` 残留时 Clash 未开会 Connection refused 的坑）；AI API Key 防双重加密（`is_ciphertext` 判定 + system_config + 前端两处配置页）
+- **SP 健壮性审计修复**：后端删除保护 + 数量/金额校验；前端错误提示透传后端 `detail`；前端传参正确性（API 第二参数误传 id 当 body 导致的 422）
+- **SP 环境初始化修复**：`mo_outsourcing` 外键 `fd_outsourcer` 修正为 `fd_supplier`；初始化脚本与 SP 流程对齐；测试入口 `test.sh` 平台自适应
+- **测试基线**：新增 `test_config_secret_guard.py`（密钥守卫）并接入现有套件
+
+### 批2：销售退货财务层补强（发票红冲 · 红字应收 · 退款 · 核销转移 · 退货联动 · 负数申报）
+
+**模型（迁移脚本 `scripts/migrate_batch2_finance.py`，幂等）**
+
+| 表 | 新增字段 | 说明 |
+|---|---|---|
+| `so_invoice` | `is_red`(0/1)、`red_of_invoice_id`(FK→so_invoice.id, 可空) | 红字标记 + 原票引用；状态可取"已红冲" |
+| `ar_account` | `is_red`(0/1)、`red_of_ar_id`(FK→ar_account.id, 可空) | 红字应收标记 + 原应收引用 |
+| `so_delivery` | `refund_declared`(0/1, 默认0) | 已报税退货标记（负数申报用） |
+| 新建 `ar_adjustment` | `source_ar_id`/`target_ar_id`/`amount`/`remark`/`operator`/`created_at` | 核销转移审计表（红字→正余额） |
+
+**后端（`routers/sales.py`，只加不改 SP 现有分支）**
+
+- **发票红冲（create_sales_invoice 支持 `red_of_invoice_id`）**
+  - 蓝字开票上限校验：开票金额 ≤ 订单未开票金额（未开票 = 订单总额 − 已开票累计，红字全额冲后额度自动返还），超限 400"超过未开票金额"
+  - 红字手工录入：票号手填，金额强制 = 原票**全额负数**（一次红冲，不允许手工干预金额）；原票标记"已红冲"
+  - 红字票**禁改禁删**（PUT/DELETE 400）；已红冲蓝字票**禁删**
+  - 自动生成**红字应收**（等额负数、`is_red=1`、`red_of_ar_id`=原应收）
+- **收款 / 退款（create_collection 支持 `amount<0`）**
+  - 负数 = **退款登记**：核销红字应收，负余额向 0 靠拢；退超拦截"超过可退余额"
+  - 正常收款与 `cancel-collection`（按应收 id 撤销）保持 SP 现状不变
+- **核销转移（新增 `POST /ar/transfer` + `POST /ar/transfer/{adj_id}/cancel`）**
+  - 红字应收（负余额）→ 同客户正余额应收的账务清理，无收款单参与；写 `ar_adjustment` 留痕
+  - 校验：同客户、源必须红字且负余额、目标余额必须为正、± 上限 = min(源负余额, 目标正余额)；撤销回滚两端账务
+- **退货联动（销售退货端点自动检查）**
+  - 关联报关单退税状态已申报/审核中/通过/已退税 → 退货单打标 `refund_declared=1` 并提示"次月申报自动带出负数申报"；待申报 → 提示同步更新申报明细
+  - 已开票订单退货 → 提示"已开票需同步红冲发票"
+
+**前端（5 页 + `api/business.js`，UI 以 SP 为准）**
+
+| 页面 | 改动 |
+|---|---|
+| `SalesInvoices.vue` | 已开票蓝字行"红冲"按钮；红冲票号列；红字票删除按钮隐藏；状态列 待开票=info / 已开票=success / 已红冲=warning / 已作废=danger |
+| `AccountsReceivable.vue` | 余额**红负绿正**（<0 红 / >0 绿）；红字应收行显示"退款""核销转移"按钮；退款弹窗（生成负数收款单）、核销转移弹窗（选同客户正余额应收） |
+| `Collections.vue` | 负数金额标红 + "退款" tag |
+| `SalesDeliveries.vue` | 退货弹窗加"已开票需同步红冲发票"提示 |
+| `TaxRefundDeclarations.vue` | "＋添加退货冲减（负数申报）"入口 + 已报税退货选择弹窗 |
+
+**负数申报（`routers/tax_refund.py`）**
+
+- `GET /declarations/{id}/return-candidates`：已报税退货（`refund_declared=1` 且关联报关单）中未在本表添加过的清单
+- `POST /declarations/{id}/return-adjustments`：添加"出口货物退运"负数明细行（`voucher_type=出口货物退运`、`voucher_no=退货单号`），自动重算申报表 `export_amount_fob` 与免抵退结果；同一退货单重复添加拦截 400
+
+**测试**：`backend/tests/test_sales_return_red.py`（红字链路 / 蓝字上限 / 退款 / 核销转移+审计，6 场景）；全量回归保持绿。
+
 ## v2.5.0 (2026-07-31)
 
 ### 备货方式确认 + 外购直采（生产订单 `production_type`）
