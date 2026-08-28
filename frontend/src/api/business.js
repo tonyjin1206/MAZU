@@ -59,7 +59,6 @@ export const salesApi = {
     issue: (id, data) => request.post(`/sales/deliveries/${id}/issue`, data),
     outs: (params) => request.get('/sales/deliveries/outs', { params }),
     return: (id, data) => request.post(`/sales/deliveries/${id}/return`, data),
-    returnCandidates: (params) => request.get('/sales/deliveries/return-candidates', { params }),
   },
   customs: {
     list: (params) => request.get('/sales/customs', { params }),
@@ -200,5 +199,23 @@ export const inventoryApi = {
 export const chatApi = {
   message: (data) => request.post('/chat/message', data),
   reset: () => request.post('/chat/reset'),
+}
+
+// 站内通知（铃铛/消息中心/管理端查询）
+export const notificationApi = {
+  list: (params) => request.get('/notifications', { params }),
+  unreadCount: () => request.get('/notifications/unread-count'),
+  latest: (params) => request.get('/notifications/latest', { params }),
+  markRead: (id) => request.put(`/notifications/${id}/read`),
+  markAllRead: () => request.put('/notifications/read-all'),
+  adminQuery: (params) => request.get('/notifications/admin-query', { params }),
+}
+
+// 预警提醒规则（管理端配置化，D8）
+export const reminderRuleApi = {
+  list: (params) => request.get('/system/reminder-rules', { params }),
+  create: (data) => request.post('/system/reminder-rules', data),
+  update: (id, data) => request.put(`/system/reminder-rules/${id}`, data),
+  remove: (id) => request.delete(`/system/reminder-rules/${id}`),
 }
 

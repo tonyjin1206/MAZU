@@ -45,6 +45,7 @@
           <el-menu-item index="/system/bot" v-if="hasPerm('menu:system:bot')">AI 模型</el-menu-item>
           <el-menu-item index="/system/bot-chat" v-if="hasPerm('menu:system:bot-chat')">AI 助手</el-menu-item>
           <el-menu-item index="/system/reminders" v-if="hasPerm('menu:system:reminders')">提醒管理</el-menu-item>
+          <el-menu-item index="/system/notifications" v-if="hasPerm('menu:system:reminders')">通知管理</el-menu-item>
         </el-sub-menu>
 
         <!-- 1. 基础档案 -->
@@ -138,6 +139,29 @@
           <span style="margin-left: 10px; font-size: 14px; color: #606266">{{ pageTitle }}</span>
         </div>
         <div style="display: flex; align-items: center; gap: 12px">
+          <!-- 站内通知铃铛（所有登录用户可见） -->
+          <el-popover placement="bottom-end" width="340" trigger="click" @show="loadNotifications">
+            <template #reference>
+              <el-badge :value="unreadCount" :hidden="!unreadCount" :max="99" style="cursor: pointer; margin-top: 2px">
+                <el-icon size="20"><Bell /></el-icon>
+              </el-badge>
+            </template>
+            <div style="max-height: 360px; overflow-y: auto">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px">
+                <span style="font-size: 13px; font-weight: 600">消息通知</span>
+                <el-button link type="primary" size="small" @click="handleMarkAllRead">全部已读</el-button>
+              </div>
+              <el-empty v-if="!notifications.length" description="暂无通知" :image-size="50" />
+              <div v-for="n in notifications" :key="n.id" @click="handleNotificationClick(n)"
+                   :style="{ padding: '8px 6px', borderBottom: '1px solid #f0f0f0', cursor: 'pointer' }">
+                <div style="display: flex; align-items: center; gap: 6px">
+                  <span v-if="n.read_status === 0" style="width: 6px; height: 6px; border-radius: 50%; background: #f56c6c; flex: none"></span>
+                  <span style="font-size: 13px; font-weight: 500; flex: 1">{{ n.title }}</span>
+                </div>
+                <div style="font-size: 12px; color: #909399; margin-top: 2px">{{ n.content }}</div>
+              </div>
+            </div>
+          </el-popover>
           <el-tag type="info" size="small">{{ user?.role === 'admin' ? '管理员' : '操作员' }}</el-tag>
           <span style="font-size: 13px">{{ user?.display_name || user?.username }}</span>
           <el-button @click="logout" type="danger" size="small" plain>退出</el-button>
@@ -155,9 +179,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MatsuAssistant from './MatsuAssistant.vue'
+import { notificationApi } from '../api/business'
 
 const route = useRoute()
 const router = useRouter()
@@ -165,12 +190,58 @@ const isCollapse = ref(false)
 const user = ref(JSON.parse(localStorage.getItem('user') || '{}'))
 const perms = ref(JSON.parse(localStorage.getItem('permissions') || '[]'))
 function hasPerm(code) { return perms.value.includes(code) }
+const unreadCount = ref(0)
+const notifications = ref([])
+let timer = null
+
+function docRoute(docType) {
+  const base = { so_order: '/sales/orders', so_delivery: '/sales/deliveries', ar_account: '/sales/ar', ap_account: '/purchase/ap' }
+  return base[docType] || '/'
+}
+
+async function loadUnread() {
+  if (!user.value?.id) return
+  try {
+    const res = await notificationApi.unreadCount()
+    unreadCount.value = res.count || 0
+  } catch (e) { /* 静默 */ }
+}
+
+async function loadNotifications() {
+  try {
+    const res = await notificationApi.latest({ limit: 20 })
+    notifications.value = res || []
+  } catch (e) { /* 静默 */ }
+}
+
+async function handleNotificationClick(n) {
+  if (n.read_status === 0) {
+    try { await notificationApi.markRead(n.id) } catch (e) { /* 静默 */ }
+    n.read_status = 1
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
+  const path = docRoute(n.doc_type)
+  if (path !== '/') router.push(path)
+}
+
+async function handleMarkAllRead() {
+  try {
+    await notificationApi.markAllRead()
+    notifications.value = notifications.value.map(n => ({ ...n, read_status: 1 }))
+    unreadCount.value = 0
+  } catch (e) { /* 静默 */ }
+}
 
 onMounted(() => {
   if (!user.value?.id) {
     router.push('/login')
+    return
   }
+  loadUnread()
+  timer = setInterval(loadUnread, 30000)
 })
+
+onUnmounted(() => { if (timer) clearInterval(timer) })
 
 const pageTitle = computed(() => {
   const path = route.path
