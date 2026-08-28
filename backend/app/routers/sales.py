@@ -345,10 +345,17 @@ def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_use
         (SalesDelivery, "order_id", "发货单"),
         (CustomsDeclaration, "order_id", "报关单"),
         (SalesInvoice, "order_id", "销售发票"),
-        (AccountsReceivable, "order_id", "应收账款"),
     ]:
         if db.query(model).filter(getattr(model, col) == order_id).first():
             raise HTTPException(400, f"订单 {order.order_no} 已生成{label}，不能删除（请先处理下游单据）")
+    # 应收账款通过 source_type/source_id 关联（非 order_id）
+    if db.query(AccountsReceivable).filter(
+        AccountsReceivable.source_type == "sales_invoice",
+        AccountsReceivable.source_id.in_(
+            db.query(SalesInvoice.id).filter(SalesInvoice.order_id == order_id)
+        )
+    ).first():
+        raise HTTPException(400, f"订单 {order.order_no} 已生成应收账款，不能删除（请先处理下游单据）")
     db.delete(order)
     db.commit()
     return {"message": "销售订单已删除"}

@@ -71,3 +71,4 @@ docs/gen_product_doc.py
 # tool config dirs
 .codex/
 .hermes/
+e2e/.tmp_greenlet/

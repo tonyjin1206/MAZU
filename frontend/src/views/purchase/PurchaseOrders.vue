@@ -6,7 +6,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openCreate">新建订单</el-button>
+          <el-button type="primary" data-testid="btn-create-order" @click="openCreate">新建订单</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
@@ -75,9 +75,9 @@
         </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === '待审核'" link type="success" @click="handleApprove(row)">审核</el-button>
+            <el-button v-if="row.status === '待审核'" link type="success" data-testid="btn-approve" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待审核' && !row.from_sales" link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="row.status === '已审核'" link type="warning" @click="handleUnapprove(row)">取消审核</el-button>
+            <el-button v-if="row.status === '已审核'" link type="warning" data-testid="btn-unapprove" @click="handleUnapprove(row)">取消审核</el-button>
             <el-button v-if="row.status === '待审核' && row.from_sales" link type="danger" @click="handleDelete(row)">退回</el-button>
             <el-button v-if="row.status === '待审核' && !row.from_sales" link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
@@ -142,7 +142,7 @@
     </el-card>
 
     <!-- 新建/编辑/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1400px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1400px" destroy-on-close data-testid="dialog-order">
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-form-item label="供应商" prop="supplier_id">
           <el-input v-if="viewMode" :model-value="supplierDisplayName" readonly placeholder="-" />
@@ -245,7 +245,7 @@
       <template #footer>
         <el-button @click="dialogVisible = false">{{ viewMode ? '关闭' : '取消' }}</el-button>
         <el-button v-if="editMode" type="primary" :loading="submitting" @click="handleUpdate">保存修改</el-button>
-        <el-button v-if="!viewMode && !editMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button v-if="!viewMode && !editMode" type="primary" data-testid="btn-save" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
 

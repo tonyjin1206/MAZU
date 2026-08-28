@@ -4,7 +4,7 @@
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">刷新</el-button>
-          <el-button type="primary" @click="openCreate">新建提醒</el-button>
+          <el-button type="primary" data-testid="btn-create-reminder" @click="openCreate">新建提醒</el-button>
         </div>
       </template>
     </el-card>
@@ -61,7 +61,7 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="新建提醒" width="500px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" title="新建提醒" width="500px" destroy-on-close data-testid="dialog-reminder">
       <el-form :model="form" label-width="100px" ref="formRef" :rules="rules">
         <el-form-item label="用户" prop="user_id">
           <el-select v-model="form.user_id" placeholder="选择用户" filterable style="width:100%">
@@ -79,7 +79,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" data-testid="btn-save" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />

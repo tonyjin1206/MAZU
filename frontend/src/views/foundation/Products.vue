@@ -5,7 +5,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">搜索</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openDialog('create')">新增</el-button>
+          <el-button type="primary" data-testid="btn-create-product" @click="openDialog('create')">新增</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm">
@@ -83,7 +83,7 @@
       </el-table>
       <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="700px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="700px" data-testid="dialog-product">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="110px">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -155,7 +155,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="dialogLoading" @click="handleSave">保存</el-button>
+        <el-button type="primary" data-testid="btn-save" :loading="dialogLoading" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />

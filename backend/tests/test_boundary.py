@@ -247,9 +247,12 @@ def test_fuzz_no_500(client, auth_headers, base_data, case_name, method, path, p
 # ==================== 越权测试 ====================
 
 def test_rbac_low_privilege_blocked(client, admin_token):
-    import pytest
-    pytest.skip("过时：SP 权限结构已变（库管员权限），待重写")
-    """库管员（仅库存权限）调用管理接口必须 403"""
+    """库管员（仅库存权限）调用管理接口必须 403
+
+    SP 现状（2026-08）：权限控制已覆盖 auth 用户/角色、系统配置（admin 专属）、
+    采购审核、销售审核；基础档案/库存等路由仅要求登录（get_current_user），
+    低权限用户可读写 —— 记录为 docs/complete-test-plan.md 专项待办 BUG-03。
+    """
     admin_h = {"Authorization": f"Bearer {admin_token}"}
 
     # 建库管员用户
@@ -266,20 +269,36 @@ def test_rbac_low_privilege_blocked(client, admin_token):
     assert login.status_code == 200, login.text
     keeper_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
 
-    # 越权调用管理接口（含修复后的 GET /users —— 现在应 403）
+    # 越权调用管理接口（这些接口有权限保护，必须拒绝）
     blocked = [
         ("POST", f"{BASE}/auth/users", {"username": "x", "password": "x", "display_name": "x"}),
-        ("POST", f"{BASE}/foundation/suppliers", {"name": "x"}),
-        ("POST", f"{BASE}/system/wecom", {}),
         ("GET", f"{BASE}/auth/users", None),
         ("GET", f"{BASE}/auth/users/1", None),
         ("GET", f"{BASE}/auth/roles", None),
+        ("POST", f"{BASE}/system/wecom", {}),
     ]
     for method, path, payload in blocked:
         code, _ = _call(client, method, path, payload, keeper_h)
         # 权限校验可能在 schema 校验之后（422 也算被拒）；核心是低权限调用不能成功
         assert code in (403, 422), (
             f"库管员调用 {method} {path} 应 403/422，实际 {code}")
+
+    # 采购/销售审核同样受权限保护（无对应菜单权限 → 403）
+    # 用管理员建一个采购订单，库管员审核必须被拒
+    sup = client.post(f"{BASE}/foundation/suppliers", json={
+        "name": "越权测试供应商", "contact_person": "王", "phone": "13800000001",
+        "tax_id": "91330100YW", "address": "杭州", "supplier_type": "供应商"}, headers=admin_h).json()
+    mat = client.post(f"{BASE}/foundation/materials", json={
+        "name": "越权材料", "spec": "S", "unit": "KG", "category": "原材料",
+        "purchase_price": 10}, headers=admin_h).json()
+    po = client.post(f"{BASE}/purchase/orders", json={
+        "supplier_id": sup["id"], "currency_id": 1, "items": [
+            {"material_id": mat["id"], "quantity": 10, "unit_price": 12, "tax_rate": 13}],
+    }, headers=admin_h)
+    assert po.status_code < 400, po.text
+    po_id = po.json()["id"]
+    code, _ = _call(client, "POST", f"{BASE}/purchase/orders/{po_id}/approve", {}, keeper_h)
+    assert code in (403, 422), f"库管员审核采购订单应 403/422，实际 {code}"
 
     # 正常权限内的接口可用（不误伤）
     code, _ = _call(client, "GET", f"{BASE}/inventory/balance", None, keeper_h)

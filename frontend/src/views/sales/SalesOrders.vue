@@ -6,7 +6,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openCreate">新建订单</el-button>
+          <el-button type="primary" data-testid="btn-create-order" @click="openCreate">新建订单</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
@@ -66,9 +66,9 @@
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === '待审核'" link type="primary" @click="handleApprove(row)">审核</el-button>
+            <el-button v-if="row.status === '待审核'" link type="primary" data-testid="btn-approve" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待审核'" link type="primary" @click="openEdit(row)">修改</el-button>
-            <el-button v-if="row.status === '待审核'" link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.status === '待审核'" link type="danger" data-testid="btn-delete" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -125,7 +125,7 @@
     </el-card>
 
     <!-- 新建/编辑/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close data-testid="dialog-order">
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -251,7 +251,7 @@
       <template #footer>
         <el-button @click="dialogVisible = false">{{ viewMode ? '关闭' : '取消' }}</el-button>
         <el-button v-if="editMode" type="primary" :loading="submitting" @click="handleUpdate">保存修改</el-button>
-        <el-button v-if="!viewMode && !editMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button v-if="!viewMode && !editMode" type="primary" data-testid="btn-save" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
 

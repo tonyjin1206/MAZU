@@ -215,24 +215,38 @@ def test_contract_layer1_used_api_defs_have_backend_routes(app):
     )
 
 
+def _route_matches(literal_path: str, template_path: str) -> bool:
+    """字面路径是否命中路由模板：/params/group/material_main_category → /params/group/{p}
+
+    layer2 收集的是页面里的字面路径（无 `${}`），而后端是参数模板；
+    逐段比对，模板段 {p} 通配任意一段字面值。
+    """
+    lp = literal_path.rstrip("/").split("/")
+    tp = template_path.rstrip("/").split("/")
+    if len(lp) != len(tp):
+        return False
+    return all(t == "{p}" or t == l for t, l in zip(tp, lp))
+
+
 def test_contract_layer2_views_direct_calls_have_backend_routes(app):
-    import pytest
-    pytest.skip("过时：SP 视图/路由已变，待重写")
     """层2：页面直接调用的接口，后端必须存在"""
     backend = collect_backend_routes(app)
     view_calls = collect_view_direct_calls()
 
     missing = [
         (m, p, src) for (m, p, src) in view_calls
-        if (m, p) not in backend and (m, p) not in KNOWN_ISSUES
+        if (m, p) not in backend
+        and not any(m == bm and _route_matches(p, bp) for bm, bp in backend)
+        and (m, p) not in KNOWN_ISSUES
     ]
 
     print("\n===== 契约报告 · 层2（页面直接调用）=====")
     print(f"页面直接调用 {len(view_calls)} 个接口")
     for m, p, src in sorted(view_calls):
+        hit = (m, p) in backend or any(m == bm and _route_matches(p, bp) for bm, bp in backend)
         if (m, p) in KNOWN_ISSUES:
             print(f"  [已知问题] {m:6s} {p}  <- {src}")
-        elif (m, p) not in backend:
+        elif not hit:
             print(f"  [缺失]     {m:6s} {p}  <- {src}")
 
     assert not missing, (
