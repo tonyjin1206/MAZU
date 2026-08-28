@@ -9,7 +9,7 @@ from app.models.auth import User
 from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder, Stocktake, StocktakeItem
 from app.models.foundation import Warehouse, Material, Product
 from app.models.sales import SalesOrder, SalesOrderItem
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission
 from app.utils.batch_no import generate_doc_no
 
 router = APIRouter()
@@ -523,7 +523,7 @@ def get_available_batches(
 
 @router.post("/material-outs", tags=["库存管理"])
 def create_material_out(
-    data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:material-outs")),
 ):
     """手动原料出库 — 一次可出多行明细 [{material_id, batch_no, quantity, remark}]。
     扣减 WarehouseInventory 对应材料+批次数量（精确批次，FIFO 跨多条库存记录）、写 StockTransaction。"""
@@ -601,7 +601,7 @@ def create_material_out(
 
 @router.post("/material-outs/{out_no}/return", tags=["库存管理"])
 def return_material_out(
-    out_no: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    out_no: str, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:material-outs")),
 ):
     """手动原料出库退回 — 按出库单号(MU-xxx)整单退回：库存回补原批次 + 红字流水(source_doc_type=原料出库退回)。
     仅手动出库可退（委外发料WO单的退回走委外单删除逻辑）；该单已退过则拒绝。"""
@@ -765,7 +765,7 @@ def trace_batch(
 # ==================== 盘点 ====================
 
 @router.post("/stocktakes", tags=["库存管理"])
-def create_stocktake(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_stocktake(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """创建盘点单（草稿）— 自动带出该仓库所有有库存的批次作为盘点明细"""
     warehouse_id = data["warehouse_id"]
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id, Warehouse.is_active == 1).first()
@@ -856,7 +856,7 @@ def get_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user
 @router.put("/stocktakes/{stocktake_id}/items/{item_id}", tags=["库存管理"])
 def update_stocktake_item(
     stocktake_id: int, item_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """录入/修改实盘数（仅草稿状态）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
@@ -878,7 +878,7 @@ def update_stocktake_item(
 @router.post("/stocktakes/{stocktake_id}/items", tags=["库存管理"])
 def add_stocktake_item(
     stocktake_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """盘点明细新增一行（仅草稿）— 支持账外批次盘盈
 
@@ -943,7 +943,7 @@ def add_stocktake_item(
 @router.delete("/stocktakes/{stocktake_id}/items/{item_id}", tags=["库存管理"])
 def delete_stocktake_item(
     stocktake_id: int, item_id: int,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """删除盘点明细一行（仅草稿）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
@@ -960,7 +960,7 @@ def delete_stocktake_item(
 
 
 @router.post("/stocktakes/{stocktake_id}/submit", tags=["库存管理"])
-def submit_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def submit_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """提交盘点 — 按差异生成盘盈/盘亏流水并更新台账"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
     if not s:
@@ -1044,7 +1044,7 @@ def submit_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_u
 
 
 @router.delete("/stocktakes/{stocktake_id}", tags=["库存管理"])
-def delete_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """删除盘点单（仅草稿）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
     if not s:

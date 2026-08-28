@@ -32,6 +32,7 @@
 | # | 问题 | 现状 | 期望 | 状态 |
 |---|------|------|------|------|
 | 14 | GET /auth/users 只认证不授权 | 任何登录用户可查看用户列表（仅 get_current_user） | 仅管理员可看 | ✅ **已修复**（2026-07-31：auth.py 的 GET /users、/users/{id}、/roles、/permissions 加 require_permission("menu:system:users")，低权限角色 403） |
+| 18 | **业务单据写端点只认证不授权（BUG-L4-01）** | 只读/库管员可通过 API 对销售订单等增删改（仅 get_current_user，无 require_permission） | 低权限写 403 | ✅ **已修复**（2026-08-28：sales/foundation/inventory 62 个写端点统一补 require_permission，与 approve 端点对齐；只读角色对 POST/PUT/DELETE /api/sales/orders 现 403） |
 
 ## 业务校验缺失
 

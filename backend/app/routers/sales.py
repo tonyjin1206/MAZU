@@ -46,7 +46,7 @@ def _fire_reminder(db, point_code: str, doc_type: str, doc_id, doc_no="", data=N
 # ==================== 报价单 ====================
 
 @router.post("/quotes", tags=["销售管理"])
-def create_quote(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_quote(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """创建报价单"""
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import SalesQuote
@@ -107,7 +107,7 @@ def _recalc_order_totals(order):
         sum((i.total_amount_excl_tax or 0) for i in active_items) * exchange_rate, 6)
 
 @router.post("/orders", tags=["销售管理"])
-def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """创建销售订单（定制产品触发生产）"""
     from datetime import date, timedelta    # 汇率换算
     currency_id = data.get("currency_id") or 1
@@ -334,7 +334,7 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
 
 
 @router.delete("/orders/{order_id}", tags=["销售管理"])
-def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
@@ -362,7 +362,7 @@ def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_use
 
 
 @router.put("/orders/{order_id}", tags=["销售管理"])
-def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """修改销售订单（仅待审核状态允许）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
@@ -465,7 +465,7 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/orders/{order_id}/items/{item_id}/re-produce", tags=["销售管理"])
-def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """重发生产 — 为指定明细行重新生成生产订单（仅已删除生产订单的明细行）"""
     from app.models.production import ProductionOrder
     from app.utils.batch_no import generate_doc_no
@@ -507,7 +507,7 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
 # ==================== 销售明细行：转入库 / 转外发 / 变更 ====================
 
 @router.post("/orders/{order_id}/items/{item_id}/stock-in", tags=["销售管理"])
-def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """销售明细「转直采」— 仅推送单据到「销售订单转采购」页（不生成采购单，采购在转采购页进行）"""
     from app.models.inventory import StockInOrder
     item = db.query(SalesOrderItem).filter(
@@ -530,7 +530,7 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
 
 
 @router.post("/orders/{order_id}/items/{item_id}/outsource", tags=["销售管理"])
-def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """销售明细「转外发」— 生成委外订单（草稿），明细状态→已通知外发"""
     from app.models.production import OutsourceOrder
     from app.utils.batch_no import generate_doc_no
@@ -557,7 +557,7 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
 
 @router.post("/orders/{order_id}/items/{item_id}/claim-batch", tags=["销售管理"])
 def claim_batch(order_id: int, item_id: int, data: dict,
-                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """销售明细「认领库存」— 把库里的备货批次（FG-xxx 无归属）改名挂到本销售行，成本随之归集
 
     data: {batch_no: str, quantity: float}
@@ -677,7 +677,7 @@ def claim_batch(order_id: int, item_id: int, data: dict,
 
 @router.post("/orders/{order_id}/items/{item_id}/unclaim-batch", tags=["销售管理"])
 def unclaim_batch(order_id: int, item_id: int,
-                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                  db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """销售明细「解绑认领」— 未发货的认领库存退回原备货批次"""
     from app.utils.batch_no import generate_doc_no
     item = db.query(SalesOrderItem).filter(
@@ -755,7 +755,7 @@ def unclaim_batch(order_id: int, item_id: int,
 # ==================== 销售发货（批次出库） ====================
 
 @router.post("/deliveries", tags=["销售管理"])
-def create_delivery(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_delivery(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries"))):
     """销售发货 — 指定批次出库、扣库存、更新订单明细已发数量。
     可发量规则（峰子拍板）：
     - 发货数量不按订单量限制，只看批次可发量（物理库存 - 其他订单锁定）
@@ -886,7 +886,7 @@ def _auto_finished_warehouse(db, product_id):
 
 
 @router.post("/deliveries/notify", tags=["销售管理"])
-def create_delivery_notify(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_delivery_notify(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries"))):
     """通知发货（业务员，第一段）：只登记发货意向，不选批次、不扣库存。
     生成 status=待出库 的 SD 单，批次/仓库留空，由库管在【成品出库】完成出库。"""
     item = db.query(SalesOrderItem).filter(SalesOrderItem.id == data.get("order_item_id")).first()
@@ -935,7 +935,7 @@ def create_delivery_notify(data: dict, db: Session = Depends(get_db), current_us
 @router.post("/deliveries/{delivery_id}/issue", tags=["销售管理"])
 def issue_delivery(
     delivery_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:delivery-outs")),
 ):
     """库管出库（第二段）：对已通知的 SD 单按 批次+实际数量 出库并扣减库存。"""
     sd = db.query(SalesDelivery).filter(SalesDelivery.id == delivery_id).first()
@@ -1054,7 +1054,7 @@ def _update_order_delivery_status(order):
 @router.post("/orders/{order_id}/items/{item_id}/delivery-confirm", tags=["销售管理"])
 def confirm_order_item_delivery(
     order_id: int, item_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries")),
 ):
     """确认/撤销 明细行发货完成（按产品行）。
     确认后：该行不能再发货，批次锁定解除（剩余库存开放给其他订单）。
@@ -1259,7 +1259,7 @@ def delivery_workbench(
 
 
 @router.post("/deliveries/return", tags=["销售管理"])
-def create_delivery_return(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_delivery_return(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries"))):
     """销售退货（峰子 2026-08-03 拍板）：
     - 退到原批次，生成退货发货单（is_return=1）
     - 退货数量≤已发数量，多次退货合计≤已发数量
@@ -1427,7 +1427,7 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
 @router.post("/deliveries/{delivery_id}/issue-return", tags=["销售管理"])
 def return_delivery_issue(
     delivery_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:delivery-outs")),
 ):
     """库管出库退回（红冲）— 撤销出库：库存回补原批次 + 红字流水(delivery_out_return/成品出库退回) + delivered_qty 回减 + 单/明细/订单状态回退。
     用于库管出库出错撤销；客户退货请走「销售发货→退货」(生成红字退货单)。"""
@@ -1527,7 +1527,7 @@ def return_delivery_issue(
 @router.post("/deliveries/{delivery_id}/return", tags=["销售管理"])
 def return_delivery(
     delivery_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries")),
 ):
     """销售退货 — 退回原批次、原发货成本，生成负向退货单+回库流水
 
@@ -1670,7 +1670,7 @@ def return_delivery(
 # ==================== 报关单 ====================
 
 @router.post("/customs", tags=["销售管理"])
-def create_customs(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_customs(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:customs"))):
     """创建报关单"""
     order = db.query(SalesOrder).filter(SalesOrder.id == data["order_id"]).first()
     if not order:
@@ -1764,7 +1764,7 @@ def get_customs(customs_id: int, db: Session = Depends(get_db), current_user: Us
 
 
 @router.put("/customs/{customs_id}", tags=["销售管理"])
-def update_customs(customs_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_customs(customs_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:customs"))):
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
@@ -1779,7 +1779,7 @@ def update_customs(customs_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.delete("/customs/{customs_id}", tags=["销售管理"])
-def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:customs"))):
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
@@ -1804,7 +1804,7 @@ def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user:
 # ==================== 销售发票 → 应收 → 收款 ====================
 
 @router.post("/invoices", tags=["销售管理"])
-def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:invoices"))):
     """开票 → 自动生成应收；支持红字发票手工录入（red_of_invoice_id）
 
     红字录入：发票号手填（客户开票系统生成），金额强制 = 原票全额负数，
@@ -1943,7 +1943,7 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
 
 
 @router.post("/ar/{ar_id}/cancel-collection", tags=["销售管理"])
-def cancel_collection(ar_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def cancel_collection(ar_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
     """取消收款 — 按应收记录ID取消"""
     ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == ar_id).first()
     if not ar:
@@ -2005,7 +2005,7 @@ def list_sales_invoices(
 
 
 @router.put("/invoices/{invoice_id}", tags=["销售管理"])
-def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:invoices"))):
     """修改销售发票（同步更新应收单、订单已开票金额）"""
     for k in ["amount", "tax_amount", "total_amount"]:
         if k in data and data[k] is not None:
@@ -2048,7 +2048,7 @@ def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_
 
 
 @router.delete("/invoices/{invoice_id}", tags=["销售管理"])
-def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:invoices"))):
     """删除销售发票（同步删除应收单、回滚订单已开票金额）
     红字票禁删；已红冲的蓝字票禁删（需先删红字票）。"""
     inv = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id).first()
@@ -2123,7 +2123,7 @@ def list_ar(
 
 
 @router.post("/ar/transfer", tags=["销售管理"])
-def transfer_ar(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def transfer_ar(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:ar"))):
     """核销转移：红字应收负余额 → 同客户正余额应收（账务清理，无收款单参与）
 
     body: {"source_ar_id": 1, "target_ar_id": 2, "amount": 4000, "remark": "..."}
@@ -2178,7 +2178,7 @@ def transfer_ar(data: dict, db: Session = Depends(get_db), current_user: User = 
 
 
 @router.post("/ar/transfer/{adj_id}/cancel", tags=["销售管理"])
-def cancel_transfer_ar(adj_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def cancel_transfer_ar(adj_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:ar"))):
     """撤销核销转移 — 回滚转移账务（source 已退回加、target 已收回减）并删除调整记录"""
     adj = db.query(ArAdjustment).filter(ArAdjustment.id == adj_id).first()
     if not adj:
@@ -2231,7 +2231,7 @@ def list_ar_collection_detail(db: Session = Depends(get_db)):
 
 
 @router.post("/collections", tags=["销售管理"])
-def create_collection(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_collection(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
     """收款登记 → 核销应收；amount<0 = 退款登记（核销红字应收，负余额向 0 靠拢）"""
     amount = float(data.get("amount") or 0)
     for k in ["amount", "amount_fc"]:
@@ -2375,7 +2375,7 @@ def get_collection(collection_id: int, db: Session = Depends(get_db), current_us
 
 
 @router.put("/collections/{collection_id}", tags=["销售管理"])
-def update_collection(collection_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_collection(collection_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
@@ -2390,7 +2390,7 @@ def update_collection(collection_id: int, data: dict, db: Session = Depends(get_
 
 
 @router.delete("/collections/{collection_id}", tags=["销售管理"])
-def delete_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
@@ -2471,7 +2471,7 @@ def list_order_items(
 @router.put("/orders/{order_id}/items/{item_id}", tags=["销售管理"])
 def update_order_item(
     order_id: int, item_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders")),
 ):
     """变更销售订单明细行 — 改数量 / 改单价 / 停售
 

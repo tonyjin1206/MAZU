@@ -1,5 +1,15 @@
 # Changelog
 
+## 未发布 — 安全修复（BUG-L4-01：后端 RBAC 越权）
+
+> **Critical**：只读角色/库管员可通过 API 对业务单据增删改——后端仅校验登录（`get_current_user`），未校验菜单权限。
+
+- **修复**（`app/routers/sales.py`/`foundation.py`/`inventory.py`，62 个写端点统一补 `require_permission`，与 `approve` 端点校验 `menu:sales:orders` 对齐）：逐端点按菜单域裁剪权限，低权限写一律 403
+  - 销售：订单/转直采/转外发/认领/重发生产/明细变更 → `menu:sales:orders`；发货/通知/确认/退货 → `menu:sales:deliveries`；库管出库/出库退回 → `menu:inventory:delivery-outs`；报关 → `menu:sales:customs`；发票 → `menu:sales:invoices`；应收/核销转移 → `menu:sales:ar`；收款/取消收款 → `menu:sales:collections`
+  - 基础档案：材料/产品/客户/供应商/BOM/参数/汇率 → 对应 `menu:*`；公司信息/联系人无菜单权限 → 仅管理员（`get_current_admin`）
+  - 库存：原料出库 → `menu:inventory:material-outs`；盘点 → `menu:inventory:stocktake`
+- 验证：`./test.sh` 242 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped；只读角色对 POST/PUT/DELETE `/api/sales/orders` 现 403（复现原 200）
+
 ## v2.7.0 (2026-08-27)
 
 > 本版本为 **预警提醒系统**（SP 分支批4）。预警内容按当前产品逻辑**重校**：无「生产订单」模块（弃用），销售订单下游走转直采/转外发，故不设 MO_* 提醒点，改为销售/发货/应收真实链路。
