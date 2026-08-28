@@ -22,7 +22,8 @@ DEFAULT_DB = REPO / "backend" / "data" / "erp.db"
 KEEP = {
     "sys_user", "sys_role", "sys_permission", "sys_role_permission",
     "sys_bot_config", "sys_bot_conversation",
-    "sys_reminder_config", "sys_reminder_log", "sys_wecom_config",
+    "sys_reminder_config", "sys_reminder_log", "sys_reminder_rule",
+    "sys_notification", "sys_wecom_config",
 }
 
 

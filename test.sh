@@ -19,4 +19,8 @@ else
   exit 1
 fi
 
-exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u PYTHONPATH ERP_DEV=1 "$PY" -m pytest tests/ -q "$@"
+# 隔离测试库：每次全新建临时库（避免复用陈旧/含数据的 backend/data/erp.db，破坏性小）
+TEST_DATA_DIR="$(mktemp -d /tmp/mts-test-XXXXXX)"
+trap 'rm -rf "$TEST_DATA_DIR"' EXIT
+
+exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u PYTHONPATH ERP_DEV=1 ERP_DATA_DIR="$TEST_DATA_DIR" "$PY" -m pytest tests/ -q "$@"
