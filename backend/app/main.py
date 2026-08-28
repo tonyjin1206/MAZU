@@ -233,12 +233,17 @@ async def lifespan(app: FastAPI):
         _seed_rbac(db)
         _seed_params(db)
         _seed_currencies(db)
+        from app.services.reminder import seed_reminder_rules
+        seed_reminder_rules(db)
     finally:
         db.close()
     # 每日汇率定时任务（每天 09:00 从腾讯财经拉取一次，失败静默次日重试）
     task = asyncio.create_task(_daily_rate_task())
+    # 预警提醒定时扫描（启动补扫一次 + 每日 09:00 扫描应收/应付账期，D4）
+    reminder_task = asyncio.create_task(_daily_reminder_task())
     yield
     task.cancel()
+    reminder_task.cancel()
 
 
 async def _daily_rate_task():
@@ -262,6 +267,39 @@ async def _daily_rate_task():
                 _db.close()
         except Exception as e:
             logger.error(f"每日汇率更新失败: {e}")
+
+
+async def _daily_reminder_task():
+    """预警提醒定时扫描 — 启动立即补扫一次（D4 弥补未运行期间漏掉），此后每日 09:00 扫描。
+
+    同单据同提醒点在 dedup_hours 窗口内不重复推（规则可配）；失败静默次日重试。
+    """
+    import logging
+    logger = logging.getLogger("daily_reminder")
+
+    async def _scan_once():
+        from app.services.reminder import run_scheduled_scan
+        from app.database import SessionLocal as _SL
+        _db = _SL()
+        try:
+            summary = run_scheduled_scan(_db)
+            fired = {k: v for k, v in summary.items() if v}
+            if fired:
+                logger.info(f"账期扫描提醒: {fired}")
+        except Exception as e:
+            logger.error(f"账期扫描失败: {e}")
+        finally:
+            _db.close()
+
+    # 启动补扫一次（应用可能深夜重启，漏过当天 09:00 的扫描）
+    await _scan_once()
+    while True:
+        now = datetime.now()
+        next_run = now.replace(hour=9, minute=0, second=0, microsecond=0)
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        await asyncio.sleep(max(1.0, (next_run - now).total_seconds()))
+        await _scan_once()
 
 
 def create_app() -> FastAPI:
@@ -306,6 +344,8 @@ def create_app() -> FastAPI:
     app.include_router(system_config_router, prefix="/api")
     from app.routers.bot_chat import router as bot_chat_router
     app.include_router(bot_chat_router, prefix="/api")
+    from app.routers.notification import router as notification_router
+    app.include_router(notification_router, prefix="/api")
 
     @app.get("/api/health")
     def health():

@@ -101,3 +101,46 @@ class ReminderLog(Base):
     status = Column(String(16), default="success", comment="success/fail")
     error_msg = Column(String(256))
     pushed_at = Column(DateTime, default=func.now())
+
+
+class ReminderRule(Base):
+    """预警提醒规则（事件联动 / 定时扫描）— 规则配置化（D8）
+
+    埋点代码只传 point_code + 单据数据，标题/内容/收件人/渠道/去重全部由本规则决定。
+    """
+    __tablename__ = "sys_reminder_rule"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(64), unique=True, nullable=False, comment="提醒点编码（对应代码埋点，如 SO_APPROVED）")
+    name = Column(String(64), nullable=False, comment="提醒名称")
+    trigger_type = Column(String(16), nullable=False, default="event", comment="event=事件联动 / schedule=定时扫描")
+    enabled = Column(Integer, default=1, comment="1=启用 0=停用")
+    title_template = Column(String(256), comment="标题模板（支持 {order_no}/{amount}/{due_date} 占位符）")
+    content_template = Column(Text, comment="正文模板")
+    target_roles = Column(JSON, default=list, comment="接收角色编码列表，如 [\"sales_manager\"]")
+    channel = Column(JSON, default=["inapp"], comment="渠道：[\"inapp\"] 或 [\"inapp\",\"wecom\"]")
+    schedule_cron = Column(String(32), default="0 9 * * *", comment="定时型 cron 表达式")
+    advance_days = Column(Integer, default=7, comment="定时型：提前天数（默认 7）")
+    dedup_hours = Column(Integer, default=1, comment="去重窗口（小时），同单据同提醒点在窗口内不重复推")
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+
+class Notification(Base):
+    """站内通知（落库即视为已发，D7）"""
+    __tablename__ = "sys_notification"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("sys_user.id"), nullable=False, comment="收件人用户ID")
+    point_code = Column(String(64), nullable=False, comment="提醒点编码")
+    title = Column(String(256), comment="标题")
+    content = Column(Text, comment="正文")
+    doc_type = Column(String(32), comment="关联单据类型（so_order/so_delivery/ar_account/ap_account）")
+    doc_id = Column(Integer, comment="关联单据ID（用于跳转）")
+    doc_no = Column(String(64), comment="单据号（冗余，列表展示用）")
+    dedup_key = Column(String(128), comment="幂等键：point_code:doc_type:doc_id")
+    read_status = Column(Integer, default=0, comment="0=未读 1=已读")
+    is_active = Column(Integer, default=1, comment="1=有效（单据删除/状态回退时软失效）")
+    created_at = Column(DateTime, default=func.now())
+
+    user = relationship("User", foreign_keys=[user_id])

@@ -29,6 +29,20 @@ from app.utils.batch_no import generate_doc_no
 router = APIRouter()
 
 
+def _fire_reminder(db, point_code: str, doc_type: str, doc_id, doc_no="", data=None):
+    """预警提醒埋点统一入口 — 失败仅记日志，不影响业务主流程。
+
+    埋点须在业务 db.commit() 之后调用（notify 内部会另行 commit 通知），
+    避免把通知写入与业务事务混在一起。
+    """
+    try:
+        from app.services.reminder import notify
+        notify(db, point_code, doc_type, doc_id, doc_no, data)
+    except Exception:
+        import logging
+        logging.getLogger("reminder").exception("预警埋点失败: %s (doc_type=%s doc_id=%s)", point_code, doc_type, doc_id)
+
+
 # ==================== 报价单 ====================
 
 @router.post("/quotes", tags=["销售管理"])
@@ -438,6 +452,8 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db),
         if item.production_status in (None, "", "未生产"):
             item.production_status = "未生产"
     db.commit()
+    _fire_reminder(db, "SO_APPROVED", "so_order", order.id, order.order_no or "",
+                   {"order_no": order.order_no or "", "amount": round(order.total_amount or 0, 2)})
     return {"message": "订单已审核"}
 
 
@@ -501,6 +517,8 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转直采")
     item.production_status = "已通知入库"
     db.commit()
+    _fire_reminder(db, "SO_TO_PURCHASE", "so_order", order.id, order.order_no or "",
+                   {"order_no": order.order_no or ""})
     return {"message": "已转直采，请到「采购管理 → 销售订单转采购」办理采购"}
 
 
@@ -523,6 +541,8 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转外发")
     item.production_status = "已通知外发"
     db.commit()
+    _fire_reminder(db, "SO_TO_OUTSOURCE", "so_order", order.id, order.order_no or "",
+                   {"order_no": order.order_no or ""})
     return {"message": "已转外发，请到「委外管理 → 销售订单转委外」办理委外"}
 
 
@@ -900,6 +920,8 @@ def create_delivery_notify(data: dict, db: Session = Depends(get_db), current_us
     )
     db.add(sd)
     db.commit()
+    _fire_reminder(db, "DELIVERY_NOTIFIED", "so_delivery", sd.id, delivery_no,
+                   {"delivery_no": delivery_no})
     return {"id": sd.id, "delivery_no": delivery_no, "message": "已通知发货，等待库管出库"}
 
 
@@ -1052,6 +1074,9 @@ def confirm_order_item_delivery(
     order = item.order
     _update_order_delivery_status(order)
     db.commit()
+    if confirmed:
+        _fire_reminder(db, "DELIVERY_CONFIRMED", "so_order", order.id, order.order_no or "",
+                       {"order_no": order.order_no or ""})
     return {
         "message": "已确认发货完成" if confirmed else "已撤销确认",
         "delivery_confirmed": item.delivery_confirmed,
@@ -1905,6 +1930,8 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     db.add(ar)
 
     db.commit()
+    _fire_reminder(db, "AR_CREATED", "ar_account", ar.id, ar_no_str,
+                   {"ar_no": ar_no_str, "amount": round(ar.amount or 0, 2)})
     return {"id": invoice.id, "invoice_no": data["invoice_no"], "ar_no": ar_no_str, "message": "开票成功，应收已生成"}
 
 

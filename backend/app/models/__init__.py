@@ -43,7 +43,7 @@ from app.models.tax_refund import (
 )
 from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
-    ReminderConfig, ReminderLog, OperationLog,
+    ReminderConfig, ReminderLog, ReminderRule, Notification, OperationLog,
 )
 
 __all__ = [
@@ -76,5 +76,5 @@ __all__ = [
     "TaxRefundInputInvoice", "TaxRefundDeclaration",
     "TaxRefundDetail", "TaxRefundProgress",
     "WecomConfig", "BotConfig", "BotConversation",
-    "ReminderConfig", "ReminderLog", "OperationLog",
+    "ReminderConfig", "ReminderLog", "ReminderRule", "Notification", "OperationLog",
 ]
