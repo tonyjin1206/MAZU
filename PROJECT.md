@@ -1,6 +1,6 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.6.0** | A Lightweight Trade Management Platform
+> **v2.7.0** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
@@ -255,6 +255,24 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/system/bot` | GET/POST | AI模型配置列表/创建 |
 | `/system/bot/{id}` | PUT/DELETE | 修改/删除AI配置 |
 | `/system/bot/default-prompt` | GET | 默认提示词 |
+| `/system/reminder-rules` | GET/POST | 预警提醒规则列表/创建（管理端，v2.7.0） |
+| `/system/reminder-rules/{id}` | PUT/DELETE | 修改/删除提醒规则（管理端，v2.7.0） |
+
+### 预警提醒与站内通知 (`/api/notifications`，v2.7.0)
+
+> 站内为主（`sys_notification` 落库即视为已发）；规则配置化（`sys_reminder_rule`，D8）。企微通道为预留钩子（未启用）。
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/notifications` | GET | 当前用户通知列表（未读优先，分页） |
+| `/notifications/unread-count` | GET | 未读数（铃铛红点） |
+| `/notifications/latest` | GET | 最近 N 条（工作台/铃铛；`only_unread`） |
+| `/notifications/{id}/read` | PUT | 标记已读（仅本人） |
+| `/notifications/read-all` | PUT | 全部已读 |
+| `/notifications/admin-query` | GET | 管理端全量查询（按 user_id/role_code/point_code/doc_type 筛选） |
+
+**事件埋点（sales.py，按当前产品逻辑重校，无生产订单模块）**：SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / DELIVERY_NOTIFIED / DELIVERY_CONFIRMED / AR_CREATED（双收件人）
+**定时预警（每日 09:00 + 启动补扫）**：AR_DUE_SOON / AR_OVERDUE / AP_DUE_SOON / AP_OVERDUE（红字应收不参与）
 
 ---
 
@@ -414,6 +432,16 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 ---
 
 ## 十三、版本变更记录
+
+### v2.7.0 (2026-08-27)
+- **批4 预警提醒系统（按当前产品逻辑重校，无生产订单模块）**：
+  - **通知内核**：`sys_notification` 表 + `routers/notification.py`（列表/未读数/最新/标记已读/全部已读/管理端全量查询）；站内为主，落库即视为已发（D7）
+  - **规则配置化**：`sys_reminder_rule` 表 + `services/reminder.py`（notify/渲染/角色收件人/去重）；`/api/system/reminder-rules` CRUD（D8）
+  - **事件埋点 6 处（sales.py）**：SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / DELIVERY_NOTIFIED / DELIVERY_CONFIRMED / AR_CREATED（双收件人）；**以 SO_TO_PURCHASE / SO_TO_OUTSOURCE 替代原 MO_PLANNED / MO_OUTSOURCED**
+  - **定时预警**：AR_DUE_SOON / AR_OVERDUE / AP_DUE_SOON / AP_OVERDUE，每日 09:00 扫描 + 启动补扫（D4）；红字应收不参与
+  - **前端**：顶部铃铛（未读红点+消息弹层+跳转）；`system/Notifications.vue`（通知查询+提醒规则两页签）；系统管理菜单「通知管理」
+  - **测试/基建**：`test_reminders.py` 6 场景；全量 113 passed；`test.sh` 隔离测试库（不复用陈旧 erp.db）；`reset_local_db` KEEP 补 `sys_reminder_rule`/`sys_notification`
+- **模型**：新建 `sys_reminder_rule`、`sys_notification`；迁移脚本 `scripts/migrate_batch4_reminders.py`
 
 ### v2.6.0 (2026-08-27)
 - **批1（AO→SP 基底适配 + SP 健壮性审计）**：登录背景换 AO 集装箱船图；菜单图标沿用 AO；AI 直连优先+代理兜底；AI 密钥防双加密；SP 健壮性审计修复（删除保护/校验/前端错误提示/传参）；SP 环境初始化修复（mo_outsourcing 外键/init 脚本/test.sh 平台自适应）；测试基线 test_config_secret_guard.py

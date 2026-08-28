@@ -172,3 +172,22 @@
 | 6 | 退货联动 + 负数申报 | 已报税退货打标 `refund_declared=1`；`return-candidates`/`return-adjustments` 添加负数行并重算出口额 |
 
 > 建议：将此文件接入全量回归与 CI（backend-test job）；后续批3 报关单明细化、批4 预警系统另建专项文件，遵循同一 conftest + test_data 单一数据源规范。
+
+---
+
+## 七、批4 预警提醒系统 专项测试（已落地）
+
+> 依赖 SP 流程；按当前产品逻辑重校（无生产订单模块，销售订单下游走转直采/转外发）。通知落库即视为已发（D7）。
+
+**测试文件：** `backend/tests/test_reminders.py`（6 场景，随批4 一并落地）
+
+| # | 场景 | 断言 |
+|---|---|---|
+| 1 | 规则种子 | 规则应≥10（6 事件+4 定时）；无 MO_PLANNED/MO_OUTSOURCED；含 SO_TO_PURCHASE/SO_TO_OUTSOURCE/AR_CREATED/AR_OVERDUE |
+| 2 | 事件埋点 SO_APPROVED | 审核后生成通知发给销售经理；标题含订单号 |
+| 3 | 去重 | 同一单据同提醒点 1 小时内只 1 条 |
+| 4 | AR_CREATED 双收件人 | 应收生成 → 财务+销售各 1 条 |
+| 5 | 定时扫描 | 应收将到期/逾期分别落库；**红字应收不参与**；逾期通知销售+财务 |
+| 6 | 通知 API | unread-count 返回 count；admin-query 返回 items+total（管理端） |
+
+> 基建：`test.sh` 本次改为**隔离测试库**（每次全新临时库，不复用可能陈旧/含数据的 `backend/data/erp.db`）；`conftest.setup_db` 补种提醒规则；`reset_local_db` KEEP 补 `sys_reminder_rule`/`sys_notification`。建议接入 CI（backend-test job）。

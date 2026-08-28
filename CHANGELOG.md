@@ -1,5 +1,58 @@
 # Changelog
 
+## v2.7.0 (2026-08-27)
+
+> 本版本为 **预警提醒系统**（SP 分支批4）。预警内容按当前产品逻辑**重校**：无「生产订单」模块（弃用），销售订单下游走转直采/转外发，故不设 MO_* 提醒点，改为销售/发货/应收真实链路。
+
+### 批4：预警提醒系统（通知内核 · 事件埋点 · 规则配置化 · 定时账期预警 · 站内消息中心）
+
+**模型（`scripts/migrate_batch4_reminders.py`，幂等）**
+
+| 表 | 说明 |
+|---|---|
+| 新建 `sys_reminder_rule` | 预警提醒规则（code/name/trigger_type/title_template/content_template/target_roles/channel/schedule_cron/advance_days/dedup_hours）——**规则配置化 D8** |
+| 新建 `sys_notification` | 站内通知（user_id/point_code/title/content/doc_type/doc_id/doc_no/dedup_key/read_status/is_active）——**落库即视为已发 D7** |
+
+**后端**
+
+- **`services/reminder.py`**：`notify()` 统一入口（查规则→渲染模板→解析收件人→去重→写通知）；`resolve_recipients`（按角色广播）；`render_template`（`{order_no}/{amount}/{due_date}` 占位符）；`run_scheduled_scan`（AR/AP 账期扫描）；`seed_reminder_rules`（10 条规则，幂等）
+- **`routers/notification.py`**：`GET /api/notifications`（当前用户列表）、`unread-count`（未读红点）、`latest`（工作台/铃铛）、`PUT /{id}/read`（标记已读）、`PUT /read-all`（全部已读）、`GET /admin-query`（管理端全量查询，按用户/角色/提醒点/单据类型筛选）
+- **`system_config`** 加提醒规则 CRUD（`GET/POST/PUT/DELETE /api/system/reminder-rules`，管理端）
+- **事件埋点（sales.py 6 处，按当前产品逻辑重校）**
+
+| 提醒点 | 触发 | 收件人 | 说明 |
+|---|---|---|---|
+| SO_APPROVED | 销售订单审核通过 | 销售经理 | 转直采/转委外+安排发货 |
+| SO_TO_PURCHASE | 销售明细「转直采」 | 采购经理 | **替代原 MO_PLANNED** |
+| SO_TO_OUTSOURCE | 销售明细「转外发」 | 生产/采购经理 | **替代原 MO_OUTSOURCED** |
+| DELIVERY_NOTIFIED | 已通知发货（待出库） | 库管员 | 到「成品出库」出库 |
+| DELIVERY_CONFIRMED | 明细行发货完成 | 销售经理 | 安排开票 |
+| AR_CREATED | 应收生成 | 财务+销售 | **双收件人**（入账+催收）|
+
+- **定时预警（main.py 后台任务：启动补扫一次 D4 + 每日 09:00 扫描）**
+
+| 规则 | 条件 | 收件人 |
+|---|---|---|
+| AR_DUE_SOON | 应收 due_date∈[今+1,今+7] 且未收清 | 销售经理 |
+| AR_OVERDUE | 应收 due_date<今天 且未收清 | 销售+财务 |
+| AP_DUE_SOON | 应付 due_date∈[今+1,今+7] 且未付清 | 财务 |
+| AP_OVERDUE | 应付 due_date<今天 且未付清 | 财务+采购 |
+
+  - **红字应收（`is_red`）不参与账期提醒**；站内为主（企微为预留钩子，未启用）
+
+**前端**
+
+- **顶部铃铛（Layout.vue，所有登录用户）**：未读红点 + 消息弹层；点击标记已读并跳转关联单据；30s 轮询未读数
+- **`system/Notifications.vue`（管理端，`menu:system:reminders` 权限）**：「通知查询」+「提醒规则」两页签；系统管理菜单新增「通知管理」
+- **`api/business.js`**：`notificationApi`（list/unreadCount/latest/markRead/markAllRead/adminQuery）+ `reminderRuleApi`
+
+**测试与基建**
+
+- `backend/tests/test_reminders.py`：规则种子 / 事件埋点 / 去重 / 双收件人 / 定时扫描（含红字不参与）/ 通知 API，6 场景
+- 全量测试 **113 passed**；`vite build` 通过
+- **`test.sh` 隔离测试库**：每次全新临时库（不复用陈旧 `backend/data/erp.db`，避免 RBAC 迁移前旧 schema 导致登录失败）
+- `reset_local_db.py` KEEP 补 `sys_reminder_rule` / `sys_notification`
+
 ## v2.6.0 (2026-08-27)
 
 > 本版本为 **SP 为基底的 AO 功能移植 + 销售退货财务层补强**（SP 分支批次 1/2）。以下按批次记录。
