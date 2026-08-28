@@ -50,9 +50,33 @@ from app.schemas.foundation import (
     SystemParamCreate, SystemParamUpdate, SystemParamOut, SystemParamOptionOut,
 )
 from app.routers.base_crud import register_crud
-from app.utils.auth import get_current_user, require_permission, get_current_admin
+from app.utils.auth import get_current_user, require_permission, get_current_admin, require_any_permission
 
 router = APIRouter()
+
+# ==================== 读端点授权域（BUG-L4-02 读越权修复） ====================
+# 读端点采用「本域 + 业务引用域」授权（任一满足即可读）：
+# 既挡住低权限角色（库管员/只读）读非授权域，又保留下游单据页引用上游主数据的业务需求
+#（如销售下单选产品/客户、财务开票读订单、采购/委外读供应商）。
+# ⚠ 禁将 menu:inventory* / menu:production:batch / menu:dashboard 用作引用域——
+#   库管员持 inventory+production:batch、只读持 dashboard，会由此漏入授权域。
+SALES_READ_BASE = ("menu:sales:orders", "menu:sales:deliveries", "menu:sales:invoices",
+                   "menu:sales:customs", "menu:sales:ar", "menu:sales:collections")
+PURCHASE_READ_BASE = ("menu:purchase:from-sales", "menu:purchase:requisitions", "menu:purchase:orders",
+                      "menu:purchase:receipts", "menu:purchase:invoices", "menu:purchase:ap",
+                      "menu:purchase:payments")
+OUTSOURCE_READ_BASE = ("menu:outsource:from-sales", "menu:outsource:orders")
+# 生产域引用：显式列出，排除 menu:production:batch（库管员持 batch 会越权读入）
+PRODUCTION_READ_BASE = ("menu:production:orders", "menu:production:workspace",
+                        "menu:production:invoices", "menu:production:receipts")
+MATERIALS_READ_PERMS = ("menu:materials",) + PURCHASE_READ_BASE
+PRODUCTS_READ_PERMS = ("menu:products",) + SALES_READ_BASE + PRODUCTION_READ_BASE
+CUSTOMERS_READ_PERMS = ("menu:customers",) + SALES_READ_BASE
+SUPPLIERS_READ_PERMS = ("menu:suppliers",) + PURCHASE_READ_BASE + OUTSOURCE_READ_BASE
+OUTSOURCERS_READ_PERMS = ("menu:outsource:orders", "menu:outsource:from-sales", "menu:suppliers",
+                          "menu:production:orders", "menu:production:workspace",
+                          "menu:production:invoices", "menu:production:receipts",
+                          "menu:purchase:orders", "menu:purchase:receipts")
 
 # ==================== 参数设置（专用路由，必须注册在通用 CRUD 之前）====================
 
@@ -196,7 +220,7 @@ def list_materials(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
                    name: str = Query(""), spec: str = Query(""),
                    category: str = Query(""),
                    db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
+                   current_user: User = Depends(require_any_permission(*MATERIALS_READ_PERMS))):
     query = db.query(Material)
     if keyword:
         from sqlalchemy import or_
@@ -293,7 +317,7 @@ def list_products(
     name_cn: str = Query(""), spec: str = Query(""),
     customer_id: int | None = Query(None, description="只返回关联了该客户的产品（销售下单用）"),
     is_active: int | None = None,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTS_READ_PERMS)),
 ):
     query = db.query(Product)
     if customer_id:
@@ -327,7 +351,7 @@ def list_products(
 
 
 @router.get("/products/{item_id}", response_model=ProductOut, tags=["基础档案-产品"])
-def get_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTS_READ_PERMS))):
     item = db.query(Product).filter(Product.id == item_id).first()
     if not item:
         raise HTTPException(404, "产品不存在")
@@ -396,7 +420,7 @@ def delete_product(item_id: int, db: Session = Depends(get_db), current_user: Us
 @router.get("/outsourcers", tags=["基础档案-委外商"])
 def list_outsourcers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
                      keyword: str = Query(""),
-                     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                     db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCERS_READ_PERMS))):
     """委外商列表 = 供应商中 supplier_type=委外 的档案"""
     query = db.query(Supplier).filter(Supplier.supplier_type == "委外")
     if keyword:
@@ -426,7 +450,7 @@ def _next_code(db, model, prefix: str, field="code"):
 
 @router.get("/customers/next-code", tags=["基础档案-客户"])
 def preview_customer_code(db: Session = Depends(get_db),
-                          current_user: User = Depends(get_current_user)):
+                          current_user: User = Depends(require_permission("menu:customers"))):
     """预览下一个客户编码（仅预览，不消耗流水）"""
     return {"code": _next_code(db, Customer, "CU")}
 
@@ -460,7 +484,7 @@ def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
                    name_cn: str = Query(""), contact_person: str = Query(""),
                    country: str = Query(""),
                    db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
+                   current_user: User = Depends(require_any_permission(*CUSTOMERS_READ_PERMS))):
     query = db.query(Customer)
     if keyword:
         from sqlalchemy import or_
@@ -602,7 +626,7 @@ def delete_supplier(item_id: int, db: Session = Depends(get_db),
 
 @router.get("/suppliers/next-code", tags=["基础档案-供应商"])
 def preview_supplier_code(db: Session = Depends(get_db),
-                          current_user: User = Depends(get_current_user)):
+                          current_user: User = Depends(require_permission("menu:suppliers"))):
     """预览下一个供应商编码（仅预览，不消耗流水）"""
     return {"code": _next_code(db, Supplier, "SU")}
 
@@ -637,7 +661,7 @@ def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
                    name: str = Query(""), contact_person: str = Query(""),
                    country: str = Query(""),
                    db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
+                   current_user: User = Depends(require_any_permission(*SUPPLIERS_READ_PERMS))):
     query = db.query(Supplier)
     if keyword:
         from sqlalchemy import or_

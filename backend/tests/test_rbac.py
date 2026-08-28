@@ -224,3 +224,53 @@ class TestPermissionRoles:
         assert "menu:inventory" in codes
         assert "menu:purchase:orders" not in codes  # 无采购
         assert "menu:sales:orders" not in codes  # 无销售
+
+
+class TestReadScopeRBAC:
+    """BUG-L4-02：低权限角色读越权修复 — 库管员/只读不得读非授权域数据
+
+    库管员（仅库存域）读基础档案/销售订单应 403，但读库存可用（不误伤）；
+    只读用户（仅驾驶舱）读 sales/foundation/inventory 应 403。
+    """
+
+    PASSWORD = "pass12345"
+
+    def _create_user(self, client, admin_h, username, role_code):
+        roles = client.get("/api/auth/roles", headers=admin_h).json()
+        role = next(r for r in roles if r["code"] == role_code)
+        resp = client.post("/api/auth/users", json={
+            "username": username, "password": self.PASSWORD,
+            "display_name": username, "role_id": role["id"]}, headers=admin_h)
+        assert resp.status_code < 400, resp.text
+        return username
+
+    def _login(self, client, username):
+        resp = client.post("/api/auth/login", json={
+            "username": username, "password": self.PASSWORD})
+        assert resp.status_code == 200, resp.text
+        return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+    def test_warehouse_keeper_read_blocked(self, client, admin_token):
+        """库管员（仅库存域）读基础档案/销售订单 403，读库存可用"""
+        admin_h = {"Authorization": f"Bearer {admin_token}"}
+        self._create_user(client, admin_h, "wk_read_l402", "warehouse_keeper")
+        h = self._login(client, "wk_read_l402")
+        # 非授权域读取 → 403（不得读非授权域全量数据）
+        for path in ("/api/foundation/suppliers", "/api/foundation/products",
+                     "/api/foundation/materials", "/api/sales/orders"):
+            r = client.get(path, headers=h)
+            assert r.status_code == 403, f"库管员读 {path} 应 403，实际 {r.status_code}"
+        # 授权域（库存）读取 → 200（不误伤）
+        r = client.get("/api/inventory/balance", headers=h)
+        assert r.status_code == 200, r.text
+
+    def test_readonly_read_blocked(self, client, admin_token):
+        """只读用户（仅驾驶舱）读 sales/foundation/inventory 均 403"""
+        admin_h = {"Authorization": f"Bearer {admin_token}"}
+        self._create_user(client, admin_h, "ro_read_l402", "readonly")
+        h = self._login(client, "ro_read_l402")
+        for path in ("/api/sales/orders", "/api/foundation/suppliers",
+                     "/api/foundation/products", "/api/foundation/materials",
+                     "/api/foundation/customers", "/api/inventory/balance"):
+            r = client.get(path, headers=h)
+            assert r.status_code == 403, f"只读用户读 {path} 应 403，实际 {r.status_code}"

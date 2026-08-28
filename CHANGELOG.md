@@ -10,6 +10,16 @@
   - 库存：原料出库 → `menu:inventory:material-outs`；盘点 → `menu:inventory:stocktake`
 - 验证：`./test.sh` 242 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped；只读角色对 POST/PUT/DELETE `/api/sales/orders` 现 403（复现原 200）
 
+## 未发布 — 安全修复（BUG-L4-02：后端读越权）
+
+> **Major**：库管员（库存域）/只读用户可读取基础档案（供应商/产品/材料）与销售订单——读端点仅校验登录（`get_current_user`），未校验菜单权限，低权限角色可全量读取非授权域数据。
+
+- **修复**（`app/routers/sales.py`/`foundation.py`/`inventory.py` 读端点 + `app/utils/auth.py` 新增 `require_any_permission`）：读端点采用「本域 + 业务引用域」授权（任一满足即可读）
+  - 读端点新增 `require_any_permission`（本域 + 下游业务引用域）：既挡低权限角色读非授权域，又保留下游单据页引用上游主数据的业务需求（销售下单选产品/客户、财务开票读订单、采购/委外读供应商、库管出库读发货）
+  - 关键授权域（禁含 `menu:inventory*`/`menu:production:batch`/`menu:dashboard`，防库管员/只读漏入）：销售订单=`menu:sales:orders`+发票/发货/报关/应收/收款/转采购/转委外；供应商=`menu:suppliers`+采购+委外；产品=`menu:products`+销售+生产；材料=`menu:materials`+采购；客户=`menu:customers`+销售；库存读=`menu:inventory`（库管员可用/只读拒）
+  - 基础档案 `next-code` 预览保持本域（创建档案专属）；无鉴权的 `/ar/collection-detail` 读端点补授权
+- 验证：`./test.sh` 244 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped；库管员读 suppliers/products/materials/orders 现 403、读库存仍 200；只读用户读 sales/foundation/inventory 全 403（复现原 200）
+
 ## v2.7.0 (2026-08-27)
 
 > 本版本为 **预警提醒系统**（SP 分支批4）。预警内容按当前产品逻辑**重校**：无「生产订单」模块（弃用），销售订单下游走转直采/转外发，故不设 MO_* 提醒点，改为销售/发货/应收真实链路。

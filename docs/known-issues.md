@@ -33,6 +33,7 @@
 |---|------|------|------|------|
 | 14 | GET /auth/users 只认证不授权 | 任何登录用户可查看用户列表（仅 get_current_user） | 仅管理员可看 | ✅ **已修复**（2026-07-31：auth.py 的 GET /users、/users/{id}、/roles、/permissions 加 require_permission("menu:system:users")，低权限角色 403） |
 | 18 | **业务单据写端点只认证不授权（BUG-L4-01）** | 只读/库管员可通过 API 对销售订单等增删改（仅 get_current_user，无 require_permission） | 低权限写 403 | ✅ **已修复**（2026-08-28：sales/foundation/inventory 62 个写端点统一补 require_permission，与 approve 端点对齐；只读角色对 POST/PUT/DELETE /api/sales/orders 现 403） |
+| 19 | **业务单据/基础档案读端点只认证不授权（BUG-L4-02）** | 库管员/只读可全量读取基础档案（供应商/产品/材料）与销售订单（仅 get_current_user，无 require_permission） | 低权限读 403 | ✅ **已修复**（2026-08-28：sales/foundation/inventory 读端点补 require_permission / require_any_permission（本域+业务引用域）；库管员读档案/订单 403、读库存仍 200；只读读 sales/foundation/inventory 全 403） |
 
 ## 业务校验缺失
 

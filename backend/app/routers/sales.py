@@ -23,10 +23,29 @@ from app.models.sales import (
     AccountsReceivable, Collection, CollectionAllocation, ArAdjustment,
 )
 from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder
-from app.utils.auth import get_current_user, require_permission
+from app.utils.auth import get_current_user, require_permission, require_any_permission
 from app.utils.batch_no import generate_doc_no
 
 router = APIRouter()
+
+# ==================== 读端点授权域（BUG-L4-02 读越权修复） ====================
+# 读端点采用「本域 + 业务引用域」授权（任一满足即可读）：
+# - 财务开票/报关等需读订单（无 menu:sales:orders，但有本域单据权限）；
+# - 库管出库工作台需读发货信息（持有 menu:inventory:delivery-outs）；
+# 同时挡住库管员/只读读销售订单等非授权数据。
+# ⚠ orders 授权域禁含 menu:inventory*/menu:production:batch（库管员由此读入销售订单）。
+ORDERS_READ_PERMS = (
+    "menu:sales:orders", "menu:sales:deliveries", "menu:sales:invoices",
+    "menu:sales:customs", "menu:sales:ar", "menu:sales:collections",
+    "menu:purchase:from-sales", "menu:outsource:from-sales",
+)
+# 发货为两段式：业务员通知（menu:sales:deliveries）+ 库管出库（menu:inventory:delivery-outs）
+DELIVERIES_READ_PERMS = ("menu:sales:deliveries", "menu:inventory:delivery-outs")
+QUOTES_READ_PERMS = ("menu:sales:orders",)
+CUSTOMS_READ_PERMS = ("menu:sales:customs",)
+INVOICES_READ_PERMS = ("menu:sales:invoices", "menu:sales:ar", "menu:sales:collections", "menu:sales:orders")
+AR_READ_PERMS = ("menu:sales:ar", "menu:sales:collections", "menu:sales:invoices")
+COLLECTIONS_READ_PERMS = ("menu:sales:collections", "menu:sales:ar", "menu:sales:invoices")
 
 
 def _fire_reminder(db, point_code: str, doc_type: str, doc_id, doc_no="", data=None):
@@ -81,7 +100,7 @@ def create_quote(data: dict, db: Session = Depends(get_db), current_user: User =
 @router.get("/quotes", tags=["销售管理"])
 def list_quotes(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*QUOTES_READ_PERMS)),
 ):
     items = db.query(SalesQuote).order_by(SalesQuote.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": db.query(SalesQuote).count(), "page": page, "page_size": page_size, "items": [
@@ -231,7 +250,7 @@ def list_sales_orders(
     status: str = Query(""), keyword: str = Query(""),
     date_from: str = Query(""), date_to: str = Query(""),
     amount_min: float = Query(None), amount_max: float = Query(None),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*ORDERS_READ_PERMS)),
 ):
     query = db.query(SalesOrder)
     if status:
@@ -287,7 +306,7 @@ def list_sales_orders(
 
 
 @router.get("/orders/{order_id}", tags=["销售管理"])
-def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*ORDERS_READ_PERMS))):
     from app.models.inventory import StockInOrder
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
@@ -1095,7 +1114,7 @@ def confirm_order_item_delivery(
 def list_deliveries(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     order_item_id: int | None = Query(None, description="按订单明细行过滤（发货记录下表用）"),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*DELIVERIES_READ_PERMS)),
 ):
     q = db.query(SalesDelivery)
     if order_item_id:
@@ -1125,7 +1144,7 @@ def list_delivery_outs(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     status: str | None = Query(None, description="待出库/部分出库/已出库"),
     keyword: str | None = Query(None, description="SD单号/订单号/产品/客户/批次/备注"),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*DELIVERIES_READ_PERMS)),
 ):
     """成品出库列表（库管用，两段式第二段）：列待出库/部分出库/已出库的 SD 单。
     status=已出库 时附带该单的出库记录（穿透 StockTransaction source_doc_no=SD单号）。"""
@@ -1194,7 +1213,7 @@ def list_delivery_outs(
 def delivery_workbench(
     page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
     keyword: str = "", status: str = "",
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*DELIVERIES_READ_PERMS)),
 ):
     """发货工作台上表：所有已审核销售订单的明细行（一行一产品）。
     字段：订单量/已入库/已发货/未发货/实物库存(该产品全部库存)/可用库存(实物-所有未完成订单锁定)/确认状态"""
@@ -1710,7 +1729,7 @@ def create_customs(data: dict, db: Session = Depends(get_db), current_user: User
 def list_customs(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     refund_status: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*CUSTOMS_READ_PERMS)),
 ):
     query = db.query(CustomsDeclaration)
     if refund_status:
@@ -1739,7 +1758,7 @@ def list_customs(
 
 
 @router.get("/customs/{customs_id}", tags=["销售管理"])
-def get_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*CUSTOMS_READ_PERMS))):
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
@@ -1972,7 +1991,7 @@ def list_sales_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*INVOICES_READ_PERMS)),
 ):
     query = db.query(SalesInvoice)
     total = query.count()
@@ -2078,7 +2097,7 @@ def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current
 def list_ar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     status: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*AR_READ_PERMS)),
 ):
     """应收账款列表"""
     query = db.query(AccountsReceivable)
@@ -2203,7 +2222,7 @@ def cancel_transfer_ar(adj_id: int, db: Session = Depends(get_db), current_user:
 
 
 @router.get("/ar/collection-detail", tags=["销售管理"])
-def list_ar_collection_detail(db: Session = Depends(get_db)):
+def list_ar_collection_detail(db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*AR_READ_PERMS))):
     """应收账款收付款明细 — 应收与收款配对，按应收日期排序"""
     from app.models.sales import Collection, CollectionAllocation
     rows = db.query(AccountsReceivable, Collection, CollectionAllocation).outerjoin(
@@ -2313,7 +2332,7 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
 def list_collections(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*COLLECTIONS_READ_PERMS)),
 ):
     query = db.query(Collection)
     if keyword:
@@ -2344,7 +2363,7 @@ def list_collections(
 
 
 @router.get("/collections/{collection_id}", tags=["销售管理"])
-def get_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*COLLECTIONS_READ_PERMS))):
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
@@ -2423,7 +2442,7 @@ def delete_collection(collection_id: int, db: Session = Depends(get_db), current
 def list_order_items(
     page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
     production_status: str = Query(""), keyword: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*ORDERS_READ_PERMS)),
 ):
     """按销售明细行查询（含生产状态）"""
     q = db.query(SalesOrderItem).join(SalesOrder).join(Customer)

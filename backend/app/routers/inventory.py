@@ -150,7 +150,7 @@ def get_inventory_balance(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """库存余额查询（支持期初/期末，含数量+金额）
     
@@ -271,7 +271,7 @@ def get_inventory_balance(
 def get_batch_receipts(
     batch_no: str = Query(..., description="批次号"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """穿透查询：某批次的所有入库记录（每次收货一条：入库单号/日期/仓库/数量）"""
     records = db.query(WarehouseInventory).filter(
@@ -298,7 +298,7 @@ def get_material_receipts(
     material_id: int | None = Query(None, description="原料ID（与 product_id 二选一）"),
     product_id: int | None = Query(None, description="产品ID（与 material_id 二选一）"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """入库明细：某原料/产品所有批次的所有入库记录（每次收货一条，按入库日期倒序）
 
@@ -339,7 +339,7 @@ def get_material_receipts(
 def get_inventory_summary(
     group_by: str = Query("material", description="group by: material/warehouse/batch"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """库存汇总（按材料/仓库/批次汇总数量和金额）"""
     query = db.query(
@@ -393,7 +393,7 @@ def get_transactions(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """库存流水查询"""
     query = db.query(StockTransaction)
@@ -474,7 +474,7 @@ def get_available_batches(
     warehouse_id: int | None = Query(None, description="仓库ID"),
     order_id: int | None = Query(None, description="当前发货订单ID，用于计算批次锁定"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """查询可用批次，返回每个批次的锁定/可发数量：
     - 成品维度：product_id 必填，按产品+仓库；批次归属订单未确认发货完成时，(订单量-已发) 锁定给该订单；当前订单自己的批次不锁定
@@ -682,7 +682,7 @@ def return_material_out(
 def list_material_outs(
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
     keyword: str = "", start_date: str = "", end_date: str = "",
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:material-outs")),
 ):
     """原料出库记录列表 — 手动出库 + 委外/生产发料（source_doc_type=原料出库）的流水，按时间倒序。"""
     from sqlalchemy import or_
@@ -735,7 +735,7 @@ def list_material_outs(
 def trace_batch(
     batch_no: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """批次追溯"""
     items = db.query(StockTransaction).filter(
@@ -805,7 +805,7 @@ def create_stocktake(data: dict, db: Session = Depends(get_db), current_user: Us
 @router.get("/stocktakes", tags=["库存管理"])
 def list_stocktakes(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """盘点单列表"""
     items = db.query(Stocktake).order_by(Stocktake.id.desc()).offset(
@@ -824,7 +824,7 @@ def list_stocktakes(
 
 
 @router.get("/stocktakes/{stocktake_id}", tags=["库存管理"])
-def get_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """盘点单详情（含明细）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
     if not s:
