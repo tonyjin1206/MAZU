@@ -73,7 +73,7 @@
         </el-table-column>
       </el-table>
 
-      <!-- 加工工序：委外加工工序维护（坯布/染色/底布复合等） -->
+      <!-- 加工工序：生产加工工序维护（坯布/染色/底布复合等） -->
       <el-table
         v-else-if="activeGroup === 'process'"
         :data="processList" v-loading="loading" stripe border size="small" style="width: 100%"
@@ -193,7 +193,7 @@
         <el-form-item label="工序名称" prop="name">
           <el-input v-model="processForm.name" placeholder="如：坯布、染色、底布复合" />
         </el-form-item>
-        <div style="color: #909399; font-size: 12px; line-height: 1.5">编码自动生成（GX000001、GX000002…），委外加工时从工序列表里选择。</div>
+        <div style="color: #909399; font-size: 12px; line-height: 1.5">编码自动生成（GX000001、GX000002…），自产加工时从工序列表里选择。</div>
       </el-form>
       <template #footer>
         <el-button @click="processDialogVisible = false">取消</el-button>

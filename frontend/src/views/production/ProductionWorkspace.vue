@@ -52,7 +52,6 @@
           <el-table-column label="工序状态" width="90">
             <template #default="{ row }"><el-tag :type="tagType(row.process_status)" size="small">{{ row.process_status }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="委外商" min-width="120" prop="outsourcer_name" sortable />
           <el-table-column label="操作" min-width="380">
             <template #default="{ row }">
               <div style="display: flex; gap: 4px; white-space: nowrap">
@@ -188,7 +187,6 @@
     <el-dialog v-model="finishVisible" title="工序完工" width="500px">
       <el-form :model="finishForm" label-width="100px">
         <el-form-item label="工序"><el-input :model-value="finishForm.process_name" disabled /></el-form-item>
-        <el-form-item label="委外商"><el-input :model-value="finishForm.outsourcer_name || '自产'" disabled /></el-form-item>
         <el-form-item label="加工单价" prop="unit_price"><el-input type="number" v-model="finishForm.unit_price" :min="0" /></el-form-item>
         <el-form-item label="加工数量" prop="process_qty"><el-input type="number" v-model="finishForm.process_qty" :min="0" /></el-form-item>
         <el-form-item label="加工费金额"><b>{{ $fm((parseFloat(finishForm.process_qty)||0) * (parseFloat(finishForm.unit_price)||0)) }}</b></el-form-item>
@@ -280,7 +278,6 @@ const flatRows = computed(() => {
         process_id: p.id,
         process_name: p.process_name,
         process_status: p.status,
-        outsourcer_name: p.outsourcer_name,
         unit_price: p.unit_price,
         process_qty: p.process_qty,
       })
@@ -414,7 +411,7 @@ let issueProcId = null
 
 const finishVisible = ref(false)
 const finishLoading = ref(false)
-const finishForm = ref({ process_name: '', outsourcer_name: '', unit_price: 0, process_qty: 0 })
+const finishForm = ref({ process_name: '', unit_price: 0, process_qty: 0 })
 let finishProdId = null
 let finishProcId = null
 
@@ -543,14 +540,11 @@ async function doIssue() {
 function openFinish(proc, prod) {
   finishProdId = prod.id
   finishProcId = proc.id
-  finishForm.value = { process_name: proc.process_name || '', outsourcer_name: proc.outsourcer_name || '', unit_price: proc.unit_price || 0, process_qty: proc.process_qty || prod.quantity || 0 }
+  finishForm.value = { process_name: proc.process_name || '', unit_price: proc.unit_price || 0, process_qty: proc.process_qty || prod.quantity || 0 }
   finishVisible.value = true
 }
 
 async function doFinish() {
-  if (finishForm.value.outsourcer_name && (parseFloat(finishForm.value.unit_price) <= 0 || parseFloat(finishForm.value.process_qty) <= 0)) {
-    ElMessage.warning('委外工序必须录入加工单价和加工数量'); return
-  }
   finishLoading.value = true
   try {
     await productionApi.productions.finishProcess(finishProdId, finishProcId, { unit_price: parseFloat(finishForm.value.unit_price) || 0, process_qty: parseFloat(finishForm.value.process_qty) || 0 })

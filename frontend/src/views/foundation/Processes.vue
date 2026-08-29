@@ -47,10 +47,7 @@
                   </template>
                 </el-dropdown>
               </template>
-          <template v-if="col.prop === 'is_outsource'" #default="{ row }">
-            <el-tag :type="row.is_outsource === 1 ? 'warning' : 'info'" size="small">{{ row.is_outsource === 1 ? '委外' : '自制' }}</el-tag>
-          </template>
-          <template v-else-if="col.prop === 'unit_price'" #default="{ row }">
+          <template v-if="col.prop === 'unit_price'" #default="{ row }">
             {{ $fm(row.unit_price) }}
           </template>
         </el-table-column>
@@ -80,14 +77,6 @@
           <el-col :span="12">
 <el-form-item label="标准工时(h)" prop="standard_hours">
           <el-input type="number" v-model="form.standard_hours" :min="0" :precision="2" style="width: 100%" />
-        </el-form-item>
-          </el-col>
-          <el-col :span="12">
-<el-form-item label="类型" prop="is_outsource">
-          <el-radio-group v-model="form.is_outsource">
-            <el-radio :value="0">自制</el-radio>
-            <el-radio :value="1">委外</el-radio>
-          </el-radio-group>
         </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -126,7 +115,6 @@ const defaultColumns = [
   { prop: 'code', label: '编码', width: 120, sortable: true },
   { prop: 'name', label: '工序名称', minWidth: 160, sortable: true },
   { prop: 'standard_hours', label: '标准工时(h)', width: 110, align: 'right', sortable: true },
-  { prop: 'is_outsource', label: '类型', width: 80, align: 'center', sortable: true },
   { prop: 'unit_price', label: '加工单价', width: 100, align: 'right', sortable: true },
 ]
 const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
@@ -176,7 +164,7 @@ function openDialog(mode, row) {
     Object.assign(form, {
       id: row.id, code: row.code, name: row.name,
       standard_hours: row.standard_hours ?? 0,
-      is_outsource: row.is_outsource ?? 0,
+      is_outsource: 0,
       unit_price: row.unit_price ?? 0,
       remark: row.remark || '',
     })

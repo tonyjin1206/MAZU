@@ -129,9 +129,6 @@ export const productionApi = {
 
 export const foundationApi = {
   procurementItemsSelect: () => request.get('/foundation/procurement-items-select'),
-  outsourcers: {
-    select: () => request.get('/foundation/outsourcers-select'),
-  },
   products: {
     processTemplates: {
       list: (productId) => request.get(`/foundation/products/${productId}/processes`),

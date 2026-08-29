@@ -74,7 +74,6 @@ export const foundationApi = {
   employees: crudApi('employees'),
   customers: { ...crudApi('customers'), nextCode: () => request.get('/foundation/customers/next-code') },
   suppliers: { ...crudApi('suppliers'), nextCode: () => request.get('/foundation/suppliers/next-code') },
-  outsourcers: crudApi('outsourcers', ['list', 'select']),
   warehouses: crudApi('warehouses'),
   currencies: crudApi('currencies', ['list', 'get', 'create', 'update', 'delete']),
   exchangeRates: crudApi('exchange-rates', ['list', 'create', 'update', 'delete']),
