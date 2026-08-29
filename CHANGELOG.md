@@ -1,8 +1,10 @@
 # Changelog
 
-## 未发布 — v2.8.0 生产模块去委外化（后端 V1）
+## v2.8.0 (2026-08-29)
 
-> **重构**：生产订单（`mo_production`）= 纯自产，委外业务从生产模块剥离、统一归口转外发（`outsource`）路线。
+> 本版本为 **销售订单三路分流（三分支）+ 生产模块去委外化** 大版本重构。生产订单（`mo_production`）= 纯自产，委外业务从生产模块剥离、统一归口转外发（`outsource`）路线。（V1 后端 / V2 前端 / V3 权限+AI+预警 / V4 迁移+测试 分步落地）
+
+### 后端去委外化 + 三分支重构（V1）
 
 - **模型**（`app/models/production.py`）：`ProductionProcess` 移除 `outsourcer_id` 字段与 `outsourcer` 关系；`ProductionOrder.production_type` 仅保留 `自产/外购`（去除委外）
 - **路由**（`app/routers/production.py`）：
@@ -12,31 +14,38 @@
   - 加工费发票（`processing-invoices`）移除委外工序归属逻辑（生产=纯自产，恒无委外工序可开票）
   - `set-type` 备货方式限 `自产/外购`
 - **销售分支**（`app/routers/sales.py`）：三路分流独立——转直采=`采购链`、转外发=`委外(outsource)`、转生产=`自产`
-- **权限隔离**（`app/routers/sales.py`，V3）：三分支写端点按业务域授权
+
+### 前端去委外化（V2）
+
+- `Processes.vue` 工序默认自产（`is_outsource=0`），移除委外类型列/radio/标签
+- `SystemParams.vue` 加工工序去除委外语义
+- 生产模块 `production/*`（Detail/Workspace/BatchInventory）移除委外商字段/列/完工显示
+- `api` 移除生产专用委外商接口（委外用供应商）
+
+### 权限隔离 + AI 助手 + 预警埋点（V3）
+
+- **权限隔离**（`app/routers/sales.py`）：三分支写端点按业务域授权
   - 转直采（`stock-in`）→ `menu:sales:orders`（销售本域）
   - 转外发（`outsource`）→ `require_any_permission(menu:sales:orders, menu:outsource:from-sales, menu:outsource:orders)`（销售本域+委外域）
   - 转生产（`re-produce`）→ `require_any_permission(menu:sales:orders, menu:production:orders)`（销售本域+生产自产域）
   - 库管员/只读等低权限角色依旧 403（权限隔离正确：生产=自产、委外=转外发）
-- **AI 助手**（`app/utils/ai_chat.py`，V3）：
+- **AI 助手**（`app/utils/ai_chat.py`）：
   - `approve_order` 销售审核**不再自动生成生产订单**（与 SP 三分支一致）：审核后明细行置「未生产」，由用户选择转直采/转外发(委外)/转生产(自产)，并在返回提示中区分三条路线
   - `issue_materials` 描述去除委外语义（生产=纯自产）；删除未注册的 `_execute_create_outsourcing` 死代码（引用已废弃委外模型 `OutsourcingOrder`/`outsourcer_id`）
   - `SYSTEM_PROMPT` 审核流程补充三分支说明，AI 能区分转外发=委外、转生产=自产
-- **预警埋点**（`app/services/reminder.py` + `app/routers/sales.py`，V3）：
+- **预警埋点**（`app/services/reminder.py` + `app/routers/sales.py`）：
   - 新增 `SO_TO_PRODUCTION` 提醒点（转生产=自产，生成生产订单后触发，收件人=生产经理），在 `re-produce` 端点埋点
   - `SO_TO_OUTSOURCE` 收件人收敛为 `purchase_manager`（委外订单由采购侧办理），不再发给生产经理
   - 事件提醒点完整对齐三分支：`SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / SO_TO_PRODUCTION`；不设与委外纠缠的 MO 提醒
-- **验证**：`./test.sh` 244 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped
 
-## 未发布 — v2.8.0 生产模块去委外化（数据库迁移 + 测试加固 V4）
+### 数据库迁移 + 测试加固（V4）
 
-> **固化**：生产模块去委外化的迁移脚本 + 三分支互斥测试，并修复 V1 遗留的三分支互斥缺陷。
-
-- **迁移脚本**（`scripts/migrate_production_deoutsourcing.py`，V4）：
+- **迁移脚本**（`scripts/migrate_production_deoutsourcing.py`）：
   - 处理已存在旧库中生产模块的**遗留委外列**：`mo_production_process` 物理删除 `outsourcer_id` 列（V1 模型层已删列，create_all 不删旧列 → 本脚本重建表清理）
   - 既有数据兼容：重建表完整保留其余列数据（不丢失）；关联表 `mo_production` 不受影响
   - 幂等：列已不存在/表不存在 → 跳过（changed=False），可重复执行；空库/新库（create_all 直接建新结构）无需迁移
   - 说明：`mo_material_issue`（已由 `migrate_remove_outsourcing.py` 清理）、`mo_outsourcing`（已 DROP）不重复处理；`fd_process.is_outsource`/`fd_product_process.default_outsourcer_id` 模型仍保留（工序默认自产、委外归口转外发 route），非"模型层已删需物理清理"范畴
-- **三分支互斥修复**（`app/routers/sales.py`，V4）——发现并修复两处状态机缺陷：
+- **三分支互斥修复**（`app/routers/sales.py`）——发现并修复两处状态机缺陷：
   1. `re-produce`（转生产=自产）生成 MO 后原来**不改** `production_status`，导致再调 `stock-in`（转直采）漏过，转生产与转直采不互斥 → 现生成 MO 后置「生产中」占位，堵住其余路线（与派产置「生产中」、完工置「已生产」、删 MO 回「未生产」流转一致）
   2. `re-produce` 原来**未校验**订单状态（无 `order.status != 已审` 检查），未审核订单也能转生产 → 补 `订单审核通过后才能转生产` 校验（与 `stock-in`/`outsource` 一致）
 - **新增测试**：
@@ -45,9 +54,9 @@
   - 清理 `backend/tests/test_textile_flow.py` 的 `outsourcer_id` 残留死代码（V1 后工序无此列，委外分支恒不执行）
 - **验证**：`./test.sh` 259 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped
 
-## 未发布 — 安全修复（BUG-L4-01：后端 RBAC 越权）
+### 后端读写越权安全修复（L4）
 
-> **Critical**：只读角色/库管员可通过 API 对业务单据增删改——后端仅校验登录（`get_current_user`），未校验菜单权限。
+**BUG-L4-01（Critical，写越权）**：只读角色/库管员可通过 API 对业务单据增删改——后端仅校验登录（`get_current_user`），未校验菜单权限。
 
 - **修复**（`app/routers/sales.py`/`foundation.py`/`inventory.py`，62 个写端点统一补 `require_permission`，与 `approve` 端点校验 `menu:sales:orders` 对齐）：逐端点按菜单域裁剪权限，低权限写一律 403
   - 销售：订单/转直采/转外发/认领/重发生产/明细变更 → `menu:sales:orders`；发货/通知/确认/退货 → `menu:sales:deliveries`；库管出库/出库退回 → `menu:inventory:delivery-outs`；报关 → `menu:sales:customs`；发票 → `menu:sales:invoices`；应收/核销转移 → `menu:sales:ar`；收款/取消收款 → `menu:sales:collections`
@@ -55,9 +64,7 @@
   - 库存：原料出库 → `menu:inventory:material-outs`；盘点 → `menu:inventory:stocktake`
 - 验证：`./test.sh` 242 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped；只读角色对 POST/PUT/DELETE `/api/sales/orders` 现 403（复现原 200）
 
-## 未发布 — 安全修复（BUG-L4-02：后端读越权）
-
-> **Major**：库管员（库存域）/只读用户可读取基础档案（供应商/产品/材料）与销售订单——读端点仅校验登录（`get_current_user`），未校验菜单权限，低权限角色可全量读取非授权域数据。
+**BUG-L4-02（Major，读越权）**：库管员（库存域）/只读用户可读取基础档案（供应商/产品/材料）与销售订单——读端点仅校验登录（`get_current_user`），未校验菜单权限，低权限角色可全量读取非授权域数据。
 
 - **修复**（`app/routers/sales.py`/`foundation.py`/`inventory.py` 读端点 + `app/utils/auth.py` 新增 `require_any_permission`）：读端点采用「本域 + 业务引用域」授权（任一满足即可读）
   - 读端点新增 `require_any_permission`（本域 + 下游业务引用域）：既挡低权限角色读非授权域，又保留下游单据页引用上游主数据的业务需求（销售下单选产品/客户、财务开票读订单、采购/委外读供应商、库管出库读发货）
@@ -337,3 +344,157 @@
 - 工作台应收/应付钻取弹窗 `page_size` 超限导致返回 0 条数据
 - 生产订单详情页标题显示 "MTS" 而非 "生产订单详情"
 - `ar_account_ids` 参数名错误（复数→单数）导致收款单无法核销应收账款
+
+---
+
+# 附录：SP 销售采购线（Sales_Purchase）历史变更明细
+
+> 本文档为 v2.8.0 之前销售采购线（SP 基底）的历史变更记录，按日期归档。已并入 CHANGELOG 统一维护。
+
+## 附录 A：2026-08-18 变更明细（转委外订单级简化 + 全ERP退回补齐 + 库存查询改造）
+
+### 一、转委外：订单级简化（第四版，推翻材料级）
+
+峰子拍板：「认领材料不用管到每个供应商，只管批次就行；供料方式走在订单上就行；每一个加工商我就只管你单价和数量」
+
+- **最终模型**：供料方式=订单级一个选择（只管整个订单发了多少料，算成本；不管给哪个供应商多少）；加工费=按供应商分开结算（每工序一张WO）；认领原料=订单级一个按钮，统一弹窗按仓库总数量认领全部BOM材料
+- 落地：
+  - `so_order_item` 加 `supply_type`；新建 `OsClaimMaterial`（os_claim_material 订单级认领记录）；os_order_material 废弃
+  - 新接口 `POST /outsource/claims`（认领量≥成品数量×BOM用量×(1+损耗%)，扣库存+流水）
+  - `from-sales-process` 简化（rows 只传加工商/单价/数量）
+  - 工序卡片瘦身：只留加工商/单价/委外数量/总金额；订单级供料方式radio+认领按钮
+  - 转采购页删「完成采购」；「采购需求」菜单/路由删除
+
+### 二、转委外：工序卡片可自由删除
+
+峰子拍板：「BOM有3道工序，但有可能这次不委外这3个工序，工序可以自由删除」
+
+- 未生成工序卡片加「删除」按钮（确认后移除，本次不生成该工序WO，不影响已认领原料）
+- 已生成（绿框）不可删；底部「恢复全部工序」一键加回（按seq）；待生成计数同步
+
+### 三、认领原料：按仓库总数量，不选批次
+
+峰子拍板：「不能按入库批次来认领，要按仓库里总数量来领」
+
+- `POST /outsource/claims` batch_no 改可选：不传=按仓库总数量认领（校验总可用≥认领量），FIFO跨批次自动扣（库存记录id升序），os_claim_material 按实际扣减批次分行
+- 认领弹窗去批次下拉，显示「仓库总可用」，填数量即可；不足提示缺多少；已认领按材料合并显示
+
+### 四、全ERP退回补齐（峰子：整个ERP都要有退回，下游没退上游不能动）
+
+1. **入库退回**（原料入库/成品入库）：待入库单操作列加「退回」（POST /stock-in/{id}/cancel）；已入库的「退回」改名「退数量」（红冲语义）
+2. **原料出库退回**：新接口 `POST /material-outs/{out_no}/return`（仅手动出库MU单）
+3. **成品出库退回**（库管红冲）：新接口 `POST /deliveries/{delivery_id}/issue-return`
+4. **采购订单退回友好提示**：`delete_order` 补 inv_stock_in 待入库单校验
+
+### 五、库存查询改造
+
+1. 加数量列（批次库存总数）+合计
+2. 弹窗明细改上下主从（上=库存表，下=入库明细，8px 可拖分界线）
+3. 按原料名称汇总（每种原料一行：总数量/均价/总金额）；新接口 `GET /inventory/material-receipts`
+
+### 六、列设置弹窗：拖拽排序
+
+- ColumnSettingsDialog（全ERP共用）：↑↓箭头改 ⠿ 拖拽排序（原生HTML5）
+- 库存查询列精简：删「类型/订单数/已入库」3列；期间列默认隐藏
+
+---
+
+## 附录 B：2026-08-19 变更明细（转外发两条线 + 委外分工序 + 库存出库）
+
+依据《ERP需求文档_V3.docx》5条需求开发。主要落地：
+
+### 1. 销售订单明细行「变更」支持改单价
+- 变更弹窗加"新单价"输入框；后端 `update_order_item` 接收 unit_price，重算订单头金额
+
+### 2. 销售明细行删除「认领库存/解绑」按钮
+- 认领功能迁移到「销售订单转委外」页面（委外时认领材料）；后端 claim-batch/unclaim-batch 保留（转委外复用）
+
+### 3. 全项目 23 处 @click 绑定修复
+- 修复点击反应慢根因（绑定不存在函数静默报错）
+
+### 4. 转采购列表支持「转外发」行（两条线）
+- 转外发=委外型，也要先买原料（采购线）；转直采=贸易型保留
+
+### 5. 委外单结构升级（工序+材料认领明细）
+- `os_order` 加 process_id 列；新建 `OutsourceMaterial` 表
+
+### 6. 转委外页面：从左到右层级关系面
+- 上下主从 + 从左到右层级关系面（产品→各工序按 seq 展开，节点间连线）
+- 第三版：删产品信息卡、认领原料收敛成按钮、供料方式（己方提供/包工包料）
+- 工序默认+材料级可覆盖供料方式（混合供料）
+
+### 7. 多工序委外：只有末道工序生成成品待入库单（闭环修复）
+- `outsource.py` approve_order + 新增 `_is_last_process()`（按 ProductProcess.seq 最大判定末道）
+
+### 8. 删除委外单，材料自动退回原批次（单据链闭环）
+
+### 9. 新建「原料出库」页面+接口
+- `POST /inventory/material-outs`（手动出库，单号 MU-YYMMDD+2位，FIFO扣库存+流水）
+
+### 10. 成品出库两步化（通知发货→库管出库）
+- `POST /sales/deliveries/notify`（通知发货）+ `POST /sales/deliveries/{id}/issue`（库管出库）
+
+### 11. 发货完成确认必须已出库（闭环修复）
+
+### 12. 通知发货支持"生产中"订单状态
+
+### 13. 退货必须有已出库记录
+
+---
+
+## 附录 C：2026-08-20 变更明细（全ERP退回补齐 + 库存查询改造 全天迭代）
+
+### 转委外订单级简化（第四版，推翻材料级）
+峰子拍板：「认领材料不用管到每个供应商，只管批次就行；供料方式走在订单上就行；每一个加工商我就只管你单价和数量」。落地：供料方式=订单级一个选择；加工费按供应商分开结算（每工序一张WO）；认领原料=订单级一个按钮统一弹窗按仓库总数量认领全部BOM材料。
+
+### 全ERP退回补齐
+1. 入库退回（原料/成品入库待入库单「退回」）
+2. 原料出库退回（新接口 POST /material-outs/{out_no}/return）
+3. 成品出库退回（库管红冲，新接口 POST /deliveries/{delivery_id}/issue-return）
+4. 采购订单退回友好提示
+
+### 库存查询改造（三轮迭代）
+1. 加数量列+合计
+2. 弹窗明细改上下主从
+3. 按原料名称汇总（新接口 GET /inventory/material-receipts）
+
+### 列设置弹窗拖拽排序
+ColumnSettingsDialog 全ERP共用：↑↓箭头改 ⠿ 拖拽排序（原生HTML5），库存查询列精简。
+
+---
+
+## 附录 D：v1.2.0 RBAC 用户权限体系 改动明细
+
+> 发布日期：2026-07-29 | 引入 RBAC（Role-Based Access Control）用户权限体系，替代原先简单的 `role` 字符串字段。
+
+### 数据库变更
+- **新增表**：`sys_role`（角色）、`sys_permission`（权限定义）、`sys_role_permission`（角色-权限关联）
+- **修改 `sys_user`**：新增 `role_id` (FK → sys_role.id)；删除 `role` 字符串字段
+
+### 种子数据
+- 启动时自动插入 16 个权限码和 4 个预置角色（管理员/经理/操作员/只读）
+
+### 预置角色
+| 角色 | 权限 |
+|------|------|
+| 管理员 | 全部 16 权限 |
+| 经理 | 15 权限（不含 system:admin） |
+| 操作员 | 12 权限（不含 *:approve 和 system:admin） |
+| 只读 | 8 权限（仅 *:read + dashboard:read） |
+
+### 后端 API
+- `GET /api/auth/permissions`、`GET/POST /api/auth/roles`、`PUT/DELETE /api/auth/roles/{id}`
+- `GET /api/auth/users/{id}`、`PUT/DELETE /api/auth/users/{id}`、`GET /api/auth/me/permissions`
+- `require_permission(code)` — FastAPI 依赖工厂，声明式权限检查
+
+### 前端新增
+- 用户管理页 `/system/users`、角色管理页 `/system/roles`
+- 全局权限方法 `$hasPermission(code)` — 菜单/按钮级权限控制
+- 登录后自动拉取用户权限列表存入 localStorage
+- 401 拦截 / 退出登录自动清除权限缓存
+
+### 代码质量
+- 修复 `main.py` 重复初始化代码；修复退出登录未清除权限缓存的遗漏
+
+### 31 项自动化验证通过
+覆盖：健康检查、登录、角色列表、权限分组、用户 CRUD、角色 CRUD、操作员权限隔离、内置角色保护、自定义角色创建/编辑/删除、用户角色分配、密码修改、用户删除。全部通过。
