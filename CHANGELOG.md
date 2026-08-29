@@ -1,5 +1,19 @@
 # Changelog
 
+## 未发布 — v2.8.0 生产模块去委外化（后端 V1）
+
+> **重构**：生产订单（`mo_production`）= 纯自产，委外业务从生产模块剥离、统一归口转外发（`outsource`）路线。
+
+- **模型**（`app/models/production.py`）：`ProductionProcess` 移除 `outsourcer_id` 字段与 `outsourcer` 关系；`ProductionOrder.production_type` 仅保留 `自产/外购`（去除委外）
+- **路由**（`app/routers/production.py`）：
+  - 工序展开/维护不再带 `outsourcer_id`（`expand-bom`/`save-processes`）
+  - 发料统一为自产领料（`material_issue_out`/工序发料），移除委外发料分支（`material_out`）
+  - 工序完工不再区分委外（去除委外工序必录加工费校验）
+  - 加工费发票（`processing-invoices`）移除委外工序归属逻辑（生产=纯自产，恒无委外工序可开票）
+  - `set-type` 备货方式限 `自产/外购`
+- **销售分支**（`app/routers/sales.py`）：三路分流独立——转直采=`采购链`、转外发=`委外(outsource)`、转生产=`自产`
+- **验证**：`./test.sh` 244 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped
+
 ## 未发布 — 安全修复（BUG-L4-01：后端 RBAC 越权）
 
 > **Critical**：只读角色/库管员可通过 API 对业务单据增删改——后端仅校验登录（`get_current_user`），未校验菜单权限。

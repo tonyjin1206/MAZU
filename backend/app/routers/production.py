@@ -1,11 +1,11 @@
-"""生产与委外模块 API 路由 — 生产订单→委外工单→发料(批次)→完工入库(批次)"""
+"""生产（自产）模块 API 路由 — 生产订单→工序→发料(批次)→完工入库(批次)"""
 
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.auth import User
-from app.models.foundation import Product, Material, Warehouse, Process, Supplier
+from app.models.foundation import Product, Material, Warehouse, Process
 from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionProcess, ProductionReceipt, ProcessingInvoice,
     MaterialIssueItem,
@@ -32,9 +32,9 @@ def _recalc_material_cost(prod_id: int, db: Session):
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type in ("outsource_out", "material_issue_out"):
+        if t.trans_type in ("material_issue_out",):
             total += abs(t.total_amount or 0)
-        elif t.trans_type == "issue_cancel":
+        elif t.trans_type in ("issue_cancel", "material_out_return"):
             total -= abs(t.total_amount or 0)
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if prod:
@@ -54,9 +54,9 @@ def _calc_material_issued_amount(prod_id: int, material_id: int, db: Session) ->
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type in ("outsource_out", "material_issue_out"):
+        if t.trans_type in ("material_issue_out",):
             total += abs(t.total_amount or 0)
-        elif t.trans_type == "issue_cancel":
+        elif t.trans_type in ("issue_cancel", "material_out_return"):
             total -= abs(t.total_amount or 0)
     return round(total, 2)
 
@@ -150,7 +150,7 @@ def list_productions(
          "created_at": str(p.created_at)[:10] if p.created_at else "",
          "start_date": str(p.start_date) if p.start_date else "",
          "due_date": str(p.due_date) if p.due_date else "",
-         "outsource_count": len(p.processes),
+         "process_count": len(p.processes),
         } for p in items
     ]}
 
@@ -250,8 +250,7 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
             "id": pr.id, "process_id": pr.process_id,
             "process_name": pr.process.name if pr.process else "",
             "process_code": pr.process.code if pr.process else "",
-            "seq": pr.seq, "outsourcer_id": pr.outsourcer_id,
-            "outsourcer_name": pr.outsourcer.name if pr.outsourcer else "",
+            "seq": pr.seq,
             "unit_price": pr.unit_price or 0,
             "process_qty": pr.process_qty or 0,
             "process_amount": pr.process_amount or 0,
@@ -277,7 +276,7 @@ def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), c
 
 @router.post("/productions/{prod_id}/set-type", tags=["生产管理-新"])
 def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """确认备货方式: production_type = 自产/委外/外购"""
+    """确认备货方式: production_type = 自产/外购（生产=纯自产，委外走转外发）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
         raise HTTPException(404, "生产订单不存在")
@@ -285,8 +284,8 @@ def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db),
         raise HTTPException(400, "备货方式已确认，不可更改")
 
     ptype = data.get("production_type")
-    if ptype not in ("自产", "委外", "外购"):
-        raise HTTPException(400, "备货方式必须为: 自产/委外/外购")
+    if ptype not in ("自产", "外购"):
+        raise HTTPException(400, "备货方式必须为: 自产/外购")
 
     prod.production_type = ptype
     if ptype == "外购":
@@ -392,7 +391,6 @@ def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User =
                 production_id=prod_id,
                 process_id=tpl.process_id,
                 seq=tpl.seq,
-                outsourcer_id=tpl.default_outsourcer_id,
                 unit_price=tpl.default_unit_price,
                 process_qty=prod.quantity,
                 process_amount=tpl.default_unit_price * prod.quantity,
@@ -441,7 +439,6 @@ def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), curr
             production_id=prod_id,
             process_id=item["process_id"],
             seq=idx + 1,
-            outsourcer_id=item.get("outsourcer_id"),
             unit_price=up,
             process_qty=qty or (prod.quantity or 0),
             process_amount=round((qty or (prod.quantity or 0)) * up, 2),
@@ -643,10 +640,9 @@ def issue_material_to_process(
     db.add(issue)
     db.flush()
 
-    # 库存流水（委外工序=委外发料→原料出库，自产工序=生产领料）
-    is_outsource = bool(proc.outsourcer_id)
+    # 库存流水（生产=纯自产，所有发料均为自产领料）
     trans = StockTransaction(
-        trans_type="material_out" if is_outsource else "material_issue_out",
+        trans_type="material_issue_out",
         warehouse_id=inventory.warehouse_id,
         material_id=material_id,
         batch_no=batch_no,
@@ -657,7 +653,7 @@ def issue_material_to_process(
         after_qty=inventory.quantity,
         before_cost=round(old_qty * inv_unit_cost, 2),
         after_cost=round(inventory.quantity * inv_unit_cost, 2),
-        source_doc_type="原料出库" if is_outsource else "工序发料",
+        source_doc_type="工序发料",
         source_doc_no=issue_no,
         trans_no=generate_doc_no(db, "ST"),
         operator=current_user.display_name or current_user.username,
@@ -727,16 +723,16 @@ def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Dep
                 "trans_no": t.trans_no or "",
                 "batch_no": iss.batch_no,
                 "type": t.trans_type,
-                "type_label": "发料出库" if t.trans_type in ("outsource_out", "material_issue_out") else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
-                "quantity": abs(t.quantity or 0) if t.trans_type in ("outsource_out", "material_issue_out") else (-abs(t.quantity or 0)),
+                "type_label": "发料出库" if t.trans_type == "material_issue_out" else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
+                "quantity": abs(t.quantity or 0) if t.trans_type == "material_issue_out" else (-abs(t.quantity or 0)),
                 "amount": abs(t.total_amount or 0),
                 "operator": t.operator or "",
                 "date": str(t.trans_date)[:16] if t.trans_date else "",
             })
 
     # 汇总
-    out_qty = sum(it["quantity"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
-    out_amt = sum(it["amount"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
+    out_qty = sum(it["quantity"] for it in items if it["type"] == "material_issue_out")
+    out_amt = sum(it["amount"] for it in items if it["type"] == "material_issue_out")
     cancel_qty = sum(it["quantity"] for it in items if it["type"] == "issue_cancel")
     cancel_amt = sum(it["amount"] for it in items if it["type"] == "issue_cancel")
 
@@ -862,15 +858,9 @@ def finish_process(
     if not proc:
         raise HTTPException(404, "工序不存在")
 
-    # 委外工序必须录入加工费
-    if proc.outsourcer_id:
-        unit_price = float(data.get("unit_price", 0))
-        process_qty = float(data.get("process_qty", 0))
-        if unit_price <= 0 or process_qty <= 0:
-            raise HTTPException(400, "委外工序完工必须录入加工单价和加工数量")
-    else:
-        unit_price = float(data.get("unit_price", 0))
-        process_qty = float(data.get("process_qty", proc.process_qty or prod.quantity or 0))
+    # 工序完工（生产=纯自产，加工费为工序内部成本，默认按订单数量）
+    unit_price = float(data.get("unit_price", 0))
+    process_qty = float(data.get("process_qty", proc.process_qty or prod.quantity or 0))
 
     proc.unit_price = unit_price
     proc.process_qty = process_qty
@@ -1273,17 +1263,9 @@ def production_workspace(
             "done_processes": done_procs,
             "current_process_name": current_proc.process.name if current_proc and current_proc.process else "",
             "current_process_status": current_proc.status if current_proc else "",
-            "current_outsourcer_name": (
-                current_proc.outsourcer.name
-                if current_proc and current_proc.outsourcer
-                else ""
-            ) if current_proc else "",
             "processes": [{
                 "id": pr.id, "process_name": pr.process.name if pr.process else "",
                 "seq": pr.seq, "status": pr.status,
-                "outsourcer_name": (
-                    pr.outsourcer.name if pr.outsourcer else "自产"
-                ),
                 "unit_price": pr.unit_price or 0,
                 "process_qty": pr.process_qty or 0,
             } for pr in processes],
@@ -1344,66 +1326,8 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
     if existing:
         raise HTTPException(400, f"该生产订单已开票（发票号: {existing.invoice_no}）")
 
-    # 计算加工费：该生产订单所有委外工序完工的加工费
-    processes = db.query(ProductionProcess).filter(
-        ProductionProcess.production_id == production_id,
-        ProductionProcess.status == "已完工",
-        ProductionProcess.outsourcer_id.isnot(None),
-    ).all()
-    if not processes:
-        raise HTTPException(400, "该生产订单没有已完工的委外工序")
-
-    # 取第一个委外工序的委外商（即供应商）
-    first_proc = processes[0]
-    supplier_id = first_proc.outsourcer_id or (first_proc.outsourcer.id if first_proc.outsourcer else None)
-    if not supplier_id:
-        raise HTTPException(400, "委外商未关联供应商")
-
-    total_amount = sum(p.process_amount or 0 for p in processes)
-
-    from app.utils.batch_no import generate_doc_no
-    from app.models.production import ProcessingInvoice
-    invoice_no = generate_doc_no(db, "PI", ProcessingInvoice, "invoice_no")
-
-    inv = ProcessingInvoice(
-        invoice_no=invoice_no,
-        production_id=production_id,
-        receipt_id=receipt_id or None,
-        supplier_id=supplier_id,
-        amount=total_amount,
-        invoice_date=_parse_date(data.get("invoice_date")) or date.today(),
-        remark=data.get("remark", ""),
-        supplier_name=data.get("supplier_name", ""),
-        supplier_tax_id=data.get("supplier_tax_id", ""),
-        service_type="加工费",
-        service_qty=sum(p.completed_qty or 0 for p in processes),
-        unit_price=round(total_amount / max(sum(p.completed_qty or 0 for p in processes), 1), 4),
-        tax_rate=13,
-        amount_excl_tax=round(total_amount / 1.13, 2),
-        created_by=current_user.display_name or current_user.username,
-    )
-    db.add(inv)
-    db.flush()
-
-    # 生成应付账款
-    from app.utils.batch_no import generate_doc_no
-    from app.models.purchase import AccountsPayable
-    ap_no_str = generate_doc_no(db, "AP", AccountsPayable, "ap_no")
-    ap = AccountsPayable(
-        ap_no=ap_no_str,
-        source_type="processing_invoice",
-        source_id=inv.id,
-        supplier_id=supplier_id,
-        amount=total_amount,
-        amount_fc=total_amount,
-        paid_amount=0,
-        balance=total_amount,
-        status="未付款",
-    )
-    db.add(ap)
-    db.commit()
-
-    return {"id": inv.id, "invoice_no": invoice_no, "ap_no": ap_no_str, "message": f"加工费发票已创建，金额: ¥{total_amount:,.2f}，应付账款已生成"}
+    # 生产=纯自产，无委外工序加工费，不生成委外加工费发票
+    raise HTTPException(400, "生产订单纯自产，无委外工序，无需开加工费发票")
 
 
 @router.delete("/processing-invoices/{invoice_id}", tags=["生产管理-加工费发票"])
@@ -1431,56 +1355,5 @@ def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), cu
 def list_processing_invoice_candidates(
     db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
 ):
-    """查询可开加工费发票的完工入库单（有委外工序但未开票的）"""
-    invoiced_receipts = [r[0] for r in db.query(ProcessingInvoice.receipt_id).all()]
-    invoiced_prods = [r[0] for r in db.query(ProcessingInvoice.production_id).all()]
-
-    # 找所有有已完工委外工序的生产订单
-    prods_with_done = db.query(ProductionProcess.production_id).filter(
-        ProductionProcess.status == "已完工",
-        ProductionProcess.outsourcer_id.isnot(None),
-    ).distinct().all()
-    prod_ids = [r[0] for r in prods_with_done]
-
-    result = []
-    for pid in prod_ids:
-        if pid in invoiced_prods:
-            continue
-        processes = db.query(ProductionProcess).filter(
-            ProductionProcess.production_id == pid,
-            ProductionProcess.status == "已完工",
-            ProductionProcess.outsourcer_id.isnot(None),
-        ).all()
-        if not processes:
-            continue
-        total_fee = sum(p.process_amount or 0 for p in processes)
-        prod = db.query(ProductionOrder).filter(ProductionOrder.id == pid).first()
-        if not prod:
-            continue
-        # 查找关联的入库单
-        receipt = db.query(ProductionReceipt).filter(ProductionReceipt.production_id == pid).first()
-        processes = db.query(ProductionProcess).filter(
-            ProductionProcess.production_id == pid,
-            ProductionProcess.status == "已完工",
-            ProductionProcess.outsourcer_id.isnot(None),
-        ).all()
-        first_proc = processes[0] if processes else None
-        supplier_id = first_proc.outsourcer_id if first_proc else None
-        supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first() if supplier_id else None
-
-        result.append({
-            "receipt_id": receipt.id if receipt else None,
-            "receipt_no": receipt.receipt_no if receipt else f"FG-{pid:04d}(auto)",
-            "production_id": pid,
-            "order_no": prod.order_no or "",
-            "product_name": prod.product.name_cn if prod.product else "",
-            "batch_no": receipt.batch_no if receipt else "",
-            "quantity": receipt.quantity if receipt else 0,
-            "receipt_date": str(receipt.receipt_date) if receipt else "",
-            "process_fee": round(total_fee, 2),
-            "process_count": len(processes),
-            "supplier_id": supplier.id if supplier else None,
-            "supplier_name": supplier.name if supplier else "",
-            "supplier_tax_id": supplier.tax_id if hasattr(supplier, 'tax_id') else "",
-        })
-    return {"items": result}
+    """查询可开加工费发票的完工入库单（生产=纯自产，无委外工序，恒为空）"""
+    return {"items": []}

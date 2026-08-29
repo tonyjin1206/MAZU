@@ -131,7 +131,7 @@ class TestInventoryV2:
             {"production_type": ptype}, h)
         return so_id, mo_id
 
-    # ==================== 1. 发料拆类型 ====================
+    # ==================== 1. 自产发料 ====================
 
     def test_issue_trans_type_split(self, client, auth_headers):
         api = self._api
@@ -151,53 +151,39 @@ class TestInventoryV2:
         md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
         procs = sorted(md["processes"], key=lambda p: p["seq"])
 
-        # 工序1（自产）发料 → material_issue_out
-        p1 = procs[0]
-        assert not p1.get("outsourcer_id"), "工序1应为自产"
-        api(client, "POST",
-            f"/api/production/productions/{mo_id}/processes/{p1['id']}/issue", {
-                "material_id": base["mat"], "quantity": 30, "batch_no": batch_no,
-                "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-            }, h)
+        # 生产=纯自产：所有工序均无委外商
+        for p in procs:
+            assert not p.get("outsourcer_id"), f"工序应为自产，实际 {p}"
 
-        # 工序2（委外）发料 → outsource_out
-        p2 = procs[1]
-        assert p2.get("outsourcer_id"), "工序2应为委外"
-        api(client, "POST",
-            f"/api/production/productions/{mo_id}/processes/{p2['id']}/issue", {
-                "material_id": base["mat"], "quantity": 20, "batch_no": batch_no,
-                "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-            }, h)
+        # 两道工序发料 → 均为 material_issue_out
+        for p, qty in zip(procs, [30, 20]):
+            api(client, "POST",
+                f"/api/production/productions/{mo_id}/processes/{p['id']}/issue", {
+                    "material_id": base["mat"], "quantity": qty, "batch_no": batch_no,
+                    "warehouse_id": base["wh_rm"], "unit_price": 32.0,
+                }, h)
 
-        # 验证流水类型
+        # 验证流水类型：只有 material_issue_out（生产=纯自产，无委外发料）
         txns = api(client, "GET", "/api/inventory/transactions?type=material&page_size=50", None, h)
         assert txns, "应能查到流水"
-        types = [(t["trans_type"], abs(t["quantity"])) for t in txns["items"]
-                 if t.get("material_name") == f"棉纱{base['mat'] and 'A1'}"]
-        # 按来源单据过滤更稳：查该批次
         btxns = [t for t in txns["items"] if t["batch_no"] == batch_no]
         self_types = sorted([t["trans_type"] for t in btxns if t["quantity"] < 0])
         assert "material_issue_out" in self_types, f"自产发料应为 material_issue_out，实际: {self_types}"
-        assert "material_out" in self_types, f"委外发料应为 material_out，实际: {self_types}"
+        assert "material_out" not in self_types, f"纯自产不应有 material_out，实际: {self_types}"
 
-        # 成本汇总应识别两类（发料 50 × 32 = 1600）
-        # 注意：后端 _recalc_material_cost 只统计 outsource_out 和 material_issue_out，
-        # 但实际委外发料创建的是 material_out，导致成本汇总不完整（实际 960 而非 1600）。
-        # 这是后端 bug，记录到 docs/complete-test-plan.md 专项待办。
+        # 成本汇总 = 全部自产发料（30+20）×32 = 1600
         md2 = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        # 临时调整：匹配实际行为（后端 bug 待修复）
-        assert md2["total_material_cost"] == 960.0, \
-            f"物料成本汇总应为 960（后端 bug：material_out 未计入），实际 {md2.get('total_material_cost')}"
+        assert md2["total_material_cost"] == 1600.0, \
+            f"物料成本汇总应为 1600，实际 {md2.get('total_material_cost')}"
 
-        # 取消一条发料（30件自产领料）→ 成本回退
+        # 取消一条发料（30件自产领料）→ 成本回退到 20×32=640
         issues = api(client, "GET", f"/api/production/productions/{mo_id}/issues", None, h)
         first_issue = next(i for i in issues["items"] if i["quantity"] == 30)
         api(client, "POST",
             f"/api/production/productions/{mo_id}/issues/{first_issue['id']}/cancel", {}, h)
         md3 = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        # 30×32=960 取消后剩 20×32=640，但委外 20×32=640 未计入，所以实际 0
-        assert md3["total_material_cost"] == 0.0, \
-            f"取消发料后成本应为 0（后端 bug：material_out 未计入），实际 {md3.get('total_material_cost')}"
+        assert md3["total_material_cost"] == 640.0, \
+            f"取消发料后成本应为 640，实际 {md3.get('total_material_cost')}"
 
     # ==================== 2. 取消完工入库保护 ====================
 
@@ -431,13 +417,12 @@ class TestInventoryV2:
         fg_batch = rcp["batch_no"]
         assert rcp.get("cost") is None or True  # 不传成本用自动结转
 
-        # 自动结转后单位成本应 >0（材料 20×32=640[自产织造，已计入] + 加工费 50×0.5+50×1.2=85 → 725/50 = 14.50）
-        # 注意：委外工序（染色）发料流水为 material_out，而 _recalc_material_cost 只统计
-        # material_issue_out/outsource_out，委外发料成本暂未计入 —— 后端 bug，记录到
-        # docs/complete-test-plan.md 专项待办（见 BUG-02）。此断言与当前实际行为对齐。
+        # 自动结转后单位成本：材料 40×32=1280（两道自产工序各发 20，全部计入） + 加工费
+        # 50×0.5+50×1.2=85 → 1365/50 = 27.30。
+        # 生产=纯自产（v2.8.0 去委外化），所有发料均为 material_issue_out 全计入成本。
         bal2 = api(client, "GET", "/api/inventory/balance?type=product&page_size=10", None, h)
         row = next(r for r in bal2["items"] if r["batch_no"] == fg_batch)
-        assert row["unit_cost"] == 14.5, f"自动结转单件成本应为 14.5，实际 {row['unit_cost']}"
+        assert row["unit_cost"] == 27.3, f"自动结转单件成本应为 27.3，实际 {row['unit_cost']}"
 
         # 发货 40 → 退货 15 → 批次 25 → 订单 部分发货
         so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)

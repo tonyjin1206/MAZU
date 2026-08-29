@@ -147,11 +147,11 @@ class TestTextileFullFlow:
                     print(f"⑤·⑤ 委外发料（outsource_out）→ 工序 {os_proc['process_name']}")
         print(f"⑤ 生产领料 {issue_total} 次（material_issue_out）")
 
-        # 流水类型验证：material_issue_out / material_out 都已产生
+        # 流水类型验证：生产=纯自产，发料类型只有 material_issue_out
         txns = api(client, "GET", "/api/inventory/transactions?type=material&page_size=50", None, h)
         types = {t["trans_type"] for t in txns["items"]}
-        assert "material_issue_out" in types and "material_out" in types, f"发料类型缺失: {types}"
-        print(f"⑤·⑥ 发料拆类型验证: material_issue_out + material_out ✅")
+        assert "material_issue_out" in types, f"自产发料类型缺失: {types}"
+        print(f"⑤·⑥ 自产发料验证: material_issue_out ✅")
 
         # ======================== 4. 完工 → 入库（成本自动结转） ========================
         for proc in sorted(md["processes"], key=lambda p: p["seq"]):
