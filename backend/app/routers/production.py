@@ -597,14 +597,18 @@ def issue_material_to_process(
     if not proc:
         raise HTTPException(404, "工序不存在")
 
-    material_id = data["material_id"]
+    material_id = data.get("material_id")
+    if not material_id:
+        raise HTTPException(400, "缺少发料物料")
     try:
-        qty = float(data["quantity"])
+        qty = float(data.get("quantity") or 0)
     except (TypeError, ValueError):
         raise HTTPException(400, "发料数量必须为数字")
     if qty <= 0:
         raise HTTPException(400, "发料数量必须大于 0")
-    batch_no = data["batch_no"]
+    batch_no = data.get("batch_no")
+    if not batch_no:
+        raise HTTPException(400, "缺少原料批次")
     warehouse_id = data.get("warehouse_id")
 
     # 检查批次库存
@@ -937,10 +941,15 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     if prod.status not in ("已完成", "部分入库", "已入库"):
         raise HTTPException(400, "请先完成所有工序后再完工入库")
 
-    qty = float(data["quantity"])
-    warehouse_id = data["warehouse_id"]
+    try:
+        qty = float(data.get("quantity") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "入库数量必须为数字")
     if qty <= 0:
         raise HTTPException(400, "入库数量必须大于 0")
+    warehouse_id = data.get("warehouse_id")
+    if not warehouse_id:
+        raise HTTPException(400, "请选择入库仓库")
 
     # 仓库参照校验：必须存在于仓库档案且启用
     wh = db.query(Warehouse).filter(Warehouse.id == warehouse_id, Warehouse.is_active == 1).first()

@@ -116,8 +116,9 @@
         </el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转直采</el-button>
-            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="success" size="small" @click="handleProduce(row)">转生产</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转直采</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
             <el-button v-if="!row.production_status || row.production_status === '未生产'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
           </template>
         </el-table-column>
@@ -524,6 +525,15 @@ async function handleOutsource(row) {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
 }
 
+async function handleProduce(row) {
+  await ElMessageBox.confirm(`将「${row.product_name}」转生产（自产）？单据将进入「生产管理 → 生产订单」，在那里排产/完工。`, '提示', { type: 'info' })
+  try {
+    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/re-produce`)
+    ElMessage.success(res.message || '已转生产')
+    loadOrderDetail(selectedOrder.value.id)
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
+}
+
 // ========== 明细行：变更（改数量 / 改单价 / 停售） ==========
 const changeVisible = ref(false)
 const changeForm = reactive({ id: null, product_name: '', quantity: 1, unit_price: 0, stop_sale: false })
@@ -615,7 +625,10 @@ async function loadCustomers() {
   try { const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } }); customerList.value = res.items || [] } catch (e) {}
 }
 async function loadCurrencies() {
-  try { const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 100 } }); currencyList.value = res.items || [] } catch (e) {}
+  try {
+    const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 100 } })
+    currencyList.value = (res.items || []).filter(c => c.is_active !== 0)
+  } catch (e) {}
 }
 async function loadTradeTerms() {
   try { const res = await request.get('/foundation/trade-terms', { params: { page: 1, page_size: 100 } }); tradeTermList.value = res.items || [] } catch (e) {}

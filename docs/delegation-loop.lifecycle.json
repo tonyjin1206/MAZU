@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "diagram_type": "lifecycle",
+  "meta": {
+    "title": "委派循环工作流 Delegation Loop",
+    "subtitle": "定目标 → 拆任务 → 执行 → 审目标偏离 → 纠偏 → 验收汇报，可接续、可循环、随时启停",
+    "output": "docs/delegation-loop.html",
+    "viewBox": [1000, 720],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "views": [
+      { "id": "main-loop", "label": "主循环", "focus": ["goal", "breakdown", "create", "dispatch", "execute", "review", "verify", "report"], "note": "从定目标到验收汇报的主循环，全程走看板持久化。" },
+      { "id": "deviation", "label": "偏离纠偏回路", "focus": ["review", "deviation", "rebreak", "dispatch", "report"], "note": "发现目标偏离 → 重拆卡 → 再派，直到达标。" },
+      { "id": "gates", "label": "审批门与启停", "focus": ["gate", "cancel", "expired", "done"], "note": "目标偏离上报你拍板；随时可取消/超时；验收通过才终态。" }
+    ]
+  },
+  "lanes": [
+    { "id": "main", "label": "委派主循环" },
+    { "id": "gates", "label": "审批与启停" },
+    { "id": "deviation", "label": "偏离纠偏回路" },
+    { "id": "terminal", "label": "终态" }
+  ],
+  "states": [
+    { "id": "goal", "type": "start", "label": "定目标", "sublabel": "对齐要什么结果", "lane": "main", "col": 0, "step": "01", "tag": "user+hermes" },
+    { "id": "breakdown", "type": "active", "label": "拆任务", "sublabel": "原子卡+验收标准", "lane": "main", "col": 1, "step": "02", "tag": "hermes" },
+    { "id": "create", "type": "active", "label": "建卡入板", "sublabel": "kanban+worktree", "lane": "main", "col": 2, "step": "03", "tag": "持久化" },
+    { "id": "dispatch", "type": "active", "label": "派执行", "sublabel": "codex/子代理+简报", "lane": "main", "col": 3, "step": "04", "tag": "隔离" },
+    { "id": "execute", "type": "active", "label": "执行产出", "sublabel": "diff/文档/数据", "lane": "main", "col": 4, "step": "05", "tag": "仅产物" },
+    { "id": "review", "type": "decision", "label": "审目标偏离", "sublabel": "双重审核", "lane": "main", "col": 5, "step": "06", "tag": "核心" },
+    { "id": "verify", "type": "decision", "label": "验收", "sublabel": "独立复跑验证", "lane": "main", "col": 6, "step": "07", "tag": "不信自报" },
+    { "id": "report", "type": "success", "label": "汇报", "sublabel": "结果/偏离/风险", "lane": "main", "col": 7, "step": "08", "tag": "交付" },
+    { "id": "gate", "type": "waiting", "label": "目标偏离·如需拍板", "sublabel": "报你决策", "lane": "gates", "col": 0, "tag": "上报" },
+    { "id": "deviation", "type": "failure", "label": "发现偏离", "sublabel": "对照原始目标", "lane": "deviation", "col": 0, "yOffset": 78, "tag": "纠偏" },
+    { "id": "rebreak", "type": "active", "label": "重拆卡·再派", "sublabel": "调整后重新委派", "lane": "deviation", "col": 1, "yOffset": 78, "tag": "循环" },
+    { "id": "cancel", "type": "failure", "label": "已取消", "sublabel": "随时停止", "lane": "terminal", "col": 0, "tag": "可停" },
+    { "id": "expired", "type": "failure", "label": "超时", "sublabel": "心跳/预算耗尽", "lane": "terminal", "col": 1, "tag": "回收" },
+    { "id": "done", "type": "success", "label": "验收通过", "sublabel": "kanban complete", "lane": "terminal", "col": 2, "tag": "终态" }
+  ],
+  "transitions": [
+    { "id": "t-goal-breakdown", "from": "goal", "to": "breakdown", "variant": "default" },
+    { "id": "t-breakdown-create", "from": "breakdown", "to": "create", "variant": "default" },
+    { "id": "t-create-dispatch", "from": "create", "to": "dispatch", "variant": "default" },
+    { "id": "t-dispatch-execute", "from": "dispatch", "to": "execute", "variant": "default" },
+    { "id": "t-execute-review", "from": "execute", "to": "review", "variant": "emphasis" },
+    { "id": "t-review-verify", "from": "review", "to": "verify", "variant": "default", "label": "达标" },
+    { "id": "t-review-gate", "from": "review", "to": "gate", "variant": "security", "fromSide": "bottom", "toSide": "top", "label": "若需拍板", "labelSegment": 1 },
+    { "id": "t-gate-report", "from": "gate", "to": "report", "variant": "dashed", "role": "branch" },
+    { "id": "t-verify-report", "from": "verify", "to": "report", "variant": "default", "label": "通过" },
+    { "id": "t-reveal-deviation", "from": "review", "to": "deviation", "variant": "security", "fromSide": "bottom", "toSide": "top", "label": "偏离", "labelSegment": 1 },
+    { "id": "t-deviation-rebreak", "from": "deviation", "to": "rebreak", "variant": "emphasis", "fromSide": "left", "toSide": "left" },
+    { "id": "t-rebreak-dispatch", "from": "rebreak", "to": "dispatch", "variant": "emphasis", "fromSide": "left", "toSide": "top", "via": [[30, 560], [30, 90], [300, 90]] },
+    { "id": "t-verify-done", "from": "verify", "to": "done", "variant": "default", "label": "完成", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "id": "t-execute-cancel", "from": "execute", "to": "cancel", "variant": "security", "fromSide": "bottom", "toSide": "top", "route": "straight" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "可接续 · 过程可视化",
+      "items": [
+        "目标/验收基线/文件范围/禁碰项写死进卡 body",
+        "简报持久化，中断后可完整恢复上下文",
+        "看板 SQLite 持久化，随时查执行历史/OUTCOME/Comments"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "可循环 · 可启停",
+      "items": [
+        "审偏离→重拆卡→再派是内建回路，非线性一次",
+        "每次迭代结论写回卡 comments，可回溯",
+        "随时 kanban_block；心跳超时 stale 卡自动回收"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "所有权边界",
+      "items": [
+        "执行车道只产出产物，不拥有 Kanban/最终验收",
+        "协调者(Hermes)拥全部生命周期与验收",
+        "目标偏离允许，但必上报——不闷头"
+      ]
+    }
+  ]
+}

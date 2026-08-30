@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "委派循环工作流 Delegation Loop",
+    "subtitle": "双环相扣：左环=工作纠偏（反复重来），右环=验收递进（一杆到底）；可接续、可循环、随时启停",
+    "output": "docs/delegation-loop.html",
+    "viewBox": [1100, 820],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "views": [
+      { "id": "left-loop", "label": "左环·工作纠偏", "focus": ["goal", "breakdown", "dispatch", "execute", "review", "rebreak"], "note": "定目标→拆任务→派执行→执行→审偏离→(偏离)重拆·再派，反复重来直到达标。" },
+      { "id": "right-loop", "label": "右环·验收递进", "focus": ["review", "report", "done", "goal"], "note": "审偏离达标→验收汇报→验收通过→回归定目标，一杆到底开启新一轮。" },
+      { "id": "gate", "label": "启停与所有权", "focus": ["execute", "done"], "note": "随时取消/超时；执行车道只产出、协调者拥生命周期。" }
+    ]
+  },
+  "components": [
+    { "id": "goal", "type": "external", "label": "定目标", "sublabel": "对齐要什么结果", "pos": [355, 219], "size": [150, 62], "tag": "你+我" },
+    { "id": "breakdown", "type": "backend", "label": "拆任务", "sublabel": "原子卡+验收+禁碰", "pos": [580, 319], "size": [150, 62] },
+    { "id": "dispatch", "type": "backend", "label": "派执行", "sublabel": "建卡+隔离+简报", "pos": [580, 519], "size": [150, 62] },
+    { "id": "execute", "type": "cloud", "label": "执行产出", "sublabel": "codex/子代理 产物", "pos": [355, 619], "size": [150, 62] },
+    { "id": "review", "type": "security", "label": "审目标偏离", "sublabel": "双重审核", "pos": [130, 519], "size": [150, 62], "tag": "核心" },
+    { "id": "rebreak", "type": "backend", "label": "重拆卡·再派", "sublabel": "审偏离后重拆", "pos": [130, 319], "size": [150, 62] },
+    { "id": "report", "type": "messagebus", "label": "验收汇报", "sublabel": "独立复跑验证", "pos": [718, 278], "size": [150, 62] },
+    { "id": "done", "type": "database", "label": "验收通过", "sublabel": "kanban complete", "pos": [718, 560], "size": [150, 62] }
+  ],
+  "connections": [
+    { "id": "goal-breakdown", "from": "goal", "to": "breakdown", "label": "拆", "variant": "default" },
+    { "id": "breakdown-dispatch", "from": "breakdown", "to": "dispatch", "label": "派", "variant": "default" },
+    { "id": "dispatch-execute", "from": "dispatch", "to": "execute", "label": "委派", "variant": "default" },
+    { "id": "execute-review", "from": "execute", "to": "review", "label": "产出", "variant": "emphasis" },
+    { "id": "review-rebreak", "from": "review", "to": "rebreak", "label": "偏离", "variant": "security" },
+    { "id": "rebreak-goal", "from": "rebreak", "to": "goal", "label": "回归", "variant": "emphasis", "fromSide": "left", "toSide": "left", "via": [[130, 350], [40, 350], [40, 250], [355, 250]] },
+    { "id": "rebreak-dispatch", "from": "rebreak", "to": "dispatch", "label": "再派", "variant": "emphasis", "fromSide": "bottom", "toSide": "top", "via": [[205, 381], [205, 500], [580, 500]] },
+    { "id": "review-report", "from": "review", "to": "report", "label": "达标", "variant": "default" },
+    { "id": "report-done", "from": "report", "to": "done", "label": "完成", "variant": "default", "fromSide": "bottom", "toSide": "top", "route": "straight" },
+    { "id": "done-goal", "from": "done", "to": "goal", "label": "回归·新一轮", "variant": "emphasis", "fromSide": "left", "toSide": "top", "via": [[718, 591], [860, 591], [860, 250], [505, 250], [505, 219]] }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "可接续 · 过程可视化", "items": ["目标/验收基线/文件范围/禁碰项写死进卡 body", "简报持久化到 /tmp/<task_id>-brief.md，中断可恢复", "看板 SQLite 持久化，随时查执行历史/OUTCOME/Comments"] },
+    { "dot": "cyan", "title": "可循环 · 可启停", "items": ["左环纠偏反复重来，右环验收递进一杆到底", "每次迭代结论写回卡 comments，可回溯", "随时 kanban_block；心跳超时 stale 卡自动回收"] },
+    { "dot": "rose", "title": "所有权边界", "items": ["执行车道只产出产物，不拥有 Kanban/最终验收", "协调者(Hermes)拥全部生命周期与验收", "目标偏离允许，但必上报——不闷头"] }
+  ]
+}

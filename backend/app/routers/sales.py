@@ -130,6 +130,13 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
     """创建销售订单（定制产品触发生产）"""
     from datetime import date, timedelta    # 汇率换算
     currency_id = data.get("currency_id") or 1
+    # 币种有效性校验（防止引用不存在/已停用币种）
+    from app.models.foundation import Currency as _Currency
+    currency = db.query(_Currency).filter(
+        _Currency.id == currency_id, _Currency.is_active == 1
+    ).first()
+    if not currency:
+        raise HTTPException(400, f"币种不存在或已停用: {currency_id}")
 
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import SalesOrder
@@ -312,6 +319,16 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
     if not order:
         raise HTTPException(404, "订单不存在")
     from app.models.sales import SalesOrderItem
+    # 每个明细行是否有活跃生产订单（外购/自产均算，用于前端隐藏转单按钮）
+    from app.models.production import ProductionOrder as _ProductionOrder
+    _item_ids = [item.id for item in order.items]
+    active_mo_items = set()
+    if _item_ids:
+        rows = db.query(_ProductionOrder.sales_order_item_id).filter(
+            _ProductionOrder.sales_order_item_id.in_(_item_ids),
+            _ProductionOrder.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
+        ).all()
+        active_mo_items = {r[0] for r in rows}
     result = {
         "id": order.id, "order_no": order.order_no,
         "customer_id": order.customer_id,
@@ -345,6 +362,7 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
                      StockInOrder.status != "已退回",
                  ).all()),
              "production_status": item.production_status or "未生产",
+             "has_active_mo": item.id in active_mo_items,
              "claimed_from_batch": item.claimed_from_batch or ""}
             for item in order.items
         ],
@@ -554,6 +572,14 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
         raise HTTPException(400, "订单审核通过后才能转直采")
     if item.production_status not in (None, "", "未生产"):
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转直采")
+    # 已有活跃生产订单（外购/自产）时禁止重复转单（与 re-produce 一致）
+    from app.models.production import ProductionOrder as _PO
+    existing_mo = db.query(_PO).filter(
+        _PO.sales_order_item_id == item.id,
+        _PO.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
+    ).first()
+    if existing_mo:
+        raise HTTPException(400, f"该明细行已有活跃生产订单（{existing_mo.order_no}），不能转直采")
     item.production_status = "已通知入库"
     db.commit()
     _fire_reminder(db, "SO_TO_PURCHASE", "so_order", order.id, order.order_no or "",
@@ -584,6 +610,14 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
         raise HTTPException(400, "订单审核通过后才能转外发")
     if item.production_status not in (None, "", "未生产"):
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转外发")
+    # 已有活跃生产订单时禁止重复转单（与 re-produce 一致）
+    from app.models.production import ProductionOrder as _PO
+    existing_mo = db.query(_PO).filter(
+        _PO.sales_order_item_id == item.id,
+        _PO.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
+    ).first()
+    if existing_mo:
+        raise HTTPException(400, f"该明细行已有活跃生产订单（{existing_mo.order_no}），不能转外发")
     item.production_status = "已通知外发"
     db.commit()
     _fire_reminder(db, "SO_TO_OUTSOURCE", "so_order", order.id, order.order_no or "",

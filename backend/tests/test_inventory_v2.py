@@ -43,7 +43,7 @@ class TestInventoryV2:
         api = self._api
         n = f"{990000 + int(tag[1:]):06d}"  # A1→990001 ... A6→990006（大数字段，避开自动编码 000001 起）
         cny = api(client, "POST", "/api/foundation/currencies",
-                  {"code": f"CNY{n}", "name": "人民币", "symbol": "¥", "is_base": 1}, h)
+                  {"code": f"CN{n}", "name": "人民币", "symbol": "¥", "is_base": 1}, h)
         wh_rm = api(client, "POST", "/api/foundation/warehouses",
                     {"code": f"RM{n}", "name": "原料仓", "wh_type": "原料仓",
                      "address": "浙江省绍兴市柯桥区轻纺城大道88号", "manager": "王建国"}, h)["id"]

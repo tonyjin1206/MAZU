@@ -235,7 +235,7 @@ async function fetchHsCodes() {
 async function fetchCurrencies() {
   try {
     const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 50 } })
-    currencyList.value = res.items || res.list || []
+    currencyList.value = (res.items || res.list || []).filter(c => c.is_active !== 0)
   } catch (e) {}
 }
 

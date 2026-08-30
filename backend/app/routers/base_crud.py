@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import inspect
+from sqlalchemy.exc import IntegrityError
 
 from app.database import get_db
 from app.models.auth import User
@@ -113,7 +114,11 @@ def register_crud(
     ):
         item = model(**data.model_dump())
         db.add(item)
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, f"{entity_name} 编码/字段已存在，请勿重复创建")
         db.refresh(item)
         return out_schema.model_validate(item)
 

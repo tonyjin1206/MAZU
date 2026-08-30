@@ -472,13 +472,20 @@ def create_order(
     from app.utils.batch_no import generate_doc_no
     from app.models.purchase import PurchaseOrder
     order_no = generate_doc_no(db, "PO", PurchaseOrder, "order_no")
+    # 币种有效性校验（防止引用不存在/已停用币种）
+    currency_id = data.currency_id or 1
+    currency = db.query(Currency).filter(
+        Currency.id == currency_id, Currency.is_active == 1
+    ).first()
+    if not currency:
+        raise HTTPException(400, f"币种不存在或已停用: {currency_id}")
 
     order = PurchaseOrder(
         order_no=order_no,
         supplier_id=data.supplier_id,
         order_date=data.order_date or date.today(),
         expected_date=data.expected_date,
-        currency_id=data.currency_id or 1,
+        currency_id=currency_id,
         exchange_rate=data.exchange_rate or 1,
         payment_terms=data.payment_terms,
         tax_rate=data.tax_rate,
