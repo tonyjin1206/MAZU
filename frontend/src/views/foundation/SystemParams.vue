@@ -96,7 +96,7 @@
 
       <!-- 其他参数组：通用表格（可拖拽列） -->
       <el-table ref="tableRef" v-else :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.prop === 'param_label' ? currentGroupLabel : col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
               <span class="col-header-wrap">
@@ -131,17 +131,12 @@
 
     <el-dialog v-model="dialogVisible" :title="editId ? '编辑参数' : (activeGroup === 'material_category' ? (isSubForm ? '新增小类' : '新增大类') : '新增参数')" width="480px" destroy-on-close>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="90px">
-        <el-form-item v-if="!inMaterialCategory" label="参数组" prop="group_name">
-          <el-select v-model="form.group_name" style="width: 100%" :disabled="!!editId">
-            <el-option v-for="g in groupOptions" :key="g" :label="groupLabel(g)" :value="g" />
-          </el-select>
-        </el-form-item>
         <el-form-item v-if="isSubForm" label="所属大类" prop="parent_key">
           <el-select v-model="form.parent_key" style="width: 100%" placeholder="选择该小类属于哪个大类" :disabled="!!editId">
             <el-option v-for="o in mainCategoryOptions" :key="o.key" :label="o.label" :value="o.key" />
           </el-select>
         </el-form-item>
-        <el-form-item label="显示名称" prop="param_label">
+        <el-form-item :label="currentGroupLabel" prop="param_label">
           <el-input v-model="form.param_label" :placeholder="inMaterialCategory ? (isSubForm ? '如：面布、底布、拉链' : '如：主材、辅材、包装材料') : '下拉框里看到的文字'" />
         </el-form-item>
         <el-form-item label="参数值">
@@ -232,10 +227,9 @@ const GROUP_LABELS = {
   supplier_type: '供应商类型',
   material_category: '材料类别',
   unit: '计量单位',
-  payment_method: '付款方式',
+  payment_method: '结算方式',
   country: '国家',
   warehouse: '仓库',
-  process: '加工工序',
 }
 
 function groupLabel(g) { return GROUP_LABELS[g] || g }
@@ -258,7 +252,8 @@ const rules = {
 }
 
 // 这两个组并入「材料类别」tab 内管理，不单独显示
-const HIDDEN_GROUPS = ['material_main_category', 'material_sub_category']
+// 加工工序已从参数设置移除（工序按商品工艺流程生成，非系统参数）
+const HIDDEN_GROUPS = ['material_main_category', 'material_sub_category', 'process']
 
 const groupOptions = computed(() => {
   const all = [...new Set([...groups.value, ...Object.keys(GROUP_LABELS)])]
@@ -266,6 +261,11 @@ const groupOptions = computed(() => {
 })
 
 const inMaterialCategory = computed(() => activeGroup.value === 'material_category')
+// 名称字段标签按当前分组动态显示（结算方式/供应商类型/计量单位/国家/仓库等），避免都叫"显示名称"混淆
+const currentGroupLabel = computed(() => {
+  if (activeGroup.value === 'material_category') return '类别名称'
+  return groupLabel(activeGroup.value)
+})
 const isSubForm = computed(() => form.group_name === 'material_sub_category')
 const mainCategoryOptions = ref([])
 
@@ -521,15 +521,18 @@ function openCreateSub(mainRow) {
 }
 
 function nextSubKey() {
-  // 小类编号全组唯一：取所有小类里最大编号 +1（避免与已有小类冲突）
+  // 小类编号 = 大类编号 + 小类序号（如 大类01 的小类 → 0101 / 0102）
+  const pkey = form.parent_key || ''
   let max = 0
   for (const m of materialTree.value) {
+    if (m.param_key !== pkey) continue
     for (const s of m.children || []) {
-      const n = parseInt(s.param_key, 10)
+      const core = String(s.param_key || '').slice(pkey.length)
+      const n = parseInt(core, 10)
       if (!isNaN(n) && n > max) max = n
     }
   }
-  return String(max + 1).padStart(2, '0')
+  return pkey + String(max + 1).padStart(2, '0')
 }
 
 function openEdit(row) {
@@ -550,6 +553,13 @@ function openEdit(row) {
 async function handleSave() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
+  // 重复校验：同分组同编号已存在（编辑排除自身）→ 拦截
+  const src = activeGroup.value === 'material_category' ? materialTree.value : list.value
+  const flat = []
+  const collect = arr => arr.forEach(x => { flat.push(x); if (x.children) collect(x.children) })
+  collect(src)
+  const dup = flat.find(x => x.param_key === form.param_key && (x.id || 0) !== (editId.value || 0) && (x.id || 0) !== (form.id || 0))
+  if (dup) { ElMessage.warning(`编号「${form.param_key}」已存在，不能重复`); return }
   saving.value = true
   try {
     if (editId.value) {

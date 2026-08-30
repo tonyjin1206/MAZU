@@ -35,6 +35,27 @@ body {
 .el-card__header { padding: 8px 12px; }
 .el-card__body { padding: 8px 12px; }
 .el-table { font-size: 12px; }
+/* ===== 统一表格风格（全站规范） ===== */
+/* 表头：字号/颜色/加粗/居中/浅灰底 */
+.el-table th.el-table__cell {
+  font-size: 13px;
+  color: #303133;
+  font-weight: 600;
+  text-align: center;
+  background-color: #f5f7fa;
+}
+/* 表头单元格：内容+排序控件整体居中 */
+.el-table th.el-table__cell > .cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+/* 单元格默认居中（文本/数值统一居中） */
+.el-table td.el-table__cell { text-align: center; }
+.el-table td.el-table__cell > .cell { text-align: center; }
+/* 变更/停售等 tag 居中 */
+.el-table .cell .el-tag { vertical-align: middle; }
 .el-form-item { margin-bottom: 22px; }
 .el-form-item--small { margin-bottom: 18px; }
 .el-form-item__error { font-size: 11px; padding-top: 2px; }

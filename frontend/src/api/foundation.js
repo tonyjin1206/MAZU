@@ -68,7 +68,13 @@ function crudApi(prefix, methods = ['list', 'get', 'create', 'update', 'delete',
 export const foundationApi = {
   procurementItemsSelect: () => request.get('/foundation/procurement-items-select'),
   materials: crudApi('materials', ['list', 'create', 'update', 'delete', 'select']),
-  products: crudApi('products'),
+  products: Object.assign(crudApi('products'), {
+    processTemplates: {
+      list: (productId) => request.get(`/foundation/products/${productId}/processes`),
+      save: (productId, items) => request.put(`/foundation/products/${productId}/processes`, { items }),
+      delete: (productId, id) => request.delete(`/foundation/products/${productId}/processes/${id}`),
+    },
+  }),
   productCustomers: {
     update: (productId, data) => request.put(`/foundation/products/${productId}/customers`, data),
   },

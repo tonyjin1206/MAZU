@@ -30,7 +30,7 @@
         <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
       </div>
 <el-table ref="tableRef" :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
           <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
                   <span class="col-header-wrap">
@@ -257,7 +257,7 @@ const defaultColumns = [
   { prop: 'actual_refund_amount', label: '实际退税', width: 110, align: 'right' , sortable: true },
   { prop: 'created_at', label: '创建时间', minWidth: 150 , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const tableRef = ref(null)
 const list = ref([])

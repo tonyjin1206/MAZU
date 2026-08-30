@@ -25,7 +25,7 @@
     </el-card>
 
     <!-- ========== 采购订单列表（高度可拖） ========== -->
-    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
+    <el-card ref="listCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>采购订单</span>
@@ -35,7 +35,7 @@
         </div>
       </template>
       <div style="flex: 1; min-height: 0; display: flex; flex-direction: column">
-      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" height="100%" @current-change="onOrderSelect" @row-dblclick="onOrderDblClick">
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="orderTableHeight + 'px'" @current-change="onOrderSelect">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -98,7 +98,7 @@
     </div>
 
     <!-- ========== 订单明细（跟随选中订单，占剩余高度） ========== -->
-    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+    <el-card ref="itemCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>订单明细</span>
@@ -106,7 +106,7 @@
           <el-button size="small" @click="openItemSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="orderItemHeight + 'px'">
         <el-table-column v-for="col in visibleItemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -371,6 +371,11 @@ function resetSearch() {
 // ========== 订单明细（跟随选中订单） ==========
 const orderTableRef = ref(null)
 const itemTableRef = ref(null)
+const listCardRef = ref(null)
+const itemCardRef = ref(null)
+const orderTableHeight = ref(400)
+const orderItemHeight = ref(400)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
 const itemLoading = ref(false)
 const selectedOrder = ref(null)
 const orderDetailList = ref([])
@@ -385,6 +390,7 @@ function onSplitterDown(e) {
   const onMove = (ev) => {
     const h = startH + (ev.clientY - startY)
     topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    nextTick(calcListHeight)
     localStorage.setItem(SPLIT_KEY, String(topHeight.value))
   }
   const onUp = () => {
@@ -398,6 +404,28 @@ function onSplitterDown(e) {
   document.body.style.cursor = 'row-resize'
   document.body.style.userSelect = 'none'
   e.preventDefault()
+}
+
+function _calcCardTableHeight(card, pagElSelector) {
+  if (!card) return 400
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  const bodyRect = body ? body.getBoundingClientRect() : el.getBoundingClientRect()
+  const pagEl = pagElSelector ? el.querySelector(pagElSelector) : null
+  const pagH = pagEl ? pagEl.getBoundingClientRect().height : 0
+  return Math.max(140, Math.round(bodyRect.height - pagH))
+}
+
+function calcListHeight() {
+  orderTableHeight.value = _calcCardTableHeight(listCardRef.value, '.el-pagination')
+}
+
+function calcItemHeight() {
+  const card = itemCardRef.value
+  if (!card) return
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  orderItemHeight.value = Math.max(140, Math.round((body || el).getBoundingClientRect().height - 16))
 }
 
 // ========== 合计栏 ==========
@@ -430,12 +458,6 @@ function itemSummary({ columns: cols, data }) {
 }
 
 function onOrderSelect(row) {
-  if (!row) return
-  // 单击仅选中（供明细行操作按钮上下文），不加载明细 —— 双击进入明细（两层交互）
-  selectedOrder.value = row
-}
-
-function onOrderDblClick(row) {
   if (!row) return
   selectedOrder.value = row
   loadOrderDetail(row.id)
@@ -827,7 +849,12 @@ async function handleDelete(row) {
   try { await purchaseApi.orders.delete(row.id); ElMessage.success(row.from_sales ? '已退回' : '删除成功'); fetchData() } catch (e) {}
 }
 
-onMounted(() => { initColumnVisible(); initItemVisible(); fetchData(); loadSuppliers(); loadMaterials() })
+onMounted(() => {
+  initColumnVisible(); initItemVisible(); fetchData()
+  loadSuppliers(); loadMaterials()
+  nextTick(() => { calcListHeight(); calcItemHeight() })
+  window.addEventListener('resize', () => { calcListHeight(); calcItemHeight() })
+})
 
 // 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
 watch(columnVersion, () => {

@@ -26,13 +26,6 @@
           <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>
           <span>Agent设置</span>
         </el-menu-item>
-
-        <!-- 预警提醒设置（1级菜单） -->
-        <el-menu-item index="/system/reminders" v-if="hasPerm('menu:system:reminders')">
-          <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-bell"/></svg>
-          <span>预警提醒设置</span>
-        </el-menu-item>
-
         <!-- 系统管理 -->
         <el-sub-menu index="system" v-if="hasPerm('menu:system:users') || hasPerm('menu:system:roles') || hasPerm('menu:system:wecom') || hasPerm('menu:system:reminders')">
           <template #title>
@@ -46,22 +39,23 @@
         </el-sub-menu>
 
         <!-- 1. 基础档案 -->
-        <el-sub-menu index="foundation" v-if="hasPerm('menu:customers') || hasPerm('menu:suppliers') || hasPerm('menu:materials') || hasPerm('menu:products') || hasPerm('menu:bom') || hasPerm('menu:hs-codes') || hasPerm('menu:params')">
+        <el-sub-menu index="foundation" v-if="hasPerm('menu:customers') || hasPerm('menu:suppliers') || hasPerm('menu:materials') || hasPerm('menu:products') || hasPerm('menu:processes') || hasPerm('menu:bom') || hasPerm('menu:currencies') || hasPerm('menu:params')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-layer-group"/></svg>
             <span>基础档案</span>
           </template>
+          <el-menu-item index="/foundation/params" v-if="hasPerm('menu:params')">参数设置</el-menu-item>
           <el-menu-item index="/foundation/customers" v-if="hasPerm('menu:customers')">客户管理</el-menu-item>
           <el-menu-item index="/foundation/suppliers" v-if="hasPerm('menu:suppliers')">供应商管理</el-menu-item>
+          <el-menu-item index="/foundation/currencies" v-if="hasPerm('menu:currencies')">币种/汇率</el-menu-item>
           <el-menu-item index="/foundation/materials" v-if="hasPerm('menu:materials')">原辅材料</el-menu-item>
           <el-menu-item index="/foundation/products" v-if="hasPerm('menu:products')">产品档案</el-menu-item>
+          <el-menu-item index="/foundation/processes" v-if="hasPerm('menu:processes')">工艺维护</el-menu-item>
           <el-menu-item index="/foundation/bom" v-if="hasPerm('menu:bom')">BOM管理</el-menu-item>
-          <el-menu-item index="/foundation/hs-codes" v-if="hasPerm('menu:hs-codes')">HS编码/退税率</el-menu-item>
-          <el-menu-item index="/foundation/params" v-if="hasPerm('menu:params')">参数设置</el-menu-item>
         </el-sub-menu>
 
         <!-- 2. 销售管理 -->
-        <el-sub-menu index="sales" v-if="hasPerm('menu:sales:orders') || hasPerm('menu:sales:deliveries') || hasPerm('menu:sales:invoices') || hasPerm('menu:sales:customs') || hasPerm('menu:sales:ar') || hasPerm('menu:sales:collections')">
+        <el-sub-menu index="sales" v-if="hasPerm('menu:sales:orders') || hasPerm('menu:sales:deliveries') || hasPerm('menu:sales:invoices') || hasPerm('menu:sales:ar') || hasPerm('menu:sales:collections')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-exchange"/></svg>
             <span>销售管理</span>
@@ -69,34 +63,11 @@
           <el-menu-item index="/sales/orders" v-if="hasPerm('menu:sales:orders')">销售订单</el-menu-item>
           <el-menu-item index="/sales/deliveries" v-if="hasPerm('menu:sales:deliveries')">销售发货</el-menu-item>
           <el-menu-item index="/sales/invoices" v-if="hasPerm('menu:sales:invoices')">销售发票</el-menu-item>
-          <el-menu-item index="/sales/customs" v-if="hasPerm('menu:sales:customs')">报关管理</el-menu-item>
           <el-menu-item index="/sales/ar" v-if="hasPerm('menu:sales:ar')">应收账款</el-menu-item>
           <el-menu-item index="/sales/collections" v-if="hasPerm('menu:sales:collections')">收款管理</el-menu-item>
         </el-sub-menu>
 
-        <!-- 3. 委外管理 -->
-        <el-sub-menu index="outsource" v-if="hasPerm('menu:outsource:from-sales') || hasPerm('menu:outsource:orders')">
-          <template #title>
-            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>
-            <span>委外管理</span>
-          </template>
-          <el-menu-item index="/outsource/from-sales" v-if="hasPerm('menu:outsource:from-sales')">销售订单转委外</el-menu-item>
-          <el-menu-item index="/outsource/orders" v-if="hasPerm('menu:outsource:orders')">委外订单</el-menu-item>
-        </el-sub-menu>
-
-        <!-- 4. 生产管理（自产） -->
-        <el-sub-menu index="production" v-if="hasPerm('menu:production:orders') || hasPerm('menu:production:workspace') || hasPerm('menu:production:invoices') || hasPerm('menu:production:batch')">
-          <template #title>
-            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-application"/></svg>
-            <span>生产管理</span>
-          </template>
-          <el-menu-item index="/production/orders" v-if="hasPerm('menu:production:orders')">生产订单</el-menu-item>
-          <el-menu-item index="/production/workspace" v-if="hasPerm('menu:production:workspace')">生产工作台</el-menu-item>
-          <el-menu-item index="/production/invoices" v-if="hasPerm('menu:production:invoices')">加工费发票</el-menu-item>
-          <el-menu-item index="/production/inventory" v-if="hasPerm('menu:production:batch')">批次追溯</el-menu-item>
-        </el-sub-menu>
-
-        <!-- 4. 采购管理 -->
+        <!-- 3. 采购管理 -->
         <el-sub-menu index="purchase" v-if="hasPerm('menu:purchase:from-sales') || hasPerm('menu:purchase:orders') || hasPerm('menu:purchase:invoices') || hasPerm('menu:purchase:ap') || hasPerm('menu:purchase:payments')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-inbox-in"/></svg>
@@ -109,28 +80,42 @@
           <el-menu-item index="/purchase/payments" v-if="hasPerm('menu:purchase:payments')">付款管理</el-menu-item>
         </el-sub-menu>
 
+        <!-- 3. 委外管理 -->
+        <el-sub-menu index="outsource" v-if="hasPerm('menu:outsource:from-sales') || hasPerm('menu:outsource:orders')">
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-cog"/></svg>
+            <span>委外管理</span>
+          </template>
+          <el-menu-item index="/outsource/from-sales" v-if="hasPerm('menu:outsource:from-sales')">销售订单转委外</el-menu-item>
+          <el-menu-item index="/outsource/orders" v-if="hasPerm('menu:outsource:orders')">委外订单</el-menu-item>
+        </el-sub-menu>
+
+        <!-- 采购管理 -->
+        <!-- 4. 生产管理（自产） -->
+        <el-sub-menu index="production" v-if="hasPerm('menu:production:orders') || hasPerm('menu:production:workspace') || hasPerm('menu:production:invoices') || hasPerm('menu:production:batch')">
+          <template #title>
+            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-application"/></svg>
+            <span>生产管理</span>
+          </template>
+          <el-menu-item index="/production/orders" v-if="hasPerm('menu:production:orders')">生产订单</el-menu-item>
+          <el-menu-item index="/production/workspace" v-if="hasPerm('menu:production:workspace')">生产工作台</el-menu-item>
+          <el-menu-item index="/production/invoices" v-if="hasPerm('menu:production:invoices')">加工费发票</el-menu-item>
+          <el-menu-item index="/production/inventory" v-if="hasPerm('menu:production:batch')">批次追溯</el-menu-item>
+        </el-sub-menu>
+
         <!-- 5. 库存管理 -->
         <el-sub-menu index="inventory" v-if="hasPerm('menu:inventory') || hasPerm('menu:inventory:summary') || hasPerm('menu:inventory:stock-ins') || hasPerm('menu:inventory:material-ins') || hasPerm('menu:inventory:material-outs') || hasPerm('menu:inventory:delivery-outs') || hasPerm('menu:inventory:stocktake')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-database-set"/></svg>
             <span>库存管理</span>
           </template>
-          <el-menu-item index="/inventory/management" v-if="hasPerm('menu:inventory')">库存查询</el-menu-item>
-          <el-menu-item index="/inventory/summary" v-if="hasPerm('menu:inventory:summary')">收发存</el-menu-item>
-          <el-menu-item index="/inventory/stock-ins" v-if="hasPerm('menu:inventory:stock-ins')">成品入库</el-menu-item>
           <el-menu-item index="/inventory/material-ins" v-if="hasPerm('menu:inventory:material-ins')">原料入库</el-menu-item>
           <el-menu-item index="/inventory/material-outs" v-if="hasPerm('menu:inventory:material-outs')">原料出库</el-menu-item>
+          <el-menu-item index="/inventory/stock-ins" v-if="hasPerm('menu:inventory:stock-ins')">成品入库</el-menu-item>
           <el-menu-item index="/inventory/delivery-outs" v-if="hasPerm('menu:inventory:delivery-outs')">成品出库</el-menu-item>
           <el-menu-item index="/inventory/stocktakes" v-if="hasPerm('menu:inventory:stocktake')">盘点管理</el-menu-item>
-        </el-sub-menu>
-
-        <!-- 6. 退税管理 -->
-        <el-sub-menu index="tax-refund" v-if="hasPerm('menu:tax')">
-          <template #title>
-            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-clouddownload"/></svg>
-            <span>退税管理</span>
-          </template>
-          <el-menu-item index="/tax-refund/declarations" v-if="hasPerm('menu:tax')">退税申报</el-menu-item>
+          <el-menu-item index="/inventory/management" v-if="hasPerm('menu:inventory')">库存查询</el-menu-item>
+          <el-menu-item index="/inventory/summary" v-if="hasPerm('menu:inventory:summary')">收发存明细</el-menu-item>
         </el-sub-menu>
 
       </el-menu>
@@ -259,10 +244,9 @@ const pageTitle = computed(() => {
     '/foundation/bom': 'BOM管理',
     '/foundation/customers': '客户管理',
     '/foundation/suppliers': '供应商管理',
-    '/foundation/hs-codes': 'HS编码/退税率管理',
     '/foundation/warehouses': '仓库管理',
     '/foundation/currencies': '币种/汇率',
-    '/foundation/processes': '工序管理',
+    '/foundation/processes': '工艺维护',
     '/purchase/from-sales': '销售订单转采购',
     '/purchase/orders': '采购订单',
     '/purchase/invoices': '采购发票',
@@ -271,7 +255,6 @@ const pageTitle = computed(() => {
     '/sales/orders': '销售订单',
     '/sales/deliveries': '销售发货',
     '/sales/invoices': '销售发票',
-    '/sales/customs': '报关管理',
     '/sales/ar': '应收账款',
     '/sales/collections': '收款单',
     '/production/orders': '生产订单',
@@ -286,7 +269,6 @@ const pageTitle = computed(() => {
     '/inventory/delivery-outs': '成品出库',
     '/outsource/from-sales': '销售订单转委外',
     '/outsource/orders': '委外订单',
-    '/tax-refund/declarations': '退税申报',
     '/system/users': '用户管理',
     '/system/roles': '角色管理',
     '/system/wecom': '企业微信配置',

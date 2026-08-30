@@ -25,7 +25,7 @@
         stripe border
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -117,7 +117,7 @@ const defaultColumns = [
   { prop: 'standard_hours', label: '标准工时(h)', width: 110, align: 'right', sortable: true },
   { prop: 'unit_price', label: '加工单价', width: 100, align: 'right', sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableRef = ref(null)

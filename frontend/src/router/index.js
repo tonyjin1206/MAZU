@@ -16,7 +16,6 @@ const routes = [
       { path: 'foundation/bom', name: 'Bom', component: () => import('../views/foundation/Bom.vue'), meta: { perm: 'menu:bom' } },
       { path: 'foundation/customers', name: 'Customers', component: () => import('../views/foundation/Customers.vue'), meta: { perm: 'menu:customers' } },
       { path: 'foundation/suppliers', name: 'Suppliers', component: () => import('../views/foundation/Suppliers.vue'), meta: { perm: 'menu:suppliers' } },
-      { path: 'foundation/hs-codes', name: 'HsCodes', component: () => import('../views/foundation/HsCodes.vue'), meta: { perm: 'menu:hs-codes' } },
       { path: 'foundation/processes', name: 'Processes', component: () => import('../views/foundation/Processes.vue'), meta: { perm: 'menu:processes' } },
       { path: 'foundation/params', name: 'SystemParams', component: () => import('../views/foundation/SystemParams.vue'), meta: { perm: 'menu:params' } },
       { path: 'foundation/warehouses', name: 'Warehouses', component: () => import('../views/foundation/Warehouses.vue'), meta: { perm: 'menu:warehouses' } },
@@ -34,7 +33,6 @@ const routes = [
       { path: 'sales/orders', name: 'SalesOrders', component: () => import('../views/sales/SalesOrders.vue'), meta: { perm: 'menu:sales:orders' } },
       { path: 'sales/deliveries', name: 'SalesDeliveries', component: () => import('../views/sales/SalesDeliveries.vue'), meta: { perm: 'menu:sales:deliveries' } },
       { path: 'sales/invoices', name: 'SalesInvoices', component: () => import('../views/sales/SalesInvoices.vue'), meta: { perm: 'menu:sales:invoices' } },
-      { path: 'sales/customs', name: 'CustomsDeclarations', component: () => import('../views/sales/CustomsDeclarations.vue'), meta: { perm: 'menu:sales:customs' } },
       { path: 'sales/ar', name: 'AccountsReceivable', component: () => import('../views/sales/AccountsReceivable.vue'), meta: { perm: 'menu:sales:ar' } },
       { path: 'sales/collections', name: 'Collections', component: () => import('../views/sales/Collections.vue'), meta: { perm: 'menu:sales:collections' } },
 
@@ -57,8 +55,6 @@ const routes = [
       { path: 'inventory/material-outs', name: 'MaterialOuts', component: () => import('../views/inventory/MaterialOuts.vue'), meta: { perm: 'menu:inventory:material-outs' } },
       { path: 'inventory/delivery-outs', name: 'DeliveryOuts', component: () => import('../views/inventory/DeliveryOuts.vue'), meta: { perm: 'menu:inventory:delivery-outs' } },
       { path: 'inventory/stocktakes', name: 'StocktakeManagement', component: () => import('../views/inventory/StocktakeManagement.vue'), meta: { perm: 'menu:inventory:stocktake' } },
-      // 退税管理
-      { path: 'tax-refund/declarations', name: 'TaxRefund', component: () => import('../views/taxRefund/TaxRefundDeclarations.vue'), meta: { perm: 'menu:tax' } },
 
       // 系统管理
       { path: 'system/users', name: 'SystemUsers', component: () => import('../views/system/Users.vue'), meta: { perm: 'menu:system:users' } },
@@ -66,7 +62,6 @@ const routes = [
       { path: 'system/wecom', name: 'WecomConfig', component: () => import('../views/system/WecomConfig.vue'), meta: { perm: 'menu:system:wecom' } },
       { path: 'system/bot', name: 'BotConfig', component: () => import('../views/system/BotConfig.vue'), meta: { perm: 'menu:system:bot' } },
       { path: 'system/bot-chat', name: 'BotChat', component: () => import('../views/system/BotChat.vue'), meta: { perm: 'menu:system:bot-chat' } },
-      { path: 'system/reminders', name: 'Reminders', component: () => import('../views/system/Reminders.vue'), meta: { perm: 'menu:system:reminders' } },
       { path: 'system/notifications', name: 'Notifications', component: () => import('../views/system/Notifications.vue'), meta: { perm: 'menu:system:reminders' } },
     ],
   },

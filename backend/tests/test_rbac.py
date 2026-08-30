@@ -148,7 +148,7 @@ class TestRoleCRUD:
         target = [r for r in roles if r["code"] == "test_custom"][0]
         resp = client.put(f"/api/auth/roles/{target['id']}", json={
             "name": "已更新",
-            "permission_codes": ["menu:dashboard", "menu:inventory", "menu:tax"],
+            "permission_codes": ["menu:dashboard", "menu:inventory", "menu:purchase:orders"],
         }, headers=auth_headers)
         assert resp.status_code == 200
         assert len(resp.json()["permission_codes"]) == 3
@@ -194,7 +194,7 @@ class TestPermissionRoles:
         assert "menu:customers" not in codes  # 无基础档案
 
     def test_finance_manager_permissions(self, client, admin_token):
-        """财务经理有采购发票/应付/付款、销售发票/应收/收款、库存、退税"""
+        """财务经理有采购发票/应付/付款、销售发票/应收/收款、库存（退税功能已移除）"""
         h = {"Authorization": f"Bearer {admin_token}"}
         roles = client.get("/api/auth/roles", headers=h).json()
         fm = [r for r in roles if r["code"] == "finance_manager"][0]
@@ -207,7 +207,7 @@ class TestPermissionRoles:
         assert "menu:sales:ar" in codes
         assert "menu:sales:collections" in codes
         assert "menu:inventory" in codes
-        assert "menu:tax" in codes
+        assert "menu:tax" not in codes  # 退税功能已移除
         assert "menu:purchase:orders" not in codes  # 无采购订单
         assert "menu:sales:orders" not in codes  # 无销售订单
         assert "menu:system:users" not in codes  # 无系统管理

@@ -1,16 +1,16 @@
 <template>
-  <div>
-    <el-card>
-      <template #header></template>
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="汇总" name="summary">
-          <el-form :inline="true" style="margin-bottom: 12px">
-            <el-form-item label="供应商">
-              <el-input v-model="searchKeyword" placeholder="输入供应商名称查询" clearable style="width: 260px" @input="filterSummary" />
-            </el-form-item>
-          </el-form>
-<el-table ref="tableRef" class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
-            <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+    <!-- 应付账款汇总（上） -->
+    <el-card ref="summaryCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
+      <template #header>
+        <div style="display: flex; justify-content: flex-start; align-items: center; gap: 8px">
+          <el-input v-model="searchKeyword" placeholder="输入供应商名称查询" clearable style="width: 260px" @input="filterSummary" />
+          <span style="flex: 1" />
+          <el-button size="small" @click="openSummarySettings">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table ref="tableRef" class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail" :height="summaryTableHeight + 'px'">
+            <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <span class="col-header-wrap">
                   <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
@@ -25,11 +25,24 @@
               </template>
             </el-table-column>
           </el-table>
-        </el-tab-pane>
+    </el-card>
 
-        <el-tab-pane label="明细" name="detail">
-          <el-table class="drag-table-detail" :key="pdColumnVersion" :data="paymentDetailList" border stripe v-loading="pdLoading" style="width: 100%" :summary-method="pdTotal" show-summary>
-            <el-table-column v-for="col in pdColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
+    <!-- 分栏条 -->
+    <div class="split-bar" style="flex: none; height: 8px; cursor: row-resize; background: transparent; display: flex; align-items: center; justify-content: center; user-select: none" @mousedown="onSplitterDown">
+      <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
+    </div>
+
+    <!-- 应付账款明细（下，跟随选中供应商） -->
+    <el-card ref="detailCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+      <template #header>
+        <div style="display: flex; justify-content: flex-start; align-items: center; gap: 8px">
+          <span style="font-weight: 600">付款明细</span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openDetailSettings">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table class="drag-table-detail" :key="pdColumnVersion" :data="paymentDetailList" border stripe v-loading="pdLoading" style="width: 100%" :summary-method="pdTotal" show-summary :height="detailTableHeight + 'px'">
+            <el-table-column v-for="col in visiblePdColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <span class="col-header-wrap">
                   <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
@@ -49,8 +62,6 @@
               </template>
             </el-table-column>
           </el-table>
-        </el-tab-pane>
-      </el-tabs>
     </el-card>
 
     <!-- 付款弹窗 -->
@@ -64,7 +75,7 @@
           <el-input v-model="form.payment_amount" placeholder="请输入付款金额" type="number" min="0" :max="form.balance" />
         </el-form-item>
         <el-form-item label="付款日期"><el-date-picker v-model="form.payment_date" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%" /></el-form-item>
-        <el-form-item label="付款方式">
+        <el-form-item label="结算方式">
           <el-select v-model="form.payment_method" placeholder="请选择" style="width: 100%">
             <el-option label="银行转账" value="银行转账" /><el-option label="现金" value="现金" /><el-option label="承兑汇票" value="承兑汇票" />
           </el-select>
@@ -84,7 +95,7 @@
         <el-descriptions-item label="供应商">{{ paymentDetail.supplier_name }}</el-descriptions-item>
         <el-descriptions-item label="付款日期">{{ paymentDetail.payment_date }}</el-descriptions-item>
         <el-descriptions-item label="金额">{{ $fm(paymentDetail.amount) }}</el-descriptions-item>
-        <el-descriptions-item label="付款方式">{{ paymentDetail.payment_method }}</el-descriptions-item>
+        <el-descriptions-item label="结算方式">{{ paymentDetail.payment_method }}</el-descriptions-item>
         <el-descriptions-item label="操作人">{{ paymentDetail.operator }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2"><div style="white-space: pre-wrap">{{ paymentDetail.remark || '-' }}</div></el-descriptions-item>
       </el-descriptions>
@@ -95,6 +106,8 @@
       </el-table>
       <span v-else style="color: #909399">无核销明细</span>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="summarySettingsVisible" :columns="summarySettingsList" @confirm="confirmSummarySettings" />
+    <ColumnSettingsDialog v-model:visible="detailSettingsVisible" :columns="detailSettingsList" @confirm="confirmDetailSettings" />
   </div>
 </template>
 
@@ -103,6 +116,7 @@ import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
@@ -114,7 +128,9 @@ const defaultColumns = [
   { prop: 'total_paid', label: '已付金额', width: 130, align: 'right' , sortable: true },
   { prop: 'balance', label: '余额', width: 130, align: 'right' , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible: summarySettingsVisible, settingsList: summarySettingsList, openColumnSettings: openSummarySettingsRaw, confirmSettings: confirmSummarySettingsFn, resetSettings: resetSummarySettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-summary .el-table__header-wrapper thead tr')
+const openSummarySettings = () => openSummarySettingsRaw()
+const confirmSummarySettings = () => confirmSummarySettingsFn()
 
 const PD_STORAGE_KEY = 'mazu_ap_detail_columns'
 const defaultPdColumns = [
@@ -127,11 +143,19 @@ const defaultPdColumns = [
   { prop: 'paid_amount', label: '付款金额', width: 120, align: 'right' , sortable: true },
   { prop: 'balance', label: '余额', width: 110, align: 'right' , sortable: true },
 ]
-const { columns: pdColumns, columnVersion: pdColumnVersion, initColumnDrag: initPdColumnDrag } = useColumnDrag(defaultPdColumns, PD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
+const { columns: pdColumns, visibleColumns: visiblePdColumns, columnVersion: pdColumnVersion, initColumnDrag: initPdColumnDrag, settingsVisible: detailSettingsVisible, settingsList: detailSettingsList, openColumnSettings: openDetailSettingsRaw, confirmSettings: confirmDetailSettingsFn, resetSettings: resetDetailSettings } = useColumnDrag(defaultPdColumns, PD_STORAGE_KEY, '.drag-table-detail .el-table__header-wrapper thead tr')
+const openDetailSettings = () => openDetailSettingsRaw()
+const confirmDetailSettings = () => confirmDetailSettingsFn()
 
 const activeTab = ref('summary')
 const loading = ref(false)
 const tableRef = ref(null)
+const summaryCardRef = ref(null)
+const detailCardRef = ref(null)
+const summaryTableHeight = ref(300)
+const detailTableHeight = ref(200)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
+const topHeight = ref(parseInt(localStorage.getItem('mazu_ap_split_height') || '400') || 400)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -212,7 +236,6 @@ function filterSummary() {} // computed handles it
 
 function showDetail(row) {
   pdFilter.value = row.supplier_name
-  activeTab.value = 'detail'
   fetchPaymentDetails()
 }
 
@@ -290,7 +313,47 @@ async function viewPayment(row) {
   }
 }
 
-onMounted(fetchData)
+function onSplitterDown(e) {
+  const startY = e.clientY
+  const startH = topHeight.value
+  const onMove = (ev) => {
+    topHeight.value = Math.min(Math.max(startH + (ev.clientY - startY), 180), window.innerHeight - 360)
+    nextTick(calcSummaryHeight)
+    localStorage.setItem('mazu_ap_split_height', String(topHeight.value))
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
+
+function _calcCardTableHeight(card) {
+  if (!card) return 200
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  return Math.max(120, Math.round((body || el).getBoundingClientRect().height - 16))
+}
+
+function calcSummaryHeight() {
+  summaryTableHeight.value = _calcCardTableHeight(summaryCardRef.value)
+}
+
+function calcDetailHeight() {
+  detailTableHeight.value = _calcCardTableHeight(detailCardRef.value)
+}
+
+onMounted(() => {
+  fetchData()
+  nextTick(() => { calcSummaryHeight(); calcDetailHeight() })
+  window.addEventListener('resize', () => { calcSummaryHeight(); calcDetailHeight() })
+})
 </script>
 
 <style scoped>

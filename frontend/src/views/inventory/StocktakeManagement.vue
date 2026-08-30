@@ -3,22 +3,23 @@
     <el-card>
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
           <el-button type="primary" @click="openStocktakeCreate">新建盘点</el-button>
           <el-button @click="fetchStocktakes">刷新</el-button>
         </div>
       </template>
-      <el-table :data="stocktakeList" v-loading="stocktakeLoading" stripe border>
-        <el-table-column prop="stocktake_no" label="盘点单号" width="170" />
-        <el-table-column prop="warehouse_name" label="仓库" width="120" />
-        <el-table-column prop="status" label="状态" width="100">
-          <template #default="{ row }">
+      <el-table :key="columnVersion" :data="stocktakeList" v-loading="stocktakeLoading" stripe border>
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="row.status === '已提交' ? 'success' : 'warning'" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="item_count" label="明细项" width="80" align="center" />
-        <el-table-column prop="operator" label="盘点人" width="110" />
-        <el-table-column prop="remark" label="备注" min-width="140" />
-        <el-table-column prop="created_at" label="创建时间" width="160" />
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="viewStocktake(row)">{{ row.status === '草稿' ? '修改' : '查看' }}</el-button>
@@ -120,14 +121,30 @@
         <el-button v-if="stocktakeEditStatus === '草稿'" type="primary" :loading="stocktakeSubmitting" @click="handleSubmitStocktake">提交盘点</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { inventoryApi } from '../../api/business'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置 =====
+const STORAGE_KEY = 'mazu_stocktake_columns'
+const defaultColumns = [
+  { prop: 'stocktake_no', label: '盘点单号', width: 170, sortable: true },
+  { prop: 'warehouse_name', label: '仓库', width: 120, sortable: true },
+  { prop: 'status', label: '状态', width: 100, sortable: true },
+  { prop: 'item_count', label: '明细项', width: 80, align: 'center', sortable: true },
+  { prop: 'operator', label: '盘点人', width: 110, sortable: true },
+  { prop: 'remark', label: '备注', minWidth: 140, sortable: true },
+  { prop: 'created_at', label: '创建时间', width: 160, sortable: true },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const warehouseList = ref([])
 const materialList = ref([])
@@ -146,7 +163,7 @@ async function fetchStocktakes() {
     const res = await inventoryApi.stocktakes.list({ page: stocktakePage.value, page_size: stocktakePageSize.value })
     stocktakeList.value = res.items || []
     stocktakeTotal.value = res.total || 0
-  } catch (e) { ElMessage.error('加载盘点单失败') } finally { stocktakeLoading.value = false }
+  } catch (e) { ElMessage.error('加载盘点单失败') } finally { stocktakeLoading.value = false; nextTick(initColumnDrag) }
 }
 
 // ===== 新建盘点 =====

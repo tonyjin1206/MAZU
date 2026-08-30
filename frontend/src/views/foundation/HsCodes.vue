@@ -27,7 +27,7 @@
         style="width: 100%"
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -143,7 +143,7 @@ const defaultColumns = [
   { prop: 'tax_rate', label: '增值税率%', width: 100, sortable: true },
   { prop: 'effective_date', label: '生效日期', width: 120, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])

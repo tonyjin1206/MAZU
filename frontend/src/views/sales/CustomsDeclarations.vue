@@ -31,7 +31,7 @@
         <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
       </div>
 <el-table ref="tableRef" :key="columnVersion" :data="list" v-loading="loading" stripe>
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
                   <span class="col-header-wrap">
@@ -163,7 +163,7 @@ const defaultColumns = [
   { prop: 'declare_date', label: '报关日期', width: 100, sortable: true },
   { prop: 'status', label: '状态', width: 100, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList: settingsListDlg, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList: settingsListDlg, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const tableRef = ref(null)
 const list = ref([])

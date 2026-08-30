@@ -4,10 +4,13 @@
     <el-card style="margin-bottom: 12px">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
         <el-input v-model="productKeyword" placeholder="按编码/名称搜索" clearable style="flex: 1" />
+        <span style="flex: 1" />
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
         <el-button @click="fetchProducts">刷新</el-button>
       </div>
       <el-table
         ref="productTableRef"
+        :key="columnVersion"
         :data="filteredProducts"
         v-loading="productLoading"
         stripe
@@ -19,13 +22,14 @@
         :row-key="row => row.id"
         @row-click="onProductSelect"
       >
-        <el-table-column prop="code" label="编码" width="120" sortable />
-        <el-table-column prop="name" label="名称" min-width="120" sortable />
-        <el-table-column prop="spec" label="规格" min-width="100" show-overflow-tooltip sortable>
-          <template #default="{ row }">{{ row.spec || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="model" label="型号" min-width="100" show-overflow-tooltip sortable>
-          <template #default="{ row }">{{ row.model || '-' }}</template>
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'spec' || col.prop === 'model'" #default="{ row }">{{ row[col.prop] || '-' }}</template>
         </el-table-column>
       </el-table>
     </el-card>
@@ -122,13 +126,26 @@
         <el-button type="primary" :loading="processDialogLoading" @click="handleProcessSave">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
+
+// ===== 产品列配置 =====
+const STORAGE_KEY = 'mazu_bom_product_columns'
+const defaultColumns = [
+  { prop: 'code', label: '编码', width: 120, sortable: true },
+  { prop: 'name', label: '名称', minWidth: 120, sortable: true },
+  { prop: 'spec', label: '规格', minWidth: 100, sortable: true },
+  { prop: 'model', label: '型号', minWidth: 100, sortable: true },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const productKeyword = ref('')
 const selectedProductId = ref(null)
@@ -188,7 +205,7 @@ async function fetchProducts() {
       productTableRef.value?.setCurrentRow(productList.value[0] || null)
       onProductSelect(productList.value[0])
     })
-  } catch (e) {} finally { productLoading.value = false }
+  } catch (e) {} finally { productLoading.value = false; nextTick(initColumnDrag) }
 }
 
 async function fetchBom() {

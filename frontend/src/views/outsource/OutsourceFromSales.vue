@@ -20,22 +20,21 @@
         <div style="display: flex; align-items: center">
           <span>转外发明细（订单区域）</span>
           <span style="margin-left: 10px; font-size: 12px; color: #909399">点击行，下方展示该产品工序层级关系面</span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
         </div>
       </template>
       <div style="flex: 1; min-height: 0; overflow: auto">
-        <el-table ref="tableRef" v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row row-key="sales_item_id" @current-change="onSelectRow">
-          <el-table-column prop="order_no" label="销售订单号" min-width="135" sortable />
-          <el-table-column prop="customer_name" label="客户" min-width="90" show-overflow-tooltip sortable />
-          <el-table-column prop="code" label="产品编码" min-width="95" sortable />
-          <el-table-column prop="name" label="产品名称" min-width="105" show-overflow-tooltip sortable />
-          <el-table-column prop="spec" label="规格" min-width="75" show-overflow-tooltip sortable />
-          <el-table-column prop="unit" label="单位" width="52" align="center" sortable />
-          <el-table-column prop="quantity" label="数量" width="82" align="right" sortable>
-            <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
-          </el-table-column>
-          <el-table-column prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip sortable />
-          <el-table-column label="委外状态" width="100" align="center" sortable :sort-method="(a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status)">
-            <template #default="{ row }">
+        <el-table ref="tableRef" :key="columnVersion" v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row row-key="sales_item_id" @current-change="onSelectRow">
+          <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :sort-method="col.sortMethod" :align="col.align" :show-overflow-tooltip="col.prop === 'customer_name' || col.prop === 'name' || col.prop === 'spec' || col.prop === 'batch_no'">
+            <template #header>
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+            </template>
+            <template v-if="col.prop === 'quantity'" #default="{ row }">{{ fmtQty(row.quantity) }}</template>
+            <template v-else-if="col.prop === 'outsource_status'" #default="{ row }">
               <el-tag v-if="row.outsource_status === 'completed'" type="success" size="small">委外完成</el-tag>
               <el-tag v-else-if="row.outsource_status === 'transferred'" type="success" size="small">已转委外订单</el-tag>
               <el-tag v-else-if="row.outsource_status === 'partial'" type="warning" size="small">部分转委外</el-tag>
@@ -211,13 +210,31 @@
         <el-button type="primary" @click="confirmClaim">确认认领</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'; import { outsourceApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'; import { inventoryApi } from '../../api/business'
+
+// ===== 列配置 =====
+const STORAGE_KEY = 'mazu_outsource_from_sales_columns'
+const defaultColumns = [
+  { prop: 'order_no', label: '销售订单号', minWidth: 135, sortable: true },
+  { prop: 'customer_name', label: '客户', minWidth: 90, sortable: true },
+  { prop: 'code', label: '产品编码', minWidth: 95, sortable: true },
+  { prop: 'name', label: '产品名称', minWidth: 105, sortable: true },
+  { prop: 'spec', label: '规格', minWidth: 75, sortable: true },
+  { prop: 'unit', label: '单位', width: 52, align: 'center', sortable: true },
+  { prop: 'quantity', label: '数量', width: 82, align: 'right', sortable: true },
+  { prop: 'batch_no', label: '批次号', minWidth: 130, sortable: true },
+  { prop: 'outsource_status', label: '委外状态', width: 100, align: 'center', sortable: true, sortMethod: (a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status) },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 // ========== 上下区域高度拖动 ==========
 const SPLIT_KEY = 'mazu_outsource_from_sales_splitH'
@@ -266,7 +283,7 @@ async function fetchData() {
       if (selectedItem.value) loadDetail(selectedItem.value)
       nextTick(() => { tableRef.value?.setCurrentRow(dataList.value[0] || null) })
     }
-  } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
+  } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 function resetSearch() {

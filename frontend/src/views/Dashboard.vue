@@ -1,5 +1,35 @@
 <template>
   <div>
+    <!-- 消息中心（工作台最上方，默认未读页签） -->
+    <el-card style="margin-bottom: 12px">
+      <template #header>
+        <div style="display: flex; justify-content: space-between; align-items: center">
+          <span style="font-weight: 600; font-size: 14px; color: #409eff">消息中心</span>
+          <div style="display: flex; align-items: center; gap: 12px">
+            <el-button v-if="msgTab === 'unread' && unreadTotal > 0" link type="primary" @click="markAllReadMsg">全部已读</el-button>
+            <el-radio-group v-model="msgTab" size="small" @change="fetchMsgs">
+              <el-radio-button value="unread">未读{{ unreadTotal > 0 ? ` (${unreadTotal})` : '' }}</el-radio-button>
+              <el-radio-button value="read">已读</el-radio-button>
+            </el-radio-group>
+          </div>
+        </div>
+      </template>
+      <div v-if="msgs.length === 0" style="text-align: center; color: #909399; padding: 14px 0">
+        暂无{{ msgTab === 'unread' ? '未读' : '已读' }}消息
+      </div>
+      <div v-else>
+        <div v-for="n in msgs" :key="n.id" @click="openMsg(n)"
+             style="display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-bottom: 1px solid #f0f0f0; cursor: pointer; border-radius: 4px"
+             :style="{ background: n.read_status === 0 ? '#f5f7fa' : 'transparent' }">
+          <el-tag v-if="n.read_status === 0" size="small" type="danger">新</el-tag>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-size: 13px; font-weight: 600; color: #303133">{{ n.title }}</div>
+            <div style="font-size: 12px; color: #606266; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ n.content }}</div>
+          </div>
+          <span style="font-size: 12px; color: #909399; white-space: nowrap">{{ n.created_at }}</span>
+        </div>
+      </div>
+    </el-card>
     <el-row :gutter="16">
       <el-col :span="8">
         <el-card>
@@ -224,9 +254,62 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { dashboardApi, inventoryApi, purchaseApi, salesApi } from '../api/business'
+import { dashboardApi, inventoryApi, purchaseApi, salesApi, notificationApi } from '../api/business'
 
 const router = useRouter()
+
+// ============ 消息中心（移植 AO 分支） ============
+const msgTab = ref('unread')  // 默认未读页签
+const msgs = ref([])
+const unreadTotal = ref(0)
+const MSG_DOC_ROUTES = {
+  so_order: '/sales/orders',
+  mo_production: '/production/orders',
+  ar_account: '/sales/ar',
+  ap_account: '/purchase/ap',
+}
+
+async function fetchUnreadCount() {
+  try {
+    const r = await notificationApi.unreadCount()
+    unreadTotal.value = r.count || 0
+  } catch {}
+}
+
+async function fetchMsgs() {
+  try {
+    msgs.value = await notificationApi.list({
+      page: 1, page_size: 20,
+      read_status: msgTab.value === 'unread' ? 0 : 1,
+    }) || []
+  } catch {}
+  if (msgTab.value === 'unread') fetchUnreadCount()
+}
+
+async function openMsg(n) {
+  if (n.read_status === 0) {
+    try {
+      await notificationApi.markRead(n.id)
+      n.read_status = 1
+      if (msgTab.value === 'unread') {
+        msgs.value = msgs.value.filter(x => x.id !== n.id)
+      }
+      unreadTotal.value = Math.max(0, unreadTotal.value - 1)
+    } catch {}
+  }
+  const target = MSG_DOC_ROUTES[n.doc_type]
+  if (target) router.push(target)
+}
+
+async function markAllReadMsg() {
+  try {
+    await notificationApi.readAll()
+    msgs.value = []
+    unreadTotal.value = 0
+    ElMessage.success('已全部标记为已读')
+  } catch {}
+}
+
 const cashIn = ref([])
 const cashOut = ref([])
 const arAging = ref([])
@@ -347,5 +430,5 @@ async function openInvoiceDetail(invoiceNo) {
   } catch (e) { ElMessage.error('加载发票失败') }
 }
 
-onMounted(fetchData)
+onMounted(() => { fetchData(); fetchUnreadCount(); fetchMsgs() })
 </script>

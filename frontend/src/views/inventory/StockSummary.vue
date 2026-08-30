@@ -5,6 +5,7 @@
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span style="font-weight: 600">收发存（原辅料仓库 / 成品仓库）</span>
           <div style="display: flex; gap: 8px">
+            <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
             <el-button type="primary" @click="fetchData">查询</el-button>
             <el-button @click="resetQuery">重置</el-button>
           </div>
@@ -32,39 +33,51 @@
           <el-date-picker v-model="query.dateRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="YYYY-MM-DD" style="width: 260px" @change="fetchData" />
         </el-form-item>
       </el-form>
-<el-table ref="tableRef" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="summaryMethod">
-        <el-table-column prop="warehouse" label="仓库" width="110" sortable />
-        <el-table-column prop="material_name" label="物料名称" min-width="140" sortable>
-          <template #default="{ row }"><span style="font-weight:500">{{ row.material_name || row.product_name }}</span></template>
-        </el-table-column>
-        <el-table-column prop="material_code" label="物料编码" min-width="100" sortable>
-          <template #default="{ row }"><span style="color: #909399">{{ row.material_code || row.product_code }}</span></template>
-        </el-table-column>
-        <el-table-column prop="material_spec" label="规格" width="80" sortable>
-          <template #default="{ row }">{{ row.material_spec || row.product_spec || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="material_id" label="类型" width="80" align="center" sortable>
-          <template #default="{ row }">
+<el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="summaryMethod">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'material_name'" #default="{ row }"><span style="font-weight:500">{{ row.material_name || row.product_name }}</span></template>
+          <template v-else-if="col.prop === 'material_code'" #default="{ row }"><span style="color: #909399">{{ row.material_code || row.product_code }}</span></template>
+          <template v-else-if="col.prop === 'material_spec'" #default="{ row }">{{ row.material_spec || row.product_spec || '-' }}</template>
+          <template v-else-if="col.prop === 'material_id'" #default="{ row }">
             <el-tag :type="row.material_id ? 'warning' : 'primary'" size="small">{{ row.material_id ? '原辅料' : '成品' }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="opening_qty" label="期初" width="80" align="right" sortable />
-        <el-table-column prop="period_in_qty" label="本期入库" width="100" align="right" sortable />
-        <el-table-column prop="period_out_qty" label="本期出库" width="100" align="right" sortable />
-        <el-table-column prop="closing_qty" label="期末数量" width="100" align="right" sortable />
-        <el-table-column prop="closing_cost" label="期末金额" width="110" align="right" sortable>
-          <template #default="{ row }">{{ $fm(row.closing_cost) }}</template>
+          <template v-else-if="col.prop === 'closing_cost'" #default="{ row }">{{ $fm(row.closing_cost) }}</template>
         </el-table-column>
       </el-table>
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50,100,200]" layout="total,sizes,prev,pager,next" @size-change="fetchData" @current-change="fetchData" style="margin-top:12px" />
     </el-card>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '@/api/request'; import { inventoryApi } from '@/api/business'; import { foundationApi } from '@/api/foundation'
+
+// ===== 列配置 =====
+const STORAGE_KEY = 'mazu_stock_summary_columns'
+const defaultColumns = [
+  { prop: 'warehouse', label: '仓库', width: 110, sortable: true },
+  { prop: 'material_name', label: '物料名称', minWidth: 140, sortable: true },
+  { prop: 'material_code', label: '物料编码', minWidth: 100, sortable: true },
+  { prop: 'material_spec', label: '规格', width: 80, sortable: true },
+  { prop: 'material_id', label: '类型', width: 80, align: 'center', sortable: true },
+  { prop: 'opening_qty', label: '期初', width: 80, align: 'right', sortable: true },
+  { prop: 'period_in_qty', label: '本期入库', width: 100, align: 'right', sortable: true },
+  { prop: 'period_out_qty', label: '本期出库', width: 100, align: 'right', sortable: true },
+  { prop: 'closing_qty', label: '期末数量', width: 100, align: 'right', sortable: true },
+  { prop: 'closing_cost', label: '期末金额', width: 110, align: 'right', sortable: true },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableRef = ref(null)
@@ -91,7 +104,7 @@ async function fetchData() {
     const res = await inventoryApi.balance(params)
     dataList.value = res.items || []
     total.value = res.total || 0
-  } catch (e) { ElMessage.error('加载失败') } finally { loading.value = false }
+  } catch (e) { ElMessage.error('加载失败') } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 function resetQuery() {

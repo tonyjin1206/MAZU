@@ -1,6 +1,7 @@
 <template>
-  <div>
+  <TablePageLayout>
     <!-- 搜索栏 -->
+    <template #search>
     <el-card style="margin-bottom: 12px">
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
@@ -23,14 +24,17 @@
         </el-form-item>
       </el-form>
     </el-card>
+    </template>
 
     <!-- 列表 -->
-    <el-card>
-            <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
+    <template #header>
+      <div style="display: flex; justify-content: flex-end">
         <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
       </div>
-<el-table ref="tableRef" :key="columnVersion" :data="list" v-loading="loading" stripe border size="small">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'remark'">
+    </template>
+    <template #default="{ height }">
+      <el-table ref="tableRef" :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" :height="height">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'remark'">
           <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
                   <span class="col-header-wrap">
@@ -73,9 +77,10 @@
           </template>
         </el-table-column>
       </el-table>
-
+    </template>
+    <template #footer>
       <el-pagination
-        style="margin-top: 12px"
+        style="margin-top: 12px; flex: none"
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
@@ -84,8 +89,9 @@
         @current-change="fetchList"
         @size-change="fetchList"
       />
-    </el-card>
+    </template>
 
+    <template #dialog>
     <!-- 新建弹窗 -->
     <el-dialog v-model="dialogVisible" :title="editMode ? '编辑发票' : '新建发票'" width="600px" destroy-on-close>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
@@ -157,14 +163,15 @@
       </template>
     </el-dialog>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsListDlg" @confirm="confirmSettings" />
-
-  </div>
+    </template>
+  </TablePageLayout>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, nextTick , watch} from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import TablePageLayout from '../../components/TablePageLayout.vue'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
@@ -183,7 +190,7 @@ const defaultColumns = [
   { prop: 'status', label: '状态', width: 100, sortable: true },
   { prop: 'remark', label: '备注', minWidth: 150, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList: settingsListDlg, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList: settingsListDlg, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const tableRef = ref(null)
 const list = ref([])

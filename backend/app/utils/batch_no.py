@@ -78,15 +78,21 @@ def generate_doc_no(db: Session, prefix: str, model: Type[Any] = None,
         .scalar()
     )
 
+    seq = 1
     if max_no:
         # 短格式单据号 = 前缀-6位日期+2位序号（无分隔符，如 SD-26080301）
         # 不能 rsplit("-")（无横杠会把整串当序号），取前缀+日期之后的数字部分
         core = max_no[len(prefix) + 1 + len(date_str):]
         seq = (int(core) + 1) if core.isdigit() else 2
-    else:
-        seq = 1
 
-    return f"{prefix}-{date_str}{seq:02d}"
+    # 生成后校验唯一：短格式序号超过 99 后位数变化（如 100→三位），或库中已有
+    # 该前缀/日期下更长的历史单号（如 SO-260830100）时，MAX+1 可能撞号 → 递增直到唯一
+    while True:
+        no = f"{prefix}-{date_str}{seq:02d}"
+        exists = db.query(model).filter(field == no).first()
+        if not exists:
+            return no
+        seq += 1
 
 
 def _infer_field_name(prefix: str, model: Type[Any]) -> str:

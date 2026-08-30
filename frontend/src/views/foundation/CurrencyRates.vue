@@ -1,19 +1,25 @@
 <template>
-  <div>
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
     <!-- ===== 币种管理 ===== -->
-    <el-card style="margin-bottom: 16px">
+    <el-card ref="currencyCardRef" :body-style="cardBodyStyle" style="flex: 1; margin-bottom: 16px; min-height: 0; display: flex; flex-direction: column; overflow: hidden">
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>币种档案</span>
-          <el-button type="primary" @click="openCurrencyDialog('create')">新增币种</el-button>
+          <div>
+            <el-button size="small" @click="openCurrencySettings">⚙ 列设置</el-button>
+            <el-button type="primary" @click="openCurrencyDialog('create')">新增币种</el-button>
+          </div>
         </div>
       </template>
-      <el-table :data="currencyList" v-loading="currencyLoading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="120" sortable />
-        <el-table-column prop="name" label="名称" min-width="140" sortable />
-        <el-table-column prop="symbol" label="符号" width="100" />
-        <el-table-column prop="is_base" label="本位币" width="90" align="center">
-          <template #default="{ row }">
+      <el-table :key="currencyColumnVersion" :data="currencyList" v-loading="currencyLoading" stripe border size="small" style="width: 100%" :height="currencyTableHeight + 'px'">
+        <el-table-column v-for="col in currencyVisibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'is_base'" #default="{ row }">
             <el-tag size="small" :type="row.is_base === 1 ? 'success' : 'info'">{{ row.is_base === 1 ? '是' : '否' }}</el-tag>
           </template>
         </el-table-column>
@@ -30,23 +36,27 @@
     </el-card>
 
     <!-- ===== 汇率管理 ===== -->
-    <el-card>
+    <el-card ref="rateCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden">
       <template #header>
         <div style="display: flex; justify-content: space-between; align-items: center">
           <span>汇率维护（{{ baseCurrencyLabel }}）<el-text v-if="rateFetchedAt" type="info" size="small" style="margin-left: 8px">上次自动获取：{{ rateFetchedAt }}</el-text></span>
           <div>
+            <el-button size="small" @click="openRateSettings">⚙ 列设置</el-button>
             <el-button :loading="rateFetching" @click="handleFetchRates">获取最新汇率</el-button>
             <el-button type="primary" @click="openRateDialog('create')">新增汇率</el-button>
           </div>
         </div>
       </template>
-      <el-table :data="rateList" v-loading="rateLoading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="currency_code" label="币种" width="120" sortable />
-        <el-table-column label="汇率" width="220" sortable>
-          <template #default="{ row }">1 {{ row.currency_code }} = {{ row.rate }} {{ baseCurrencyLabel }}</template>
+      <el-table :key="rateColumnVersion" :data="rateList" v-loading="rateLoading" stripe border size="small" style="width: 100%" :height="rateTableHeight + 'px'">
+        <el-table-column v-for="col in rateVisibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'rate'" #default="{ row }">1 {{ row.currency_code }} = {{ row.rate }} {{ baseCurrencyLabel }}</template>
         </el-table-column>
-        <el-table-column prop="rate_date" label="生效日期" width="140" sortable />
-        <el-table-column prop="source" label="来源" width="100" />
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" size="small" @click="openRateDialog('edit', row)">编辑</el-button>
@@ -103,16 +113,49 @@
         <el-button type="primary" :loading="rateSaving" @click="handleSaveRate">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="currencySettingsVisible" :columns="currencySettingsList" @confirm="confirmCurrencySettings" />
+    <ColumnSettingsDialog v-model:visible="rateSettingsVisible" :columns="rateSettingsList" @confirm="confirmRateSettings" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 币种列配置 =====
+const CURRENCY_STORAGE_KEY = 'mazu_currency_columns'
+const defaultCurrencyColumns = [
+  { prop: 'code', label: '编码', width: 120, sortable: true },
+  { prop: 'name', label: '名称', minWidth: 140, sortable: true },
+  { prop: 'symbol', label: '符号', width: 100, sortable: true },
+  { prop: 'is_base', label: '本位币', width: 90, align: 'center', sortable: true },
+]
+const { columns: currencyColumns, visibleColumns: currencyVisibleColumns, columnVersion: currencyColumnVersion, initColumnDrag: initCurrencyDrag, settingsVisible: currencySettingsVisible, settingsList: currencySettingsList, openColumnSettings: openCurrencySettingsRaw, confirmSettings: confirmCurrencySettingsFn, resetSettings: resetCurrencySettings } = useColumnDrag(defaultCurrencyColumns, CURRENCY_STORAGE_KEY)
+const openCurrencySettings = () => openCurrencySettingsRaw()
+const confirmCurrencySettings = () => confirmCurrencySettingsFn()
+
+// ===== 汇率列配置 =====
+const RATE_STORAGE_KEY = 'mazu_rate_columns'
+const defaultRateColumns = [
+  { prop: 'currency_code', label: '币种', width: 120, sortable: true },
+  { prop: 'rate', label: '汇率', width: 220, sortable: true },
+  { prop: 'rate_date', label: '生效日期', width: 140, sortable: true },
+  { prop: 'source', label: '来源', width: 100, sortable: true },
+]
+const { columns: rateColumns, visibleColumns: rateVisibleColumns, columnVersion: rateColumnVersion, initColumnDrag: initRateDrag, settingsVisible: rateSettingsVisible, settingsList: rateSettingsList, openColumnSettings: openRateSettingsRaw, confirmSettings: confirmRateSettingsFn, resetSettings: resetRateSettings } = useColumnDrag(defaultRateColumns, RATE_STORAGE_KEY)
+const openRateSettings = () => openRateSettingsRaw()
+const confirmRateSettings = () => confirmRateSettingsFn()
 
 // ===== 币种 =====
 const currencyList = ref([])
+const currencyCardRef = ref(null)
+const rateCardRef = ref(null)
+const currencyTableHeight = ref(200)
+const rateTableHeight = ref(200)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
 const currencyLoading = ref(false)
 const currencyTotal = ref(0)
 const currencyPage = ref(1)
@@ -121,10 +164,10 @@ const currencyPageSize = ref(20)
 async function fetchCurrencies() {
   currencyLoading.value = true
   try {
-    const res = await foundationApi.currencies.list({ page: currencyPage.value, page_size: currencyPageSize.value })
+    const res = await foundationApi.currencies.list({ page: currencyPage.value, page_size: currencyPageSize.value, is_active: 1 })
     currencyList.value = res.items || []
     currencyTotal.value = res.total || 0
-  } finally { currencyLoading.value = false }
+  } finally { currencyLoading.value = false; nextTick(initCurrencyDrag) }
 }
 
 const currencyDialogVisible = ref(false)
@@ -193,7 +236,7 @@ async function fetchRates() {
     const res = await foundationApi.exchangeRates.list({ page: ratePage.value, page_size: ratePageSize.value })
     rateList.value = res.items || []
     rateTotal.value = res.total || 0
-  } finally { rateLoading.value = false }
+  } finally { rateLoading.value = false; nextTick(initRateDrag) }
 }
 
 // 从腾讯财经（国内源）自动获取最新汇率；每日 09:00 系统自动执行一次
@@ -276,5 +319,24 @@ async function handleDeleteRate(row) {
   }
 }
 
-onMounted(() => { fetchCurrencies(); fetchRates() })
+function _calcCardTableHeight(card) {
+  if (!card) return 200
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  const bodyRect = body ? body.getBoundingClientRect() : el.getBoundingClientRect()
+  const pagEl = el.querySelector('.el-pagination')
+  const pagH = pagEl ? pagEl.getBoundingClientRect().height : 0
+  return Math.max(120, Math.round(bodyRect.height - pagH))
+}
+
+function calcHeights() {
+  currencyTableHeight.value = _calcCardTableHeight(currencyCardRef.value)
+  rateTableHeight.value = _calcCardTableHeight(rateCardRef.value)
+}
+
+onMounted(() => {
+  fetchCurrencies(); fetchRates()
+  nextTick(calcHeights)
+  window.addEventListener('resize', calcHeights)
+})
 </script>

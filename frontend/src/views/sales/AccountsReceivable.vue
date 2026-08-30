@@ -1,13 +1,13 @@
 <template>
-  <div>
-    <el-card>
-      <template #header></template>
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="汇总" name="summary">
-                <div style="display: flex; justify-content: flex-end; margin-bottom: 4px">
-        <el-button size="small" @click="openOrderSettingsRaw">⚙ 列设置</el-button>
-      </div>
-<el-table ref="tableRef" class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail">
+  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+    <!-- 应收账款汇总（上） -->
+    <el-card ref="summaryCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end">
+          <el-button size="small" @click="openOrderSettingsRaw">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table ref="tableRef" class="drag-table-summary" :key="columnVersion" :data="summaryList" border stripe v-loading="loading" style="width: 100%" :summary-method="summaryTotal" show-summary @row-click="showDetail" :height="summaryTableHeight + 'px'">
             <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -30,10 +30,21 @@
               </template>
             </el-table-column>
           </el-table>
-        </el-tab-pane>
+    </el-card>
 
-        <el-tab-pane label="明细" name="detail">
-          <el-table class="drag-table-detail" :key="cdColumnVersion" :data="cdList" border stripe v-loading="cdLoading" style="width: 100%" :summary-method="cdTotal" show-summary>
+    <!-- 分栏条 -->
+    <div class="split-bar" style="flex: none; height: 8px; cursor: row-resize; background: transparent; display: flex; align-items: center; justify-content: center; user-select: none" @mousedown="onSplitterDown">
+      <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
+    </div>
+
+    <!-- 应收账款明细（下，跟随选中客户） -->
+    <el-card ref="detailCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end">
+          <el-button size="small" @click="openCdSettingsRaw">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table class="drag-table-detail" :key="cdColumnVersion" :data="cdList" border stripe v-loading="cdLoading" style="width: 100%" :summary-method="cdTotal" show-summary :height="detailTableHeight + 'px'">
             <el-table-column v-for="col in cdColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align">
               <template #header>
                 <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -65,8 +76,6 @@
               </template>
             </el-table-column>
           </el-table>
-        </el-tab-pane>
-      </el-tabs>
     </el-card>
 
     <el-dialog v-model="dialogVisible" title="收款" width="500px" destroy-on-close>
@@ -79,7 +88,7 @@
           <el-input v-model="form.collection_amount" placeholder="请输入收款金额" type="number" min="0" :max="form.balance" />
         </el-form-item>
         <el-form-item label="收款日期"><el-date-picker v-model="form.collection_date" type="date" value-format="YYYY-MM-DD" placeholder="选择日期" style="width: 100%" /></el-form-item>
-        <el-form-item label="付款方式">
+        <el-form-item label="结算方式">
           <el-select v-model="form.payment_method" placeholder="请选择" style="width: 100%">
             <el-option label="银行转账" value="银行转账" /><el-option label="现金" value="现金" /><el-option label="承兑汇票" value="承兑汇票" />
           </el-select>
@@ -99,7 +108,7 @@
         <el-descriptions-item label="客户">{{ collectionDetail.customer_name }}</el-descriptions-item>
         <el-descriptions-item label="收款日期">{{ collectionDetail.collection_date }}</el-descriptions-item>
         <el-descriptions-item label="金额">{{ $fm(collectionDetail.amount) }}</el-descriptions-item>
-        <el-descriptions-item label="付款方式">{{ collectionDetail.payment_method }}</el-descriptions-item>
+        <el-descriptions-item label="结算方式">{{ collectionDetail.payment_method }}</el-descriptions-item>
         <el-descriptions-item label="操作人">{{ collectionDetail.operator }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2"><div style="white-space: pre-wrap">{{ collectionDetail.remark || '-' }}</div></el-descriptions-item>
       </el-descriptions>
@@ -199,6 +208,12 @@ const { columns: cdColumns, columnVersion: cdColumnVersion, initColumnDrag: init
 const activeTab = ref('summary')
 const loading = ref(false)
 const tableRef = ref(null)
+const summaryCardRef = ref(null)
+const detailCardRef = ref(null)
+const summaryTableHeight = ref(300)
+const detailTableHeight = ref(200)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
+const topHeight = ref(parseInt(localStorage.getItem('mazu_ar_split_height') || '400') || 400)
 const list = ref([])
 const total = ref(0)
 const page = ref(1)
@@ -284,7 +299,6 @@ function cdTotal({ columns }) {
 
 function showDetail(row) {
   cdFilter.value = row.customer_name
-  activeTab.value = 'detail'
   fetchCD()
 }
 
@@ -339,7 +353,47 @@ async function viewCollection(row) {
   }
 }
 
-onMounted(fetchData)
+function onSplitterDown(e) {
+  const startY = e.clientY
+  const startH = topHeight.value
+  const onMove = (ev) => {
+    topHeight.value = Math.min(Math.max(startH + (ev.clientY - startY), 180), window.innerHeight - 360)
+    nextTick(calcSummaryHeight)
+    localStorage.setItem('mazu_ar_split_height', String(topHeight.value))
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+  document.body.style.cursor = 'row-resize'
+  document.body.style.userSelect = 'none'
+  e.preventDefault()
+}
+
+function _calcCardTableHeight(card) {
+  if (!card) return 200
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  return Math.max(120, Math.round((body || el).getBoundingClientRect().height - 16))
+}
+
+function calcSummaryHeight() {
+  summaryTableHeight.value = _calcCardTableHeight(summaryCardRef.value)
+}
+
+function calcDetailHeight() {
+  detailTableHeight.value = _calcCardTableHeight(detailCardRef.value)
+}
+
+onMounted(() => {
+  fetchData()
+  nextTick(() => { calcSummaryHeight(); calcDetailHeight() })
+  window.addEventListener('resize', () => { calcSummaryHeight(); calcDetailHeight() })
+})
 
 // 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
 watch(columnVersion, () => {

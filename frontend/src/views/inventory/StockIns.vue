@@ -1,11 +1,11 @@
 <template>
-  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+  <TablePageLayout>
+    <template #search>
     <el-card style="margin-bottom: 12px; flex: none">
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
@@ -29,10 +29,16 @@
         </el-form-item>
       </el-form>
     </el-card>
+    </template>
 
-    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
+    <template #header>
+      <div style="display: flex; justify-content: flex-end">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+    </template>
+    <template #default="{ height }">
       <div style="flex: 1; min-height: 0; overflow: auto">
-      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="getSummary" @row-click="openDetail" style="width: 100%" height="100%">
+      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="getSummary" style="width: 100%" :height="height">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -65,33 +71,12 @@
         </el-table-column>
       </el-table>
       </div>
+    </template>
+    <template #footer>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 16px; flex: none" />
-      </el-card>
+    </template>
 
-      <!-- 拖动条：上下拉动调节列表/明细区域高度 -->
-      <div
-        class="split-bar"
-        style="flex: none; height: 8px; cursor: row-resize; background: transparent; display: flex; align-items: center; justify-content: center; user-select: none"
-        @mousedown="onSplitterDown"
-      >
-        <span style="width: 60px; height: 4px; border-radius: 2px; background: #c0c4cc"></span>
-      </div>
-
-      <!-- 收货明细分录（点击上方行穿透） -->
-      <el-card v-if="selectedRow" :style="{ flex: '1', minHeight: '140px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
-      <template #header>
-        <span style="font-weight: 600">收货明细</span>
-      </template>
-      <div style="flex: 1; min-height: 0; overflow: auto">
-      <el-table :data="detailList" v-loading="detailLoading" stripe border size="small" show-summary :summary-method="detailSummary" height="100%">
-        <el-table-column prop="in_date" label="入库日期" width="120" sortable />
-        <el-table-column prop="warehouse" label="仓库" width="110" sortable />
-        <el-table-column prop="receipt_no" label="入库单号" minWidth="160" sortable />
-        <el-table-column prop="quantity" label="本次入库数量" width="120" align="right" sortable />
-      </el-table>
-      </div>
-      </el-card>
-
+      <template #dialog>
       <!-- 入库弹窗 -->
       <el-dialog v-model="receiveVisible" title="入库收货" width="440px" destroy-on-close>
       <el-form label-width="90px">
@@ -127,7 +112,8 @@
     
     <!-- 列排序弹窗 -->
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
-  </div>
+      </template>
+  </TablePageLayout>
 </template>
 
 <script setup>
@@ -138,6 +124,7 @@ import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'; import { purchaseApi, outsourceApi, inventoryApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
+import TablePageLayout from '../../components/TablePageLayout.vue'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_stock_in_columns'
@@ -290,54 +277,5 @@ async function handleReturn() {
     returnVisible.value = false
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退回失败') }
-}
-
-// ========== 上下区域高度拖动 ==========
-const SPLIT_KEY = 'mazu_stock_ins_splitH'
-const topHeight = ref(parseInt(localStorage.getItem(SPLIT_KEY) || '400') || 400)
-function onSplitterDown(e) {
-  const startY = e.clientY
-  const startH = topHeight.value
-  const onMove = (ev) => {
-    const h = startH + (ev.clientY - startY)
-    topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
-    localStorage.setItem(SPLIT_KEY, String(topHeight.value))
-  }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-  document.body.style.cursor = 'row-resize'
-  document.body.style.userSelect = 'none'
-  e.preventDefault()
-}
-
-// ========== 穿透看收货明细 ==========
-const selectedRow = ref(null)
-const detailList = ref([])
-const detailLoading = ref(false)
-const detailStockInNo = ref('')
-async function openDetail(row) {
-  selectedRow.value = row
-  detailStockInNo.value = row.stock_in_no || ''
-  detailLoading.value = true
-  try {
-    const res = await inventoryApi.stockIn.records(row.id)
-    detailList.value = res.items || []
-  } catch (e) { detailList.value = [] } finally { detailLoading.value = false }
-}
-
-function detailSummary({ columns, data }) {
-  const sums = []
-  columns.forEach((col, i) => {
-    if (i === 0) sums[i] = '合计'
-    else if (col.property === 'quantity') sums[i] = data.reduce((s, r) => s + (r.quantity || 0), 0)
-    else sums[i] = ''
-  })
-  return sums
 }
 </script>

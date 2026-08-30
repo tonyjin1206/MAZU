@@ -27,7 +27,6 @@ def _seed_rbac(db):
         {"code": "menu:products", "name": "产品档案", "module": "基础档案", "description": ""},
         {"code": "menu:bom", "name": "BOM管理", "module": "基础档案", "description": ""},
         {"code": "menu:processes", "name": "工序管理", "module": "基础档案", "description": ""},
-        {"code": "menu:hs-codes", "name": "HS编码", "module": "基础档案", "description": ""},
         {"code": "menu:params", "name": "参数设置", "module": "基础档案", "description": ""},
         {"code": "menu:warehouses", "name": "仓库管理", "module": "基础档案", "description": ""},
         {"code": "menu:currencies", "name": "币种/汇率", "module": "基础档案", "description": ""},
@@ -43,7 +42,6 @@ def _seed_rbac(db):
         {"code": "menu:sales:orders", "name": "销售订单", "module": "销售管理", "description": ""},
         {"code": "menu:sales:deliveries", "name": "销售发货", "module": "销售管理", "description": ""},
         {"code": "menu:sales:invoices", "name": "销售发票", "module": "销售管理", "description": ""},
-        {"code": "menu:sales:customs", "name": "报关管理", "module": "销售管理", "description": ""},
         {"code": "menu:sales:ar", "name": "应收账款", "module": "销售管理", "description": ""},
         {"code": "menu:sales:collections", "name": "收款管理", "module": "销售管理", "description": ""},
         # 生产管理
@@ -63,7 +61,6 @@ def _seed_rbac(db):
         {"code": "menu:outsource:from-sales", "name": "销售订单转委外", "module": "委外管理", "description": ""},
         {"code": "menu:outsource:orders", "name": "委外订单", "module": "委外管理", "description": ""},
         # 退税管理
-        {"code": "menu:tax", "name": "退税申报", "module": "退税管理", "description": ""},
         # 系统管理
         {"code": "menu:system:users", "name": "用户管理", "module": "系统管理", "description": ""},
         {"code": "menu:system:roles", "name": "角色管理", "module": "系统管理", "description": ""},
@@ -73,18 +70,29 @@ def _seed_rbac(db):
         {"code": "menu:system:reminders", "name": "预警提醒设置", "module": "系统管理", "description": ""},
     ]
 
+    # 报关/退税/HS 编码功能已从前端取消（代码保留，下个版本再发布）—— 权限码一并移除
+    DEPRECATED_PERMS = ("menu:hs-codes", "menu:sales:customs", "menu:tax")
+
     # 插入权限（不存在则创建）
     for pd in permission_defs:
         existing = db.query(Permission).filter(Permission.code == pd["code"]).first()
         if not existing:
             db.add(Permission(**pd))
 
+    # 清理已弃用权限码（报关/退税/HS编码已从前端取消，代码保留）——
+    # 先删角色关联再删权限定义（幂等，对已有库生效）
+    for deprecated in DEPRECATED_PERMS:
+        db.query(RolePermission).filter(RolePermission.permission_code == deprecated).delete()
+        existing = db.query(Permission).filter(Permission.code == deprecated).first()
+        if existing:
+            db.delete(existing)
+
     # ====== 角色定义 ======
     all_codes = [p["code"] for p in permission_defs]
     foundation = [c for c in all_codes if c.startswith("menu:customers") or c.startswith("menu:suppliers")
                   or c.startswith("menu:materials") or c.startswith("menu:products")
                   or c.startswith("menu:bom") or c.startswith("menu:processes")
-                  or c.startswith("menu:hs-codes") or c.startswith("menu:warehouses")
+                  or c.startswith("menu:warehouses")
                   or c.startswith("menu:currencies")]
     purchase_all = [c for c in all_codes if c.startswith("menu:purchase:")]
     purchase_base = [c for c in purchase_all if not c.endswith(("invoices", "ap", "payments"))]
@@ -94,7 +102,7 @@ def _seed_rbac(db):
     sales_finance = [c for c in sales_all if c.endswith(("invoices", "ar", "collections"))]
     production = [c for c in all_codes if c.startswith("menu:production:")]
     inventory = ["menu:inventory", "menu:inventory:stocktake", "menu:inventory:stock-ins", "menu:inventory:material-ins", "menu:inventory:material-outs", "menu:inventory:delivery-outs", "menu:production:batch"]
-    tax = ["menu:tax"]
+    tax = []
     sys_menu = [c for c in all_codes if c.startswith("menu:system:")]
 
     dashboard = ["menu:dashboard"]
@@ -109,7 +117,7 @@ def _seed_rbac(db):
          "is_system": 1, "permissions": dashboard + purchase_all},
         {"name": "生产经理", "code": "production_manager", "description": "生产管理（含基础档案和库存）",
          "is_system": 1, "permissions": dashboard + foundation + production + inventory},
-        {"name": "财务经理", "code": "finance_manager", "description": "财务（含发票、应收应付、收款付款、库存、退税）",
+        {"name": "财务经理", "code": "finance_manager", "description": "财务（含发票、应收应付、收款付款、库存）",
          "is_system": 1, "permissions": dashboard + purchase_finance + sales_finance + inventory + tax},
         {"name": "库管员", "code": "warehouse_keeper", "description": "库存管理",
          "is_system": 1, "permissions": dashboard + inventory},
@@ -161,11 +169,8 @@ def _seed_rbac(db):
 
 
 def _seed_params(db):
-    """种子数据：参数设置默认选项（仅当表为空时插入）"""
+    """种子数据：参数设置默认选项（按分组幂等：该组无记录才插入，不覆盖用户已维护数据）"""
     from app.models.foundation import SystemParam
-
-    if db.query(SystemParam).count() > 0:
-        return
 
     defaults = [
         # 供应商类型
@@ -189,11 +194,34 @@ def _seed_params(db):
         ("payment_method", "01", "银行转账", 1, "收付款方式"),
         ("payment_method", "02", "现金", 2, "收付款方式"),
         ("payment_method", "03", "承兑汇票", 3, "收付款方式"),
+        # 国家（客户/供应商等表格通用下拉）
+        ("country", "01", "中国", 1, "国家"),
+        ("country", "02", "美国", 2, "国家"),
+        ("country", "03", "日本", 3, "国家"),
+        ("country", "04", "韩国", 4, "国家"),
+        ("country", "05", "德国", 5, "国家"),
+        ("country", "06", "英国", 6, "国家"),
+        ("country", "07", "法国", 7, "国家"),
+        ("country", "08", "新加坡", 8, "国家"),
+        ("country", "09", "中国香港", 9, "国家"),
+        ("country", "10", "印度", 10, "国家"),
+        ("country", "11", "越南", 11, "国家"),
+        ("country", "12", "泰国", 12, "国家"),
     ]
+    # 按分组幂等：该分组无任何记录才插入默认（历史库不覆盖，新库/空组自动补）
+    grouped = {}
     for group, key, label, sort, remark in defaults:
-        db.add(SystemParam(group_name=group, param_key=key, param_label=label, sort_order=sort, remark=remark))
-    db.commit()
-    print("✅ 参数设置种子数据已初始化")
+        grouped.setdefault(group, []).append((key, label, sort, remark))
+    added = 0
+    for group, rows in grouped.items():
+        if db.query(SystemParam).filter(SystemParam.group_name == group).count() > 0:
+            continue
+        for key, label, sort, remark in rows:
+            db.add(SystemParam(group_name=group, param_key=key, param_label=label, sort_order=sort, remark=remark))
+        added += len(rows)
+    if added:
+        db.commit()
+        print(f"✅ 参数设置种子数据已初始化（新增 {added} 条，覆盖分组：{list(grouped)}）")
 
 
 # ====== 常用币种种子数据 ======

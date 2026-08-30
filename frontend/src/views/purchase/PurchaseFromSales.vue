@@ -16,26 +16,26 @@
 
     <!-- ========== 销售明细行列表（销售订单那边点了「转入库」的行） ========== -->
     <el-card style="flex: 1; overflow: hidden; display: flex; flex-direction: column">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end">
+          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+        </div>
+      </template>
       <div style="flex: 1; overflow: auto">
-        <el-table v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row class="drag-table-so">
-          <el-table-column prop="order_no" label="销售订单号" min-width="150" sortable />
-          <el-table-column prop="customer_name" label="客户" min-width="120" show-overflow-tooltip sortable />
-          <el-table-column prop="code" label="产品编码" min-width="110" sortable />
-          <el-table-column prop="name" label="产品名称" min-width="130" show-overflow-tooltip sortable />
-          <el-table-column prop="spec" label="规格" min-width="90" show-overflow-tooltip sortable />
-          <el-table-column prop="unit" label="单位" width="60" align="center" sortable />
-          <el-table-column prop="quantity" label="数量" width="95" align="right" sortable>
-            <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
-          </el-table-column>
-          <el-table-column prop="batch_no" label="批次号" min-width="150" show-overflow-tooltip sortable />
-          <el-table-column prop="source" label="来源" width="90" align="center" sortable>
-            <template #default="{ row }">
+        <el-table v-loading="loading" :key="columnVersion" :data="dataList" height="100%" border stripe size="small" highlight-current-row class="drag-table-so">
+          <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :sort-method="col.sortMethod" :align="col.align" :show-overflow-tooltip="col.prop === 'customer_name' || col.prop === 'name' || col.prop === 'spec' || col.prop === 'batch_no'">
+            <template #header>
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+            </template>
+            <template v-if="col.prop === 'quantity'" #default="{ row }">{{ fmtQty(row.quantity) }}</template>
+            <template v-else-if="col.prop === 'source'" #default="{ row }">
               <el-tag v-if="row.source === '转外发'" type="success" size="small">转外发</el-tag>
               <el-tag v-else type="info" size="small">转直采</el-tag>
             </template>
-          </el-table-column>
-          <el-table-column label="采购状态" width="120" align="center" sortable :sort-method="(a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status)">
-            <template #default="{ row }">
+            <template v-else-if="col.prop === 'purchase_status'" #default="{ row }">
               <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">采购完成</el-tag>
               <el-tag v-else-if="row.purchase_status === 'transferred'" type="success" size="small">已转采购订单</el-tag>
               <el-tag v-else-if="row.purchase_status === 'partial'" type="warning" size="small">部分采购</el-tag>
@@ -132,13 +132,32 @@
         <el-pagination v-model:current-page="supplierPage" v-model:page-size="supplierPageSize" :total="supplierTotal" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="searchSuppliers" />
       </div>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import request from '../../api/request'; import { purchaseApi, outsourceApi, inventoryApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置 =====
+const STORAGE_KEY = 'mazu_purchase_from_sales_columns'
+const defaultColumns = [
+  { prop: 'order_no', label: '销售订单号', minWidth: 150, sortable: true },
+  { prop: 'customer_name', label: '客户', minWidth: 120, sortable: true },
+  { prop: 'code', label: '产品编码', minWidth: 110, sortable: true },
+  { prop: 'name', label: '产品名称', minWidth: 130, sortable: true },
+  { prop: 'spec', label: '规格', minWidth: 90, sortable: true },
+  { prop: 'unit', label: '单位', width: 60, align: 'center', sortable: true },
+  { prop: 'quantity', label: '数量', width: 95, align: 'right', sortable: true },
+  { prop: 'batch_no', label: '批次号', minWidth: 150, sortable: true },
+  { prop: 'source', label: '来源', width: 90, align: 'center', sortable: true },
+  { prop: 'purchase_status', label: '采购状态', width: 120, align: 'center', sortable: true, sortMethod: (a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status) },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-so .el-table__header-wrapper thead tr')
 
 // ========== 销售订单列表 ==========
 const loading = ref(false)
@@ -155,7 +174,7 @@ async function fetchData() {
     const res = await purchaseApi.salesToPurchase.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
-  } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
+  } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 function resetSearch() {

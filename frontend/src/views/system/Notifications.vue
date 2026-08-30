@@ -26,23 +26,23 @@
               <el-option label="未读" :value="0" />
               <el-option label="已读" :value="1" />
             </el-select>
+            <span style="flex: 1" />
+            <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
           </div>
 
-          <el-table :data="notifications" v-loading="loading" stripe border size="small">
-            <el-table-column prop="title" label="标题" min-width="240" />
-            <el-table-column prop="content" label="内容" min-width="260" show-overflow-tooltip />
-            <el-table-column prop="user_name" label="收件人" width="110" />
-            <el-table-column prop="role_name" label="角色" width="100" />
-            <el-table-column prop="point_code" label="提醒点" width="170" />
-            <el-table-column prop="doc_no" label="单据号" width="160" />
-            <el-table-column label="状态" width="80">
-              <template #default="{ row }">
+          <el-table :key="columnVersion" :data="notifications" v-loading="loading" stripe border size="small">
+            <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'content'">
+              <template #header>
+                <span class="col-header-wrap">
+                  <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                  {{ col.label }}
+                </span>
+              </template>
+              <template v-if="col.prop === 'status'" #default="{ row }">
                 <el-tag v-if="row.read_status === 0" type="warning" size="small">未读</el-tag>
                 <el-tag v-else type="info" size="small">已读</el-tag>
               </template>
-            </el-table-column>
-            <el-table-column prop="created_at" label="时间" width="120">
-              <template #default="{ row }">{{ (row.created_at || '').slice(0, 16) }}</template>
+              <template v-else-if="col.prop === 'created_at'" #default="{ row }">{{ (row.created_at || '').slice(0, 16) }}</template>
             </el-table-column>
           </el-table>
           <el-pagination style="margin-top: 12px" background layout="prev, pager, next, total" :total="total"
@@ -67,7 +67,7 @@
             </el-table-column>
             <el-table-column label="启用" width="70">
               <template #default="{ row }">
-                <el-switch :model-value="row.enabled" @change="(v) => toggleRule(row, v)" />
+                <el-switch :model-value="row.enabled" :active-value="1" :inactive-value="0" @change="(v) => toggleRule(row, v)" />
               </template>
             </el-table-column>
             <el-table-column label="接收角色" min-width="200">
@@ -117,13 +117,30 @@
         <el-button type="primary" :loading="ruleSaving" @click="saveRule">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { notificationApi, reminderRuleApi } from '../../api/business'
+
+// ===== 通知列配置 =====
+const STORAGE_KEY = 'mazu_notification_columns'
+const defaultColumns = [
+  { prop: 'title', label: '标题', minWidth: 240, sortable: true },
+  { prop: 'content', label: '内容', minWidth: 260, sortable: true },
+  { prop: 'user_name', label: '收件人', width: 110, sortable: true },
+  { prop: 'role_name', label: '角色', width: 100, sortable: true },
+  { prop: 'point_code', label: '提醒点', width: 170, sortable: true },
+  { prop: 'doc_no', label: '单据号', width: 160, sortable: true },
+  { prop: 'status', label: '状态', width: 80, sortable: true },
+  { prop: 'created_at', label: '时间', width: 120, sortable: true },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const activeTab = ref('notifications')
 const rules = ref([])
@@ -154,7 +171,7 @@ async function fetchNotifications() {
     const res = await notificationApi.adminQuery(filters.value)
     notifications.value = res.items || []
     total.value = res.total || 0
-  } finally { loading.value = false }
+  } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 async function fetchRules() {
@@ -167,7 +184,10 @@ async function refresh() {
 }
 
 function toggleRule(row, v) {
-  reminderRuleApi.update(row.id, { enabled: v ? 1 : 0 }).then((res) => {
+  const target = v ? 1 : 0
+  // 防初始渲染误触发：值未变化（含 el-switch 挂载时 = row.enabled）不请求不弹消息
+  if (target === (row.enabled ?? 0)) return
+  reminderRuleApi.update(row.id, { enabled: target }).then((res) => {
     row.enabled = res.enabled
     ElMessage.success('已更新')
   })

@@ -23,7 +23,7 @@
     </el-card>
 
     <!-- ========== 产品发货记录（上表，高度可拖） ========== -->
-    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
+    <el-card ref="listCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>产品发货记录</span>
@@ -32,7 +32,7 @@
           <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="orderTableRef" class="drag-table-orders" :key="orderColumnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" :row-class-name="deliveryRowClassName" @current-change="onOrderSelect">
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="orderColumnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="orderTableHeight + 'px'" :row-class-name="deliveryRowClassName" @current-change="onOrderSelect">
         <el-table-column v-for="col in orderColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
@@ -67,7 +67,7 @@
     </div>
 
     <!-- ========== 发货单明细（下表，跟随选中产品行） ========== -->
-    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+    <el-card ref="itemCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>发货单明细</span>
@@ -76,7 +76,7 @@
           <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="deliveryList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方产品行查看发货单明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="deliveryList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方产品行查看发货单明细" show-summary :summary-method="itemSummary" :height="orderItemHeight + 'px'">
         <el-table-column v-for="col in itemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
@@ -211,6 +211,11 @@ const { fitTable } = useColumnAutoFit()
 // ===== 上表 =====
 const orderTableRef = ref(null)
 const itemTableRef = ref(null)
+const listCardRef = ref(null)
+const itemCardRef = ref(null)
+const orderTableHeight = ref(400)
+const orderItemHeight = ref(400)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
 const dataList = ref([])
 const loading = ref(false)
 const total = ref(0)
@@ -429,6 +434,7 @@ function onSplitterDown(e) {
   const onMove = (ev) => {
     const h = startH + (ev.clientY - startY)
     topHeight.value = Math.min(Math.max(h, 220), window.innerHeight - 380)
+    nextTick(calcListHeight)
   }
   const onUp = () => {
     document.removeEventListener('mousemove', onMove)
@@ -437,6 +443,28 @@ function onSplitterDown(e) {
   }
   document.addEventListener('mousemove', onMove)
   document.addEventListener('mouseup', onUp)
+}
+
+function _calcCardTableHeight(card, pagElSelector) {
+  if (!card) return 400
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  const bodyRect = body ? body.getBoundingClientRect() : el.getBoundingClientRect()
+  const pagEl = pagElSelector ? el.querySelector(pagElSelector) : null
+  const pagH = pagEl ? pagEl.getBoundingClientRect().height : 0
+  return Math.max(140, Math.round(bodyRect.height - pagH))
+}
+
+function calcListHeight() {
+  orderTableHeight.value = _calcCardTableHeight(listCardRef.value, '.el-pagination')
+}
+
+function calcItemHeight() {
+  const card = itemCardRef.value
+  if (!card) return
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  orderItemHeight.value = Math.max(140, Math.round((body || el).getBoundingClientRect().height - 16))
 }
 
 // ===== 列设置包装（解决构命名冲突：解构保留原名 + 页面包装函数）=====
@@ -465,7 +493,11 @@ async function fetchWarehouses() {}
 watch(orderColumnVersion, () => { nextTick(() => { initOrderDrag() }) })
 watch(itemColumnVersion, () => { nextTick(() => { initItemDrag() }) })
 
-onMounted(() => { fetchData() })
+onMounted(() => {
+  fetchData()
+  nextTick(() => { calcListHeight(); calcItemHeight() })
+  window.addEventListener('resize', () => { calcListHeight(); calcItemHeight() })
+})
 
 </script>
 
