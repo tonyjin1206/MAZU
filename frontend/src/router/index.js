@@ -6,10 +6,8 @@ const routes = [
   {
     path: '/',
     component: () => import('../components/Layout.vue'),
-    redirect: '/dashboard',
+    redirect: '/sales/orders',
     children: [
-      { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue'), meta: { perm: 'menu:dashboard' } },
-
       // 基础档案
       { path: 'foundation/materials', name: 'Materials', component: () => import('../views/foundation/Materials.vue'), meta: { perm: 'menu:materials' } },
       { path: 'foundation/products', name: 'Products', component: () => import('../views/foundation/Products.vue'), meta: { perm: 'menu:products' } },
@@ -76,7 +74,7 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫：未登录跳转登录页；无权限跳回工作台
+// 路由守卫：未登录跳转登录页；无权限跳回销售订单
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   const userStr = localStorage.getItem('user')
@@ -88,7 +86,7 @@ router.beforeEach((to, from, next) => {
     localStorage.removeItem('permissions')
     next('/login')
   } else if (to.path === '/login' && isValid) {
-    next('/dashboard')
+    next('/sales/orders')
   } else {
     // 菜单级权限校验（to.meta.perm 为该页面所需权限码）
     const required = to.meta?.perm
@@ -97,7 +95,7 @@ router.beforeEach((to, from, next) => {
       try { perms = JSON.parse(localStorage.getItem('permissions') || '[]') } catch (e) { /* ignore */ }
       if (!perms.includes(required)) {
         ElMessage.warning('没有访问该页面的权限')
-        next('/dashboard')
+        next('/sales/orders')
         return
       }
     }

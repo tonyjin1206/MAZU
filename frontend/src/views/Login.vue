@@ -63,7 +63,7 @@ async function login() {
       localStorage.setItem('permissions', '[]')
     }
     ElMessage.success('登录成功')
-    router.push('/dashboard')
+    router.push('/sales/orders')
   } catch (e) {
     // 错误已在拦截器中处理
   } finally {

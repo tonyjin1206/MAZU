@@ -16,8 +16,6 @@
         router
         style="border-right: none; padding: 4px 0"
       >
-        <el-menu-item index="/dashboard" v-if="hasPerm('menu:dashboard')">工作台</el-menu-item>
-
         <!-- Agent设置（1级菜单） -->
         <el-menu-item index="/system/bot" v-if="hasPerm('menu:system:bot')">
                     <span>Agent设置</span>
@@ -27,9 +25,6 @@
         <el-menu-item index="/system/reminders" v-if="hasPerm('menu:system:reminders')">
                     <span>预警提醒设置</span>
         </el-menu-item>
-
-                <!-- 工作台 -->
-        <el-menu-item index="/dashboard" v-if="hasPerm('menu:dashboard')">工作台</el-menu-item>
 
         <!-- 系统管理 -->
         <el-sub-menu index="system" v-if="hasPerm('menu:system:users') || hasPerm('menu:system:roles') || hasPerm('menu:system:wecom') || hasPerm('menu:system:bot') || hasPerm('menu:system:bot-chat') || hasPerm('menu:system:reminders')">
@@ -152,7 +147,6 @@ onMounted(() => {
 const pageTitle = computed(() => {
   const path = route.path
   const titles = {
-    '/dashboard': '工作台',
     '/foundation/materials': '原辅材料管理',
     '/foundation/products': '产品档案管理',
     '/foundation/bom': 'BOM管理',
