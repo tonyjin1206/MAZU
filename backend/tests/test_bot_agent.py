@@ -190,13 +190,24 @@ class TestExecutors:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.order_no == po_no).first()
         assert po.status == "已审核"
 
-    def test_approve_so_generates_mo(self, db, users, base_data, client, admin_token):
+    def test_approve_so_no_auto_mo(self, db, users, base_data, client, admin_token):
+        """SP 流程：销售审核不再自动生成生产订单，明细行置「未生产」，提示走三分支。
+
+        v2.8.0 三分支：审核通过后明细行待用户选择 转直采/转外发(委外)/转生产(自产)。
+        """
         so_no = _mk_so(client, admin_token, base_data)
         r = _execute_approve_order({"order_type": "sales_order", "order_no": so_no}, db, _user(db, "admin"))
-        assert "已审核" in r and "MO-" in r
+        assert "已审核" in r and "转直采" in r and "转外发" in r and "转生产" in r
+        from app.models.sales import SalesOrder, SalesOrderItem
         from app.models.production import ProductionOrder
-        mos = db.query(ProductionOrder).filter(ProductionOrder.sales_order_id.isnot(None)).all()
-        assert any(mo.order_no in r for mo in mos)
+        so = db.query(SalesOrder).filter(SalesOrder.order_no == so_no).first()
+        assert so.status == "已审"
+        # 不自动生成生产订单（三分支由用户后续触发）
+        mos = db.query(ProductionOrder).filter(ProductionOrder.sales_order_id == so.id).all()
+        assert len(mos) == 0, "审核不应自动生成生产订单（三分支后由 re-produce 触发转生产）"
+        # 明细行生产状态初始化为「未生产」
+        for item in so.items:
+            assert item.production_status in (None, "", "未生产")
 
 
 # ==================== 审计日志 ====================

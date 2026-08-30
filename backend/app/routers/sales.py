@@ -484,8 +484,14 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/orders/{order_id}/items/{item_id}/re-produce", tags=["销售管理"])
-def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
-    """重发生产 — 为指定明细行重新生成生产订单（仅已删除生产订单的明细行）"""
+def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_db),
+                          current_user: User = Depends(require_any_permission(
+                              "menu:sales:orders", "menu:production:orders"))):
+    """重发生产 — 为指定明细行重新生成生产订单（纯自产，仅已删除生产订单的明细行）
+
+    授权域：销售订单（本域）+ 生产域（转生产=自产，生产角色亦可操作），
+    任一满足即可；库管员/只读等低权限角色被拒（403）。
+    """
     from app.models.production import ProductionOrder
     from app.utils.batch_no import generate_doc_no
     # 实时查最新状态
@@ -507,6 +513,8 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "销售订单不存在")
+    if order.status != "已审":
+        raise HTTPException(400, "订单审核通过后才能转生产")
     prod = ProductionOrder(
         order_no=generate_doc_no(db, "MO", ProductionOrder, "order_no"),
         sales_order_id=order.id,
@@ -518,8 +526,13 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
         created_by=current_user.display_name or current_user.username,
     )
     db.add(prod)
+    # 三分支互斥：转生产（自产）后明细行占位「生产中」，防止再转直采/转外发漏过。
+    # （与派产 release 置「生产中」、完工置「已生产」、删除 MO 回「未生产」的流转一致）
+    item.production_status = "生产中"
     db.commit()
     db.refresh(prod)
+    _fire_reminder(db, "SO_TO_PRODUCTION", "so_order", order.id, order.order_no or "",
+                   {"order_no": str(order.order_no or ""), "mo_no": str(prod.order_no or "")})
     return {"id": prod.id, "order_no": prod.order_no, "message": f"已重新生成生产订单 {prod.order_no}"}
 
 
@@ -549,8 +562,14 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
 
 
 @router.post("/orders/{order_id}/items/{item_id}/outsource", tags=["销售管理"])
-def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
-    """销售明细「转外发」— 生成委外订单（草稿），明细状态→已通知外发"""
+def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
+                      current_user: User = Depends(require_any_permission(
+                          "menu:sales:orders", "menu:outsource:from-sales", "menu:outsource:orders"))):
+    """销售明细「转外发」— 生成委外订单（草稿），明细状态→已通知外发
+
+    授权域：销售订单（本域）+ 委外域（转外发后进入委外管理，委外角色亦可操作），
+    任一满足即可；库管员/只读等低权限角色被拒（403）。
+    """
     from app.models.production import OutsourceOrder
     from app.utils.batch_no import generate_doc_no
     item = db.query(SalesOrderItem).filter(

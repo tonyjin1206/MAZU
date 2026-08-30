@@ -12,7 +12,38 @@
   - 加工费发票（`processing-invoices`）移除委外工序归属逻辑（生产=纯自产，恒无委外工序可开票）
   - `set-type` 备货方式限 `自产/外购`
 - **销售分支**（`app/routers/sales.py`）：三路分流独立——转直采=`采购链`、转外发=`委外(outsource)`、转生产=`自产`
+- **权限隔离**（`app/routers/sales.py`，V3）：三分支写端点按业务域授权
+  - 转直采（`stock-in`）→ `menu:sales:orders`（销售本域）
+  - 转外发（`outsource`）→ `require_any_permission(menu:sales:orders, menu:outsource:from-sales, menu:outsource:orders)`（销售本域+委外域）
+  - 转生产（`re-produce`）→ `require_any_permission(menu:sales:orders, menu:production:orders)`（销售本域+生产自产域）
+  - 库管员/只读等低权限角色依旧 403（权限隔离正确：生产=自产、委外=转外发）
+- **AI 助手**（`app/utils/ai_chat.py`，V3）：
+  - `approve_order` 销售审核**不再自动生成生产订单**（与 SP 三分支一致）：审核后明细行置「未生产」，由用户选择转直采/转外发(委外)/转生产(自产)，并在返回提示中区分三条路线
+  - `issue_materials` 描述去除委外语义（生产=纯自产）；删除未注册的 `_execute_create_outsourcing` 死代码（引用已废弃委外模型 `OutsourcingOrder`/`outsourcer_id`）
+  - `SYSTEM_PROMPT` 审核流程补充三分支说明，AI 能区分转外发=委外、转生产=自产
+- **预警埋点**（`app/services/reminder.py` + `app/routers/sales.py`，V3）：
+  - 新增 `SO_TO_PRODUCTION` 提醒点（转生产=自产，生成生产订单后触发，收件人=生产经理），在 `re-produce` 端点埋点
+  - `SO_TO_OUTSOURCE` 收件人收敛为 `purchase_manager`（委外订单由采购侧办理），不再发给生产经理
+  - 事件提醒点完整对齐三分支：`SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / SO_TO_PRODUCTION`；不设与委外纠缠的 MO 提醒
 - **验证**：`./test.sh` 244 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped
+
+## 未发布 — v2.8.0 生产模块去委外化（数据库迁移 + 测试加固 V4）
+
+> **固化**：生产模块去委外化的迁移脚本 + 三分支互斥测试，并修复 V1 遗留的三分支互斥缺陷。
+
+- **迁移脚本**（`scripts/migrate_production_deoutsourcing.py`，V4）：
+  - 处理已存在旧库中生产模块的**遗留委外列**：`mo_production_process` 物理删除 `outsourcer_id` 列（V1 模型层已删列，create_all 不删旧列 → 本脚本重建表清理）
+  - 既有数据兼容：重建表完整保留其余列数据（不丢失）；关联表 `mo_production` 不受影响
+  - 幂等：列已不存在/表不存在 → 跳过（changed=False），可重复执行；空库/新库（create_all 直接建新结构）无需迁移
+  - 说明：`mo_material_issue`（已由 `migrate_remove_outsourcing.py` 清理）、`mo_outsourcing`（已 DROP）不重复处理；`fd_process.is_outsource`/`fd_product_process.default_outsourcer_id` 模型仍保留（工序默认自产、委外归口转外发 route），非"模型层已删需物理清理"范畴
+- **三分支互斥修复**（`app/routers/sales.py`，V4）——发现并修复两处状态机缺陷：
+  1. `re-produce`（转生产=自产）生成 MO 后原来**不改** `production_status`，导致再调 `stock-in`（转直采）漏过，转生产与转直采不互斥 → 现生成 MO 后置「生产中」占位，堵住其余路线（与派产置「生产中」、完工置「已生产」、删 MO 回「未生产」流转一致）
+  2. `re-produce` 原来**未校验**订单状态（无 `order.status != 已审` 检查），未审核订单也能转生产 → 补 `订单审核通过后才能转生产` 校验（与 `stock-in`/`outsource` 一致）
+- **新增测试**：
+  - `backend/tests/test_three_branch.py`（10 用例）：三分支互斥矩阵（转生产/转直采/转外发各自独立+互斥 400）、转外发=委外全流程（转外发→委外订单→维护委外商/单价→审核生成应付+末道待入库单）、三分支预警埋点（SO_TO_PRODUCTION / SO_TO_PURCHASE / SO_TO_OUTSOURCE）
+  - `backend/tests/test_migration_production.py`（4 用例）：迁移脚本去列/保数据/幂等/空库安全
+  - 清理 `backend/tests/test_textile_flow.py` 的 `outsourcer_id` 残留死代码（V1 后工序无此列，委外分支恒不执行）
+- **验证**：`./test.sh` 259 passed/0 skipped；`cd e2e && python -m pytest` 59 passed/0 skipped
 
 ## 未发布 — 安全修复（BUG-L4-01：后端 RBAC 越权）
 

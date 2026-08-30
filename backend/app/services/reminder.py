@@ -3,11 +3,12 @@
 埋点代码只传 (point_code, doc_type, doc_id, doc_no, data)，
 标题/内容/收件人/渠道/去重全部由 sys_reminder_rule 规则决定（D8 规则配置化）。
 
-产品逻辑约定（v2.7.0，按当前 main 基底重校）：
-- 无「生产订单」模块（弃用），销售订单下游走「转直采 / 转外发」，故不设 MO_* 提醒点；
-  以 SO_TO_PURCHASE / SO_TO_OUTSOURCE 替代原 AO 的 MO_PLANNED / MO_OUTSOURCED。
-- 事件提醒点：SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / DELIVERY_NOTIFIED
-  / DELIVERY_CONFIRMED / AR_CREATED。
+产品逻辑约定（v2.8.0，按当前 main 基底重校）：
+- 无「生产订单」模块（弃用），销售订单下游走「转直采 / 转外发 / 转生产(自产)」三分支，
+  故不设 MO_* 提醒点；以 SO_TO_PURCHASE / SO_TO_OUTSOURCE / SO_TO_PRODUCTION
+  替代原 AO 的 MO_PLANNED / MO_OUTSOURCED。
+- 事件提醒点：SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / SO_TO_PRODUCTION
+  / DELIVERY_NOTIFIED / DELIVERY_CONFIRMED / AR_CREATED。
 - 定时提醒点（每日扫描 + 启动补扫）：AR_DUE_SOON / AR_OVERDUE / AP_DUE_SOON / AP_OVERDUE。
 - 站内为主（sys_notification 落库即视为已发，D7）；企微通道为预留钩子（本项目未启用）。
 """
@@ -171,7 +172,11 @@ def seed_reminder_rules(db):
         {"code": "SO_TO_OUTSOURCE", "name": "销售明细转外发", "trigger_type": "event",
          "title_template": "销售订单 {order_no} 已转外发",
          "content_template": "订单 {order_no} 有明细行转入委外，请到「委外管理→销售订单转委外」安排工序与原料采购。",
-         "target_roles": ["production_manager", "purchase_manager"], "channel": ["inapp"], "dedup_hours": 1},
+         "target_roles": ["purchase_manager"], "channel": ["inapp"], "dedup_hours": 1},
+        {"code": "SO_TO_PRODUCTION", "name": "销售明细转生产（自产）", "trigger_type": "event",
+         "title_template": "销售订单 {order_no} 已转生产",
+         "content_template": "订单 {order_no} 有明细行转入自产，已生成生产订单 {mo_no}，请到「生产管理」安排排产与发料。",
+         "target_roles": ["production_manager"], "channel": ["inapp"], "dedup_hours": 1},
         {"code": "DELIVERY_NOTIFIED", "name": "已通知发货（待出库）", "trigger_type": "event",
          "title_template": "发货单 {delivery_no} 已通知发货",
          "content_template": "发货单 {delivery_no}（{amount}）已通知发货，请到「成品出库」按批次完成出库。",

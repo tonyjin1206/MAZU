@@ -274,3 +274,37 @@ class TestReadScopeRBAC:
                      "/api/foundation/customers", "/api/inventory/balance"):
             r = client.get(path, headers=h)
             assert r.status_code == 403, f"只读用户读 {path} 应 403，实际 {r.status_code}"
+
+    def test_three_branch_write_blocked_low_perm(self, client, admin_token, foundation):
+        """V3 三分支写端点：库管员（仅库存域）对 转直采/转外发/转生产 应 403
+
+        权限隔离正确：生产=自产(menu:production:*)、委外=转外发(menu:outsource:*)、
+        转直采=menu:sales:orders；低权限角色（库管员无任何销售/委外/生产权限）一律 403。
+        注意：即使库管员能读订单（读端点放宽到库存出库域），写端点仍必须严格拦截。
+        """
+        login = client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+        admin_h = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        self._create_user(client, admin_h, "wk_write_l403", "warehouse_keeper")
+        h = self._login(client, "wk_write_l403")
+
+        # 建销售订单（admin）→ 审核
+        cust = foundation["cust"][0]
+        cny = foundation["cny"]["id"]
+        pid = foundation["prods"]["全棉色织布"]["id"]
+        so = client.post("/api/sales/orders", json={
+            "customer_id": cust, "currency_id": cny, "payment_terms": "TT",
+            "items": [{"product_id": pid, "quantity": 10, "unit_price": 50, "tax_rate": 13}],
+        }, headers=admin_h).json()
+        so_id = so["id"]
+        client.post(f"/api/sales/orders/{so_id}/approve", json={}, headers=admin_h)
+        detail = client.get(f"/api/sales/orders/{so_id}", headers=admin_h).json()
+        item_id = detail["items"][0]["id"]
+
+        # 三分支写端点：库管员均 403（无销售/委外/生产权限）
+        for path in (
+            f"/api/sales/orders/{so_id}/items/{item_id}/stock-in",   # 转直采
+            f"/api/sales/orders/{so_id}/items/{item_id}/outsource",  # 转外发(委外)
+            f"/api/sales/orders/{so_id}/items/{item_id}/re-produce", # 转生产(自产)
+        ):
+            r = client.post(path, json={}, headers=h)
+            assert r.status_code == 403, f"库管员写 {path} 应 403，实际 {r.status_code}: {r.text[:120]}"

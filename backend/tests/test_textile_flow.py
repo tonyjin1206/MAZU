@@ -135,16 +135,6 @@ class TestTextileFullFlow:
                     {"material_id": mid, "quantity": qty, "batch_no": batch_no,
                      "warehouse_id": wh_rm}, h)
                 issue_total += 1
-        # 委外工序发料（染色 → 委外商）→ outsource_out
-        os_proc = next((p for p in md["processes"] if p.get("outsourcer_id")), None)
-        if os_proc:
-            for mid, need in list(proc_issues.items())[:1]:
-                for batch_no, qty, price in consume(mid, 1):
-                    api(client, "POST",
-                        f"/api/production/productions/{mo_id}/processes/{os_proc['id']}/issue",
-                        {"material_id": mid, "quantity": qty, "batch_no": batch_no,
-                         "warehouse_id": wh_rm}, h)
-                    print(f"⑤·⑤ 委外发料（outsource_out）→ 工序 {os_proc['process_name']}")
         print(f"⑤ 生产领料 {issue_total} 次（material_issue_out）")
 
         # 流水类型验证：生产=纯自产，发料类型只有 material_issue_out
@@ -157,8 +147,6 @@ class TestTextileFullFlow:
         for proc in sorted(md["processes"], key=lambda p: p["seq"]):
             finish_body = {"unit_price": proc.get("unit_price") or 0.5,
                            "process_qty": 100}
-            if proc.get("outsourcer_id"):
-                finish_body = {"unit_price": 2.0, "process_qty": 100}  # 委外必须录加工费
             api(client, "POST", f"/api/production/productions/{mo_id}/processes/{proc['id']}/finish",
                 finish_body, h)
         # 成本留空 → 自动结转（剩余投入 × 本次占比）

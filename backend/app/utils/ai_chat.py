@@ -138,7 +138,7 @@ TOOLS = [
     {
         "type": "function", "function": {
             "name": "issue_materials",
-            "description": "生产领料/发料：为生产订单发出物料到产线或委外商。",
+            "description": "生产领料/发料：为生产订单（纯自产）发出物料到产线。",
             "parameters": {"type": "object", "properties": {
                 "production_order_no": {"type": "string", "description": "生产订单编号"},
                 "material_name": {"type": "string", "description": "物料名称"},
@@ -182,7 +182,7 @@ TOOLS = [
     {
         "type": "function", "function": {
             "name": "approve_order",
-            "description": "审核单据：采购订单（待审核→已审核）或销售订单（待审核→已审并生成生产订单）。必须先列出单据让用户指定再调用。",
+            "description": "审核单据：采购订单（待审核→已审核）或销售订单（待审核→已审，不自动生成生产订单）。审核后明细行可转直采/转外发(委外)/转生产(自产)。必须先列出单据让用户指定再调用。",
             "parameters": {"type": "object", "properties": {
                 "order_type": {"type": "string", "enum": ["purchase_order", "sales_order"], "description": "单据类型"},
                 "order_no": {"type": "string", "description": "单据编号，如 PO-xxx / SO-xxx"},
@@ -242,6 +242,12 @@ SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手（Matsu），通过对话帮�
 第一步：用户说「审核/审批」时，先调 query_pending_approvals 列出待审核单据
 第二步：让用户指定单据号（如 PO-20260731-001）
 第三步：确认后调 approve_order，核对返回结果
+
+- 销售订单审核**不会生成生产订单**；审核通过后明细行处于「未生产」，用户需为每行选择三条独立路线之一：
+  - **转直采**：进入「采购管理→销售订单转采购」办理采购
+  - **转外发**：进入「委外管理→销售订单转委外」办理委外（委外=outsource）
+  - **转生产**：转为自产，生成生产订单（纯自产=production）
+  三者互斥，按业务实际选择，不要替用户假设路线。用户说「转外发/委外」指转外发路线，「转生产/自产/生产」指转生产路线。
 
 ### 创建类操作（三步确认）
 第一步：问清要做什么
@@ -499,31 +505,6 @@ def _execute_create_sales_invoice(args: dict, db: Session, user=None) -> str:
     except Exception as e: return f"❌ 失败：{e}"
 
 
-def _execute_create_outsourcing(args: dict, db: Session) -> str:
-    from app.models.foundation import Supplier, Material
-    from app.models.production import ProductionOrder, OutsourcingOrder, MaterialIssueItem
-    from app.utils.batch_no import generate_doc_no
-    try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
-        if not mo: return f"未找到生产订单「{args['production_order_no']}」"
-        sup = db.query(Supplier).filter(Supplier.name.like(f"%{args['supplier_name']}%")).first()
-        if not sup: return f"未找到供应商「{args['supplier_name']}」"
-        os_no = generate_doc_no(db, "WO")
-        oo = OutsourcingOrder(outsource_no=os_no, production_id=mo.id, outsourcer_id=sup.id, product_id=mo.product_id,
-                              quantity=float(args["outsource_qty"]), unit_price=float(args.get("unit_price",0)),
-                              total_amount=float(args.get("unit_price",0))*float(args["outsource_qty"]),
-                              due_date=_parse_date(args.get("due_date","")), status="待发料")
-        db.add(oo); db.flush()
-        if args.get("material_name"):
-            mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
-            if mat and args.get("material_qty"):
-                db.add(MaterialIssueItem(issue_no=os_no, outsource_id=oo.id, material_id=mat.id, quantity=float(args["material_qty"]), operator="AI"))
-                oo.material_status = "已发料"
-        db.commit()
-        return f"✅ 委外单 {os_no}（{sup.name}）"
-    except Exception as e: db.rollback(); return f"❌ 委外失败：{e}"
-
-
 def _execute_issue_materials(args: dict, db: Session, user=None) -> str:
     from app.models.foundation import Material
     from app.models.production import ProductionOrder, MaterialIssueItem
@@ -658,23 +639,13 @@ def _execute_approve_order(args: dict, db: Session, user=None) -> str:
             if not o: return f"未找到销售订单「{no}」"
             if o.status != "待审核": return f"订单 {no} 当前状态「{o.status}」，不能审核"
             o.status = "已审"
-            # 与 UI 审核一致：为每个明细产品生成生产订单
-            from app.models.production import ProductionOrder
-            from app.utils.batch_no import generate_doc_no
-            mo_nos = []
+            # 与 UI 销售审核一致（SP 流程）：审核不自动生成生产订单，仅初始化明细行生产状态；
+            # 明细行后续由用户选择转直采 / 转外发(委外) / 转生产(自产) 三条独立路线。
             for item in o.items:
-                item.production_status = "未生产"
-                prod = ProductionOrder(
-                    order_no=generate_doc_no(db, "MO", ProductionOrder, "order_no"),
-                    sales_order_id=o.id, sales_order_item_id=item.id,
-                    product_id=item.product_id, quantity=item.quantity,
-                    due_date=o.delivery_date, status="待确认",
-                    created_by=_operator_name(user),
-                )
-                db.add(prod); db.flush()
-                mo_nos.append(prod.order_no)
+                if item.production_status in (None, "", "未生产"):
+                    item.production_status = "未生产"
             db.commit()
-            return f"✅ 销售订单 {no} 已审核，生成生产订单：{', '.join(mo_nos)}"
+            return f"✅ 销售订单 {no} 已审核。明细行待处理，请选择：转直采 / 转外发(委外) / 转生产(自产)。"
         return "❌ 未知订单类型"
     except Exception as e:
         db.rollback()
