@@ -12,9 +12,27 @@ from app.models.production import (
 )
 from app.models.inventory import WarehouseInventory, StockTransaction
 from app.models.purchase import AccountsPayable, PurchaseRequisition
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission, require_any_permission
 from app.utils.batch_no import generate_batch_no, generate_doc_no
 from sqlalchemy import func as sa_func, or_
+
+# ==================== 读端点授权域（BUG-L4-02 同模式：本域 + 业务引用域） ====================
+# 生产=纯自产（v2.8.0）：本域 = 生产订单/工作台/加工费发票/完工入库；
+# 销售侧需读生产状态（明细行「生产中/已生产」）→ 含 sales:orders；
+# 外购型 MO 推采购需求后采购侧读状态 → 含 purchase 域。
+# ⚠ 禁含 menu:inventory* / menu:production:batch（除批次查询本域外）/ menu:dashboard。
+PRODUCTION_READ_PERMS = (
+    "menu:production:orders", "menu:production:workspace",
+    "menu:production:invoices", "menu:production:receipts", "menu:sales:orders",
+    "menu:purchase:requisitions", "menu:purchase:orders",
+)
+PRODUCTION_BATCH_READ_PERMS = ("menu:production:batch", "menu:inventory")
+PRODUCTION_INVOICES_READ_PERMS = (
+    "menu:production:invoices", "menu:production:receipts",
+    "menu:purchase:ap", "menu:purchase:invoices",
+)
+# 写端点：生产工作台/订单域（生产经理）；加工费发票独立域
+PRODUCTION_WRITE_PERMS = ("menu:production:orders", "menu:production:workspace")
 
 
 def _recalc_material_cost(prod_id: int, db: Session):
@@ -118,7 +136,7 @@ def list_productions(
     date_from: str = Query(""), date_to: str = Query(""),
     sales_order_id: int = Query(None, description="按销售订单过滤"),
     sales_order_item_id: int = Query(None, description="按销售明细行过滤"),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS)),
 ):
     query = db.query(ProductionOrder)
     if status:
@@ -163,7 +181,7 @@ def query_batch_inventory(
     product_id: int = Query(None),
     material_id: int = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*PRODUCTION_BATCH_READ_PERMS)),
 ):
     """批次库存查询"""
     query = db.query(WarehouseInventory)
@@ -194,7 +212,7 @@ def query_batch_inventory(
 
 
 @router.get("/inventory/trace", tags=["生产管理"])
-def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_BATCH_READ_PERMS))):
     """批次号全程追溯"""
     batch = db.query(WarehouseInventory).filter(WarehouseInventory.batch_no == batch_no).first()
     item_name = ""
@@ -218,7 +236,7 @@ def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User
 # ==================== 新系统：生产订单详情 + 物料清单 + 工艺路线 ====================
 
 @router.get("/productions/{prod_id}", tags=["生产管理-新"])
-def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """生产订单详情（含物料清单、工艺路线）"""
     p = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not p:
@@ -260,7 +278,7 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
 
 
 @router.put("/productions/{prod_id}", tags=["生产管理-新"])
-def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """更新生产订单（交期、备注）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -275,7 +293,7 @@ def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.post("/productions/{prod_id}/set-type", tags=["生产管理-新"])
-def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """确认备货方式: production_type = 自产/外购（生产=纯自产，委外走转外发）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -303,7 +321,7 @@ def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db),
 
 
 @router.post("/productions/{prod_id}/to-requisition", tags=["生产管理-新"])
-def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """外购型生产订单 → 推采购需求（采购部门后续转采购订单）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -349,7 +367,7 @@ def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.post("/productions/{prod_id}/expand-bom", tags=["生产管理-新"])
-def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """展开BOM → 生成物料需求清单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -402,7 +420,7 @@ def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User =
 
 
 @router.put("/productions/{prod_id}/materials", tags=["生产管理-新"])
-def save_materials(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def save_materials(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """批量保存物料清单"""
     items = data.get("items", [])
     # 删除旧的
@@ -423,7 +441,7 @@ def save_materials(prod_id: int, data: dict, db: Session = Depends(get_db), curr
 
 
 @router.put("/productions/{prod_id}/processes", tags=["生产管理-新"])
-def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """批量保存工艺路线"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -450,7 +468,7 @@ def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), curr
 
 
 @router.post("/productions/{prod_id}/release", tags=["生产管理-新"])
-def release_production_new(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def release_production_new(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """派产 — 锁定工艺路线，状态→已排产"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -477,7 +495,7 @@ def release_production_new(prod_id: int, db: Session = Depends(get_db), current_
 
 
 @router.delete("/productions/{prod_id}", tags=["生产管理-新"])
-def delete_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """删除生产订单（仅待排产状态允许）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -522,7 +540,7 @@ def delete_production(prod_id: int, db: Session = Depends(get_db), current_user:
 
 
 @router.get("/productions/{prod_id}/transactions", tags=["生产管理-新"])
-def list_production_transactions(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_production_transactions(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """生产订单的出入库流水"""
     # 找到该订单所有发料单号
     issue_nos = [r[0] for r in db.query(MaterialIssueItem.issue_no).filter(
@@ -549,7 +567,7 @@ def list_production_transactions(prod_id: int, db: Session = Depends(get_db), cu
 
 
 @router.post("/productions/{prod_id}/unrelease", tags=["生产管理-新"])
-def unrelease_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def unrelease_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """反派产 — 回到待排产状态"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -587,7 +605,7 @@ def unrelease_production(prod_id: int, db: Session = Depends(get_db), current_us
 @router.post("/productions/{prod_id}/processes/{proc_id}/issue", tags=["生产管理-新"])
 def issue_material_to_process(
     prod_id: int, proc_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS)),
 ):
     """按工序发料 — 指定原料批次出库、扣库存"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
@@ -690,7 +708,7 @@ def issue_material_to_process(
 @router.get("/productions/{prod_id}/issues", tags=["生产管理-新"])
 def list_production_issues(
     prod_id: int, process_id: int = Query(None),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS)),
 ):
     """查询生产订单的发料记录"""
     q = db.query(MaterialIssueItem).filter(MaterialIssueItem.production_id == prod_id)
@@ -709,7 +727,7 @@ def list_production_issues(
 
 
 @router.get("/productions/{prod_id}/material-issues/{material_id}", tags=["生产管理-新"])
-def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """查询某个物料在订单中的发料/退料明细（含金额）"""
     from app.models.inventory import StockTransaction
     issues = db.query(MaterialIssueItem).filter(
@@ -754,7 +772,7 @@ def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Dep
 
 
 @router.post("/productions/{prod_id}/issues/{issue_id}/cancel", tags=["生产管理-新"])
-def cancel_material_issue(prod_id: int, issue_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def cancel_material_issue(prod_id: int, issue_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """取消发料 — 恢复库存、删除发料记录"""
     issue = db.query(MaterialIssueItem).filter(
         MaterialIssueItem.id == issue_id,
@@ -852,7 +870,7 @@ def cancel_material_issue(prod_id: int, issue_id: int, db: Session = Depends(get
 @router.post("/productions/{prod_id}/processes/{proc_id}/finish", tags=["生产管理-新"])
 def finish_process(
     prod_id: int, proc_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS)),
 ):
     """工序完工 — 必须录入加工费，上道完工下道自动流转"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
@@ -898,7 +916,7 @@ def finish_process(
 
 
 @router.post("/productions/{prod_id}/processes/{proc_id}/revert", tags=["生产管理-新"])
-def revert_process(prod_id: int, proc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def revert_process(prod_id: int, proc_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """反退工序到未开工状态"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -931,7 +949,7 @@ def revert_process(prod_id: int, proc_id: int, db: Session = Depends(get_db), cu
 # ==================== 完工入库 ====================
 
 @router.post("/productions/{prod_id}/receipt", tags=["生产管理-新"])
-def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """完工入库 — 末道工序完工后入库，允许损耗"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -1058,7 +1076,7 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
 
 
 @router.post("/productions/{prod_id}/receipts/{receipt_id}/cancel", tags=["生产管理-新"])
-def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """取消完工入库 — 删除库存、冲销流水、回退累计值"""
     from app.models.inventory import WarehouseInventory, StockTransaction
 
@@ -1146,7 +1164,8 @@ def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/productions/{prod_id}/receipts", tags=["生产管理-新"])
-def list_production_receipts(prod_id: int, db: Session = Depends(get_db)):
+def list_production_receipts(prod_id: int, db: Session = Depends(get_db),
+                             current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """查询生产订单的所有入库单"""
     receipts = db.query(ProductionReceipt).filter(ProductionReceipt.production_id == prod_id).order_by(ProductionReceipt.id.desc()).all()
     return {"items": [{
@@ -1167,7 +1186,7 @@ def list_production_receipts(prod_id: int, db: Session = Depends(get_db)):
 # ==================== 关闭/取消关闭 ====================
 
 @router.post("/productions/{prod_id}/close", tags=["生产管理-新"])
-def close_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def close_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """关闭生产订单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -1182,7 +1201,7 @@ def close_production(prod_id: int, db: Session = Depends(get_db), current_user: 
 
 
 @router.post("/productions/{prod_id}/unclose", tags=["生产管理-新"])
-def unclose_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def unclose_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """取消关闭生产订单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -1200,7 +1219,7 @@ def unclose_production(prod_id: int, db: Session = Depends(get_db), current_user
 @router.get("/workspace", tags=["生产管理-新"])
 def production_workspace(
     status: str = Query(""), keyword: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:production:workspace", "menu:production:orders")),
 ):
     """生产工作台总览 — 查看每道工序状态"""
     query = db.query(ProductionOrder).filter(
@@ -1288,7 +1307,7 @@ def production_workspace(
 @router.get("/processing-invoices", tags=["生产管理-加工费发票"])
 def list_processing_invoices(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_INVOICES_READ_PERMS)),
 ):
     """加工费发票列表"""
     items = db.query(ProcessingInvoice).order_by(ProcessingInvoice.id.desc()).offset(
@@ -1314,7 +1333,7 @@ def list_processing_invoices(
 
 
 @router.post("/processing-invoices", tags=["生产管理-加工费发票"])
-def create_processing_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_processing_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:production:invoices"))):
     """创建加工费发票（参照完工入库单或生产订单）"""
     receipt_id = data.get("receipt_id")
     production_id = data.get("production_id")
@@ -1340,7 +1359,7 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
 
 
 @router.delete("/processing-invoices/{invoice_id}", tags=["生产管理-加工费发票"])
-def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:production:invoices"))):
     """删除加工费发票（同时删除关联的应付账款；已付款禁删）"""
     inv = db.query(ProcessingInvoice).filter(ProcessingInvoice.id == invoice_id).first()
     if not inv:
@@ -1362,7 +1381,7 @@ def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), cu
 
 @router.get("/processing-invoices/receipt-candidates", tags=["生产管理-加工费发票"])
 def list_processing_invoice_candidates(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_INVOICES_READ_PERMS)),
 ):
     """查询可开加工费发票的完工入库单（生产=纯自产，无委外工序，恒为空）"""
     return {"items": []}

@@ -163,7 +163,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 上表列配置（产品发货记录）=====
 const ORDER_STORAGE_KEY = 'mazu_sales_delivery_workbench_columns'
@@ -251,7 +251,7 @@ async function fetchData() {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/sales/delivery-workbench', { params })
+    const res = await salesApi.deliveries.deliveryWorkbench(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     nextTick(() => {
@@ -272,7 +272,7 @@ async function loadDeliveries(itemId) {
   if (!itemId) { deliveryList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get('/sales/deliveries', { params: { page: 1, page_size: 100, order_item_id: itemId } })
+    const res = await salesApi.deliveries.list({ page: 1, page_size: 100, order_item_id: itemId })
     deliveryList.value = res.items || []
     const ret = (res.items || []).filter(i => i.is_return).reduce((s, i) => s + (i.quantity || 0), 0)
     returnedTotal.value = ret
@@ -295,7 +295,7 @@ async function openShipDialog(row) {
   })
   // 单价从订单详情取
   try {
-    const detail = await request.get(`/sales/orders/${row.order_id}`)
+    const detail = await salesApi.orders.get(row.order_id)
     const it = (detail.items || []).find(i => i.id === row.item_id)
     if (it) shipForm.unit_price = it.unit_price || 0
   } catch (e) {}
@@ -308,7 +308,7 @@ async function handleShipSubmit() {
   if (!qty || qty <= 0 || qty > shipForm.max_notify) { ElMessage.warning(`请输入 1~${shipForm.max_notify} 的通知数量`); return }
   shipSubmitting.value = true
   try {
-    await request.post('/sales/deliveries/notify', {
+    await salesApi.deliveries.notify({
       order_item_id: shipForm.order_item_id,
       quantity: qty,
       notify_date: shipForm.notify_date,
@@ -324,7 +324,7 @@ async function handleShipSubmit() {
 async function openReturnDialog(row) {
   Object.assign(returnForm, { batch_no: '', quantity: 1, return_date: '', remark: '' })
   // 已出库批次（正常发货单已出库的批次，去重；待出库未出库的不可退）
-  const res = await request.get('/sales/deliveries', { params: { page: 1, page_size: 100, order_item_id: row.item_id } }).catch(() => ({ items: [] }))
+  const res = await salesApi.deliveries.list({ page: 1, page_size: 100, order_item_id: row.item_id }).catch(() => ({ items: [] }))
   const shippedBatches = [...new Set((res.items || []).filter(i => !i.is_return && i.status !== '待出库' && (i.delivered_qty || 0) > 0 && i.batch_no).map(i => i.batch_no))]
   returnBatchList.value = shippedBatches
   const ret = (res.items || []).filter(i => i.is_return).reduce((s, i) => s + (i.quantity || 0), 0)
@@ -337,7 +337,7 @@ async function handleReturnSubmit() {
   if (!selectedRow.value || !returnForm.batch_no) { ElMessage.warning('请选择批次'); return }
   returnSubmitting.value = true
   try {
-    const res = await request.post('/sales/deliveries/return', {
+    const res = await salesApi.deliveries.returnByItem({
       order_item_id: selectedRow.value.item_id,
       batch_no: returnForm.batch_no,
       quantity: returnForm.quantity,
@@ -370,7 +370,7 @@ async function confirmDone(row) {
     )
   } catch (e) { return }
   try {
-    await request.post(`/sales/orders/${row.order_id}/items/${row.item_id}/delivery-confirm`, { confirmed: true })
+    await salesApi.orders.confirmDelivery(row.order_id, row.item_id, { confirmed: true })
     ElMessage.success('已确认发货完成')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -384,7 +384,7 @@ async function cancelDone(row) {
     )
   } catch (e) { return }
   try {
-    await request.post(`/sales/orders/${row.order_id}/items/${row.item_id}/delivery-confirm`, { confirmed: false })
+    await salesApi.orders.confirmDelivery(row.order_id, row.item_id, { confirmed: false })
     ElMessage.success('已撤销确认')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }

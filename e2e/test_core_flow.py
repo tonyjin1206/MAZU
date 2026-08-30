@@ -137,8 +137,8 @@ def test_core_business_flow_sp(logged_in, services):
     # ============ 5. 转直采（SP 流程：UI 操作） ============
     page.wait_for_timeout(800)
     
-    # 点击订单行展开明细
-    row.click()
+    # 双击订单行展开明细（两层交互：单击选中、双击进入明细）
+    row.dblclick()
     page.wait_for_timeout(500)
     
     # 找到"转直采"按钮并点击

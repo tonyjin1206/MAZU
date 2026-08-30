@@ -170,7 +170,7 @@ import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_ar_summary_columns'
@@ -222,7 +222,7 @@ const form = reactive({
 async function fetchData() {
   loading.value = true
   try {
-    const res = await request.get('/sales/ar', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.ar.list({ page: 1, page_size: 100 })
     list.value = res.items || []
     total.value = res.total || 0
   } catch (e) {} finally { loading.value = false; nextTick(initColumnDrag) }
@@ -234,7 +234,7 @@ async function fetchCD() {
   if (!cdFilter.value) return
   cdLoading.value = true
   try {
-    const res = await request.get('/sales/ar/collection-detail')
+    const res = await salesApi.ar.collectionDetail()
     cdList.value = (res.items || []).filter(r =>
       (r.customer_name || '').toLowerCase().includes(cdFilter.value.toLowerCase())
     )
@@ -303,7 +303,7 @@ async function handleSubmit() {
   if (amount > form.balance) { ElMessage.warning('收款金额不能超过余额'); return }
   submitting.value = true
   try {
-    await request.post('/sales/collections', {
+    await salesApi.collections.create({
       customer_id: form.customer_id,
       amount, amount_fc: amount, currency_id: form.currency_id || 1, exchange_rate: form.exchange_rate || 1,
       collection_date: form.collection_date || new Date().toISOString().slice(0, 10),
@@ -331,7 +331,7 @@ function openCollectionByDetail(row) {
 async function viewCollection(row) {
   if (!row.collection_id) return
   try {
-    const res = await request.get(`/sales/collections/${row.collection_id}`)
+    const res = await salesApi.collections.get(row.collection_id)
     collectionDetail.value = res
     collectionDetailVisible.value = true
   } catch (e) {
@@ -373,7 +373,7 @@ async function handleRefund() {
   if (amount > refundForm.max_refund + 0.01) { ElMessage.warning('退款金额不能超过应退余额'); return }
   refundLoading.value = true
   try {
-    await request.post('/sales/collections', {
+    await salesApi.collections.create({
       customer_id: refundForm.customer_id,
       amount: -amount, amount_fc: -amount,
       currency_id: 1, exchange_rate: 1,
@@ -402,7 +402,7 @@ async function openTransfer(row) {
   transferForm.remark = ''
   transferVisible.value = true
   try {
-    const res = await request.get('/sales/ar', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.ar.list({ page: 1, page_size: 100 })
     transferTargets.value = (res.items || []).filter(t => t.customer_id === row.customer_id && (t.balance || 0) > 0.01 && t.id !== row.ar_id)
   } catch { transferTargets.value = [] }
 }
@@ -414,7 +414,7 @@ async function handleTransfer() {
   if (amount > transferForm.max_amount + 0.01) { ElMessage.warning('转移金额超过可转移余额'); return }
   transferLoading.value = true
   try {
-    const res = await request.post('/sales/ar/transfer', {
+    const res = await salesApi.ar.transfer({
       source_ar_id: transferForm.source_ar_id,
       target_ar_id: transferForm.target_ar_id,
       amount, remark: transferForm.remark,

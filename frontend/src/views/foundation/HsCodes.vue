@@ -124,14 +124,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 单位选项（来自参数设置）
 const tableRef = ref(null)
 const unitOptions = ref([])
 async function loadUnitOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch (e) { unitOptions.value = [] }
+  try { unitOptions.value = await foundationApi.params.options({ group: 'unit' }) || [] } catch (e) { unitOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====

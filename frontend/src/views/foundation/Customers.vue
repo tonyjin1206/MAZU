@@ -211,14 +211,13 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 国家列表（来自参数设置「国家」组，可在参数设置里自行增删）
 const countryList = ref([])
 async function loadCountries() {
   try {
-    const opts = await request.get('/foundation/params/options', { params: { group: 'country' } }) || []
+    const opts = await foundationApi.params.options({ group: 'country' }) || []
     countryList.value = opts.map(o => o.label)
   } catch (e) { countryList.value = [] }
 }

@@ -34,7 +34,8 @@
           <el-button size="small" @click="openOrderSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column">
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" height="100%" @current-change="onOrderSelect" @row-dblclick="onOrderDblClick">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -83,6 +84,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 6px; flex: none" />
     </el-card>
 
@@ -310,8 +312,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { purchaseApi } from '../../api/business'
-import request from '../../api/request'
+import request from '../../api/request'; import { purchaseApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const router = useRouter()
 const { fitTable } = useColumnAutoFit()
@@ -430,6 +431,12 @@ function itemSummary({ columns: cols, data }) {
 
 function onOrderSelect(row) {
   if (!row) return
+  // 单击仅选中（供明细行操作按钮上下文），不加载明细 —— 双击进入明细（两层交互）
+  selectedOrder.value = row
+}
+
+function onOrderDblClick(row) {
+  if (!row) return
   selectedOrder.value = row
   loadOrderDetail(row.id)
 }
@@ -438,7 +445,7 @@ async function loadOrderDetail(orderId) {
   if (!orderId) { orderDetailList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get(`/purchase/orders/${orderId}`)
+    const res = await purchaseApi.orders.get(orderId)
     orderDetailList.value = res.items || []
   } catch (e) {} finally {
     itemLoading.value = false
@@ -522,7 +529,7 @@ async function searchSuppliers() {
   try {
     const params = { page: supplierPage.value, page_size: supplierPageSize.value }
     if (supplierSearch.value) params.keyword = supplierSearch.value
-    const res = await request.get('/foundation/suppliers', { params })
+    const res = await foundationApi.suppliers.list(params)
     pickerSupplierList.value = res.items || []
     supplierTotal.value = res.total || 0
   } catch (e) {}
@@ -569,7 +576,7 @@ async function searchPicker() {
     try {
       const params = { page: materialPage.value, page_size: materialPageSize.value }
       if (materialSearch.value) params.keyword = materialSearch.value
-      const res = await request.get('/foundation/materials', { params })
+      const res = await foundationApi.materials.list(params)
       pickerMaterialList.value = res.items || []
       materialTotal.value = res.total || 0
     } catch (e) {}
@@ -577,7 +584,7 @@ async function searchPicker() {
     try {
       const params = { page: materialPage.value, page_size: materialPageSize.value }
       if (materialSearch.value) params.keyword = materialSearch.value
-      const res = await request.get('/foundation/products', { params })
+      const res = await foundationApi.products.list(params)
       pickerProductList.value = res.items || []
       materialTotal.value = res.total || 0
     } catch (e) {}
@@ -631,7 +638,7 @@ function itemDisplayName(item) {
 
 async function loadSuppliers() {
   try {
-    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.suppliers.list({ page: 1, page_size: 100 })
     supplierList.value = res.items || []
   } catch (e) {}
 }
@@ -642,7 +649,7 @@ async function openToStockIn(row) {
   await ElMessageBox.confirm(`确定该明细转「成品库入库」？将生成待入库单，收货在「库存管理 → 成品入库」模块进行。`, '提示', { type: 'info' })
   submitting.value = true
   try {
-    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${row.id}/to-stock-in`, { stock_in_order_id: 0 })
+    const res = await purchaseApi.orders.toStockIn(selectedOrder.value.id, row.id, { stock_in_order_id: 0 })
     ElMessage.success(res.message || '已转成品库入库')
     loadOrderDetail(selectedOrder.value.id)
     fetchData()
@@ -652,7 +659,7 @@ async function openToStockIn(row) {
 async function handleToMaterial(row) {
   await ElMessageBox.confirm('确定该明细转「原料库入库」？收货在「库存管理 → 原料入库」模块进行。', '提示', { type: 'info' })
   try {
-    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${row.id}/to-material`)
+    const res = await purchaseApi.orders.toMaterial(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转原料库入库')
     loadOrderDetail(selectedOrder.value.id)
     fetchData()
@@ -661,14 +668,14 @@ async function handleToMaterial(row) {
 
 async function refreshOrderForm() {
   try {
-    const res = await request.get(`/purchase/orders/${orderForm.id}`)
+    const res = await purchaseApi.orders.get(orderForm.id)
     Object.assign(orderForm, { items: res.items || [], status: res.status })
   } catch (e) {}
 }
 
 async function loadMaterials() {
   try {
-    const res = await request.get('/foundation/materials', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.materials.list({ page: 1, page_size: 100 })
     materialList.value = res.items || []
   } catch (e) {}
 }
@@ -689,7 +696,7 @@ async function openEdit(row) {
   viewMode.value = false
   editMode.value = true
   try {
-    const res = await request.get(`/purchase/orders/${row.id}`)
+    const res = await purchaseApi.orders.get(row.id)
     Object.assign(orderForm, {
       id: res.id, supplier_id: res.supplier_id, supplier_name: res.supplier_name || '',
       total_amount: res.total_amount || 0, tax_amount: res.tax_amount || 0,
@@ -705,7 +712,7 @@ async function openDetail(row) {
   viewMode.value = true
   editMode.value = false
   try {
-    const res = await request.get(`/purchase/orders/${row.id}`)
+    const res = await purchaseApi.orders.get(row.id)
     Object.assign(orderForm, {
       id: res.id, supplier_id: res.supplier_id, supplier_name: res.supplier_name || '',
       status: res.status || '',
@@ -761,7 +768,7 @@ async function handleUpdate() {
       tax_rate: orderForm.tax_rate,
       items: buildItemsPayload(),
     }
-    await request.put(`/purchase/orders/${orderForm.id}`, payload)
+    await purchaseApi.orders.update(orderForm.id, payload)
     ElMessage.success('修改成功')
     dialogVisible.value = false
     editMode.value = false
@@ -808,7 +815,7 @@ async function handleApprove(row) {
 
 async function handleUnapprove(row) {
   await ElMessageBox.confirm('确定取消审核该订单？取消后可重新编辑。', '提示', { type: 'warning' })
-  try { await request.post(`/purchase/orders/${row.id}/unapprove`); ElMessage.success('已取消审核'); fetchData() } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
+  try { await purchaseApi.orders.unapprove(row.id); ElMessage.success('已取消审核'); fetchData() } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
 
 async function handleDelete(row) {

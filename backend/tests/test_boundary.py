@@ -18,13 +18,13 @@ BASE = "/api"
 def base_data(client, admin_token):
     h = {"Authorization": f"Bearer {admin_token}"}
     cny = client.post(f"{BASE}/foundation/currencies", json={
-        "code": "CNY-BND", "name": "人民币-边界", "symbol": "¥", "is_base": 1}, headers=h).json()["id"]
+        "code": "CNB", "name": "人民币-边界", "symbol": "¥", "is_base": 1}, headers=h).json()["id"]
     wh = client.post(f"{BASE}/foundation/warehouses", json={
         "code": "WH-BND", "name": "主仓-边界", "wh_type": "原料仓",
         "address": "浙江省绍兴市柯桥区", "manager": "边界测试员"}, headers=h).json()["id"]
     sup = client.post(f"{BASE}/foundation/suppliers", json={
         "name": "边界供应商", "contact_person": "王", "phone": "13800000000",
-        "tax_id": "91330100BND", "address": "杭州", "supplier_type": "供应商"}, headers=h).json()["id"]
+        "tax_id": "91330100BND", "address": "杭州", "supplier_type": "原材料"}, headers=h).json()["id"]
     cust = client.post(f"{BASE}/foundation/customers", json={
         "name_cn": "边界客户", "country": "中国", "contact_person": "李",
         "phone": "13900000000", "tax_id": "91330000BND", "address": "上海"}, headers=h).json()["id"]

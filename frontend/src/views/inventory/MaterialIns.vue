@@ -135,7 +135,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { purchaseApi, outsourceApi, inventoryApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_material_in_columns'
@@ -188,7 +188,7 @@ async function fetchData() {
     if (searchForm.status) params.status = searchForm.status
     if (searchForm.sourceType) params.source_type = searchForm.sourceType
     params.kind = 'material'
-    const res = await request.get('/stock-in', { params })
+    const res = await inventoryApi.stockIn.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, visibleColumns, dataList) }) }
@@ -196,7 +196,7 @@ async function fetchData() {
 
 async function loadWarehouses() {
   try {
-    const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.warehouses.list({ page: 1, page_size: 100 })
     warehouseList.value = res.items || []
   } catch (e) {}
 }
@@ -221,7 +221,7 @@ async function handleReceive() {
   if (!receiveForm.quantity_now || receiveForm.quantity_now <= 0) { ElMessage.warning('入库数量必须大于 0'); return }
   submitting.value = true
   try {
-    const res = await request.post(`/stock-in/${receiveForm.id}/receive`, {
+    const res = await inventoryApi.stockIn.receive(receiveForm.id, {
       quantity: parseFloat(receiveForm.quantity_now) || 0,
     })
     ElMessage.success(res.message || '入库成功')
@@ -234,7 +234,7 @@ async function handleReceive() {
 async function handleComplete(row) {
   await ElMessageBox.confirm(`确认「${row.batch_no || row.stock_in_no}」已全部入库完成？（已入 ${row.received_qty || 0} / 应入 ${row.quantity}，若数量不一致请确认后继续）`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/stock-in/${row.id}/complete`)
+    const res = await inventoryApi.stockIn.complete(row.id)
     ElMessage.success(res.message || '已确认完成')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -243,7 +243,7 @@ async function handleComplete(row) {
 async function handleCancel(row) {
   await ElMessageBox.confirm(`确定退回「${row.batch_no || row.stock_in_no}」？退回后销售明细行回到「未生产」状态（仅未收货的待入库单可退回）。`, '提示', { type: 'warning' })
   try {
-    const res = await request.post(`/stock-in/${row.id}/cancel`)
+    const res = await inventoryApi.stockIn.cancel(row.id)
     ElMessage.success(res.message || '已退回')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退回失败') }
@@ -283,7 +283,7 @@ async function handleReturn() {
   if (!returnForm.return_qty || returnForm.return_qty <= 0) { ElMessage.warning('请输入退回数量'); return }
   if (returnForm.return_qty > returnForm.received_qty) { ElMessage.warning('退回数量不能超过已入数量'); return }
   try {
-    const res = await request.post(`/stock-in/${returnForm.id}/return`, { return_qty: returnForm.return_qty })
+    const res = await inventoryApi.stockIn.return(returnForm.id, { return_qty: returnForm.return_qty })
     ElMessage.success(res.message || '已退回')
     returnVisible.value = false
     fetchData()
@@ -324,7 +324,7 @@ async function openDetail(row) {
   detailStockInNo.value = row.stock_in_no || ''
   detailLoading.value = true
   try {
-    const res = await request.get(`/stock-in/${row.id}/records`)
+    const res = await inventoryApi.stockIn.records(row.id)
     detailList.value = res.items || []
   } catch (e) { detailList.value = [] } finally { detailLoading.value = false }
 }

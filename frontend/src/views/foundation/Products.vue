@@ -170,14 +170,13 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 单位选项（来自参数设置）
 const tableRef = ref(null)
 const unitOptions = ref([])
 async function loadUnitOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch (e) { unitOptions.value = [] }
+  try { unitOptions.value = await foundationApi.params.options({ group: 'unit' }) || [] } catch (e) { unitOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -226,7 +225,7 @@ onMounted(() => {
 
 async function loadCustomers() {
   try {
-    const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 200 } })
+    const res = await foundationApi.customers.list({ page: 1, page_size: 200 })
     customerOptions.value = res.items || []
   } catch (e) { customerOptions.value = [] }
 }
@@ -297,7 +296,7 @@ async function openDialog(mode, row = {}) {
     // 回显关联客户
     form.customers = []
     try {
-      const detail = await request.get(`/foundation/products/${row.id}`)
+      const detail = await foundationApi.products.get(row.id)
       form.customers = (detail.customers || []).map(c => ({ customer_id: c.id }))
     } catch (e) { /* ignore */ }
   } else {
@@ -336,7 +335,7 @@ async function handleSave() {
     }
     // 保存关联客户（全量替换）
     if (productId) {
-      await request.put(`/foundation/products/${productId}/customers`, { customer_ids: customerIds })
+      await foundationApi.productCustomers.update(productId, { customer_ids: customerIds })
     }
     dialogVisible.value = false
     fetchData()

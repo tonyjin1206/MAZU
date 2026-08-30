@@ -217,7 +217,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import request from '../../api/request'; import { outsourceApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'; import { inventoryApi } from '../../api/business'
 
 // ========== 上下区域高度拖动 ==========
 const SPLIT_KEY = 'mazu_outsource_from_sales_splitH'
@@ -256,7 +256,7 @@ async function fetchData() {
   try {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
-    const res = await request.get('/outsource/sales-to-outsource', { params })
+    const res = await outsourceApi.salesToOutsource.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     const keep = selectedItem.value && dataList.value.some(r => r.sales_item_id === selectedItem.value.sales_item_id)
@@ -393,14 +393,14 @@ function onSelectRow(currentRow) {
 async function loadDetail(row) {
   loadingDetail.value = true
   try {
-    const res = await request.get(`/outsource/sales-to-outsource/${row.sales_item_id}`)
+    const res = await outsourceApi.salesToOutsource.get(row.sales_item_id)
     detail.value = res
     // 快照原始工序（换行/刷新时删除状态自动重置）
     originalProcesses.value = (res.processes || []).map(p => ({ ...p, generated: [...(p.generated || [])] }))
     lossPct.value = 10
     // 订单级认领数据（BOM材料清单 + 已认领记录）
     try {
-      const claimsRes = await request.get('/outsource/claims', { params: { sales_item_id: row.sales_item_id } })
+      const claimsRes = await outsourceApi.claims.list({ sales_item_id: row.sales_item_id })
       supplyType.value = claimsRes.supply_type || '己方提供'
       bomMaterials.value = claimsRes.bom_materials || []
       claims.value = claimsRes.claims || []
@@ -460,7 +460,7 @@ function restoreProcesses() {
 // ========== 加工商下拉 ==========
 async function searchSuppliers() {
   try {
-    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.suppliers.list({ page: 1, page_size: 100 })
     suppliers.value = res.items || []
   } catch (e) {}
 }
@@ -472,7 +472,7 @@ const claimRows = ref([])
 // 单材料行加载仓库总可用（available-batches 各批次可用量合计）
 async function loadStockFor(row) {
   try {
-    const res = await request.get('/inventory/available-batches', { params: { material_id: row.material_id } })
+    const res = await inventoryApi.availableBatches({ material_id: row.material_id })
     row.batches = (res.items || []).filter(b => (b.available || 0) > 0)
     row.maxQty = row.batches.reduce((s, b) => s + (b.available || 0), 0)
   } catch (e) { ElMessage.error(e.response?.data?.detail || `加载材料「${row.name}」库存失败`) }
@@ -483,7 +483,7 @@ async function openClaim() {
   if (!mats.length) { ElMessage.warning('该产品暂无BOM材料，无需认领原料'); return }
   // 重新拉取最新 BOM 材料 + 已认领记录
   try {
-    const res = await request.get('/outsource/claims', { params: { sales_item_id: selectedItem.value.sales_item_id } })
+    const res = await outsourceApi.claims.list({ sales_item_id: selectedItem.value.sales_item_id })
     bomMaterials.value = res.bom_materials || []
     claims.value = res.claims || []
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载认领数据失败'); return }
@@ -524,7 +524,7 @@ async function confirmClaim() {
   if (errors.length) { ElMessage.warning(errors.join('\n')); return }
   if (!materials.length) { ElMessage.warning('请至少认领一种材料'); return }
   try {
-    const res = await request.post('/outsource/claims', {
+    const res = await outsourceApi.claims.create({
       sales_item_id: selectedItem.value.sales_item_id,
       supply_type: '己方提供',
       loss_pct: lossPct.value,
@@ -542,7 +542,7 @@ async function deleteClaimGroup(g) {
   try {
     await ElMessageBox.confirm(`确认删除「${g.material_name}」的认领记录（${fmtQty(g.total_qty)} ${g.unit || ''}）？材料将退回原料库。`, '删除认领', { type: 'warning' })
     for (const claimId of g.claim_ids) {
-      await request.delete(`/outsource/claims/${claimId}`)
+      await outsourceApi.claims.remove(claimId)
     }
     ElMessage.success('已删除，材料已退回原料库')
     await loadDetail(selectedItem.value)
@@ -599,7 +599,7 @@ async function submitTransfer() {
       loss_pct: lossPct.value,
       rows,
     }
-    const res = await request.post('/outsource/orders/from-sales-process', payload)
+    const res = await outsourceApi.orders.fromSalesProcess(payload)
     ElMessage.success(res.message || '委外订单已生成')
     // 成功后刷新详情（已生成工序变绿框只读）+ 刷新上面列表（委外状态更新）
     await loadDetail(selectedItem.value)
@@ -611,7 +611,7 @@ async function submitTransfer() {
 async function handleComplete(row) {
   try {
     await ElMessageBox.confirm(`确认完成委外？系统按人工判定：数量是否足够由你决定。完成后不能再追加委外，可随时「取消完成」。`, '完成确认', { type: 'info' })
-    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/complete`)
+    const res = await outsourceApi.salesToOutsource.complete(row.sales_item_id)
     ElMessage.success(res.message || '已标记委外完成')
     if (selectedItem.value && selectedItem.value.sales_item_id === row.sales_item_id) loadDetail(row)
     fetchData()
@@ -623,7 +623,7 @@ async function handleComplete(row) {
 async function handleUncomplete(row) {
   try {
     await ElMessageBox.confirm(`确定取消委外完成？取消后可以继续追加委外。`, '取消完成确认', { type: 'warning' })
-    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/uncomplete`)
+    const res = await outsourceApi.salesToOutsource.uncomplete(row.sales_item_id)
     ElMessage.success(res.message || '已取消委外完成')
     if (selectedItem.value && selectedItem.value.sales_item_id === row.sales_item_id) loadDetail(row)
     fetchData()
@@ -635,7 +635,7 @@ async function handleUncomplete(row) {
 async function handleReturn(row) {
   try {
     await ElMessageBox.confirm(`确定退回（撤销转外发）？退回后销售订单明细可重新变更/转委外。`, '退回确认', { type: 'warning' })
-    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/return`)
+    const res = await outsourceApi.salesToOutsource.return(row.sales_item_id)
     ElMessage.success(res.message || '已退回')
     if (selectedItem.value && selectedItem.value.sales_item_id === row.sales_item_id) {
       selectedItem.value = null

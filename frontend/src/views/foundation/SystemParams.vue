@@ -213,7 +213,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_system_param_columns'
@@ -276,8 +276,8 @@ async function loadMaterialTree() {
   loading.value = true
   try {
     const [mainRes, subRes] = await Promise.all([
-      request.get('/foundation/params/group/material_main_category').catch(() => ({ items: [] })),
-      request.get('/foundation/params/group/material_sub_category').catch(() => ({ items: [] })),
+      foundationApi.params.getGroup('material_main_category').catch(() => ({ items: [] })),
+      foundationApi.params.getGroup('material_sub_category').catch(() => ({ items: [] })),
     ])
     const mains = mainRes.items || []
     const subs = subRes.items || []
@@ -301,7 +301,7 @@ async function loadGroup() {
   if (activeGroup.value === 'process') { loadProcesses(); return }
   loading.value = true
   try {
-    const res = await request.get(`/foundation/params/group/${activeGroup.value}`)
+    const res = await foundationApi.params.getGroup(activeGroup.value)
     list.value = res.items || []
   } catch (e) { list.value = [] } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, columns, list) }) }
 }
@@ -317,7 +317,7 @@ const warehouseRules = { name: [{ required: true, message: '请输入仓库名�
 async function loadWarehouses() {
   loading.value = true
   try {
-    const res = await request.get('/foundation/warehouses', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.warehouses.list({ page: 1, page_size: 100 })
     warehouseList.value = res.items || []
   } catch (e) { warehouseList.value = [] } finally { loading.value = false }
 }
@@ -349,10 +349,10 @@ async function handleWarehouseSave() {
   saving.value = true
   try {
     if (warehouseEditId.value) {
-      await request.put(`/foundation/warehouses/${warehouseEditId.value}`, { ...warehouseForm })
+      await foundationApi.warehouses.update(warehouseEditId.value, { ...warehouseForm })
       ElMessage.success('已保存')
     } else {
-      await request.post('/foundation/warehouses', { ...warehouseForm, code: nextWarehouseCode() })
+      await foundationApi.warehouses.create({ ...warehouseForm, code: nextWarehouseCode() })
       ElMessage.success('已新增')
     }
     warehouseDialogVisible.value = false
@@ -365,7 +365,7 @@ async function handleWarehouseSave() {
 async function toggleWarehouse(row) {
   const next = row.is_active === 1 ? 0 : 1
   try {
-    await request.put(`/foundation/warehouses/${row.id}`, { is_active: next })
+    await foundationApi.warehouses.update(row.id, { is_active: next })
     row.is_active = next
     ElMessage.success(next ? '已启用' : '已停用')
   } catch (e) {
@@ -376,7 +376,7 @@ async function toggleWarehouse(row) {
 async function handleWarehouseDelete(row) {
   await ElMessageBox.confirm(`确定删除仓库「${row.name}」？<br><span style="color:#e6a23c;font-size:12px">有单据使用的仓库不能删除，只能停用。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
   try {
-    await request.delete(`/foundation/warehouses/${row.id}`)
+    await foundationApi.warehouses.remove(row.id)
     ElMessage.success('已删除')
     loadWarehouses()
   } catch (e) {
@@ -395,7 +395,7 @@ const processRules = { name: [{ required: true, message: '请输入工序名称'
 async function loadProcesses() {
   loading.value = true
   try {
-    const res = await request.get('/foundation/processes', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.processes.list({ page: 1, page_size: 100 })
     processList.value = res.items || []
   } catch (e) { processList.value = [] } finally { loading.value = false }
 }
@@ -428,10 +428,10 @@ async function handleProcessSave() {
   try {
     const payload = { ...processForm }
     if (processEditId.value) {
-      await request.put(`/foundation/processes/${processEditId.value}`, payload)
+      await foundationApi.processes.update(processEditId.value, payload)
       ElMessage.success('已保存')
     } else {
-      await request.post('/foundation/processes', { ...payload, code: nextProcessCode() })
+      await foundationApi.processes.create({ ...payload, code: nextProcessCode() })
       ElMessage.success('已新增')
     }
     processDialogVisible.value = false
@@ -444,7 +444,7 @@ async function handleProcessSave() {
 async function toggleProcess(row) {
   const next = row.is_active === 1 ? 0 : 1
   try {
-    await request.put(`/foundation/processes/${row.id}`, { is_active: next })
+    await foundationApi.processes.update(row.id, { is_active: next })
     row.is_active = next
     ElMessage.success(next ? '已启用' : '已停用')
   } catch (e) {
@@ -455,7 +455,7 @@ async function toggleProcess(row) {
 async function handleProcessDelete(row) {
   await ElMessageBox.confirm(`确定删除工序「${row.name}」？<br><span style="color:#e6a23c;font-size:12px">有产品工艺引用该工序时不能删除，只能停用。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
   try {
-    await request.delete(`/foundation/processes/${row.id}`)
+    await foundationApi.processes.remove(row.id)
     ElMessage.success('已删除')
     loadProcesses()
   } catch (e) {
@@ -464,7 +464,7 @@ async function handleProcessDelete(row) {
 }
 
 async function loadGroups() {
-  try { groups.value = await request.get('/foundation/params/groups') || [] } catch (e) { groups.value = [] }
+  try { groups.value = await foundationApi.params.groups() || [] } catch (e) { groups.value = [] }
   if (!activeGroup.value && groups.value.length) {
     activeGroup.value = groups.value[0]
     loadGroup()
@@ -472,7 +472,7 @@ async function loadGroups() {
 }
 
 async function loadMainCategories() {
-  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch (e) { mainCategoryOptions.value = [] }
+  try { mainCategoryOptions.value = await foundationApi.params.options({ group: 'material_main_category' }) || [] } catch (e) { mainCategoryOptions.value = [] }
 }
 
 async function onTabChange() {
@@ -553,10 +553,10 @@ async function handleSave() {
   saving.value = true
   try {
     if (editId.value) {
-      await request.put(`/foundation/params/${editId.value}`, { ...form })
+      await foundationApi.params.update(editId.value, { ...form })
       ElMessage.success('已保存')
     } else {
-      await request.post('/foundation/params', { ...form })
+      await foundationApi.params.create({ ...form })
       ElMessage.success('已新增')
     }
     dialogVisible.value = false
@@ -569,7 +569,7 @@ async function handleSave() {
 
 async function toggleActive(row, v) {
   try {
-    await request.put(`/foundation/params/${row.id}`, { is_active: v ? 1 : 0 })
+    await foundationApi.params.update(row.id, { is_active: v ? 1 : 0 })
     row.is_active = v ? 1 : 0
     ElMessage.success(v ? '已启用' : '已停用')
   } catch (e) { }
@@ -582,7 +582,7 @@ function toggleActiveButton(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除「${row.label || row.param_label}」？<br><span style="color:#e6a23c;font-size:12px">注意：有业务数据正在使用的参数不能删除，只能停用（停用后下拉不再出现，历史数据不受影响）。</span>`, '提示', { type: 'warning', dangerouslyUseHTMLString: true })
   try {
-    await request.delete(`/foundation/params/${row.id}/hard`)
+    await foundationApi.params.remove(row.id)
     ElMessage.success('已删除')
     loadGroup()
   } catch (e) {

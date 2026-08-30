@@ -33,10 +33,27 @@ from app.schemas.purchase import (
     AccountsPayableOut,
     PaymentCreate, PaymentOut, PaymentAllocationCreate,
 )
-from app.utils.auth import get_current_user, require_permission
+from app.utils.auth import get_current_user, require_permission, require_any_permission
 from app.utils.batch_no import generate_batch_no, generate_doc_no
 
 router = APIRouter()
+
+# ==================== 读端点授权域（BUG-L4-02 同模式：本域 + 业务引用域） ====================
+# 写端点按业务域 require_permission；读端点允许「本域 + 下游/上游业务引用域」任一权限即可读，
+# 既挡低权限角色（库管员/只读）读非授权域，又保留下游单据页引用上游主数据的业务需求。
+# ⚠ 禁含 menu:inventory*（除明确的入库/出库操作域）/ menu:production:batch / menu:dashboard。
+PURCHASE_ORDERS_READ_PERMS = (
+    "menu:purchase:orders", "menu:purchase:from-sales", "menu:purchase:requisitions",
+    "menu:purchase:receipts", "menu:purchase:invoices", "menu:purchase:ap",
+    "menu:purchase:payments", "menu:production:orders",
+)
+PURCHASE_REQUISITIONS_READ_PERMS = ("menu:purchase:requisitions", "menu:purchase:orders", "menu:production:orders")
+SALES_TO_PURCHASE_READ_PERMS = ("menu:purchase:from-sales", "menu:purchase:orders", "menu:sales:orders")
+PURCHASE_RECEIPTS_READ_PERMS = ("menu:purchase:receipts", "menu:purchase:orders",
+                                "menu:inventory:material-ins", "menu:inventory:stock-ins")
+PURCHASE_INVOICES_READ_PERMS = ("menu:purchase:invoices", "menu:purchase:ap", "menu:purchase:orders", "menu:tax")
+PURCHASE_PAYMENTS_READ_PERMS = ("menu:purchase:payments", "menu:purchase:ap")
+PURCHASE_AP_READ_PERMS = ("menu:purchase:ap", "menu:purchase:payments", "menu:purchase:invoices")
 
 
 # ==================== 采购需求（生产推式 → 采购转单） ====================
@@ -46,7 +63,7 @@ def list_requisitions(
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
     status: str = Query("", description="状态筛选: 待处理/已转单/已关闭"),
     keyword: str = Query("", description="需求单号/产品搜索"),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PURCHASE_REQUISITIONS_READ_PERMS)),
 ):
     query = db.query(PurchaseRequisition)
     if status:
@@ -76,7 +93,7 @@ def list_requisitions(
 
 
 @router.get("/requisitions/{req_id}", tags=["采购管理"])
-def get_requisition(req_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_requisition(req_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PURCHASE_REQUISITIONS_READ_PERMS))):
     r = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
     if not r:
         raise HTTPException(404, "采购需求不存在")
@@ -97,7 +114,7 @@ def get_requisition(req_id: int, db: Session = Depends(get_db), current_user: Us
 
 
 @router.post("/requisitions/{req_id}/close", tags=["采购管理"])
-def close_requisition(req_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def close_requisition(req_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:requisitions"))):
     """关闭采购需求（仅待处理）→ 生产订单回到待采购，可重新推"""
     r = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
     if not r:
@@ -117,7 +134,7 @@ def close_requisition(req_id: int, db: Session = Depends(get_db), current_user: 
 
 
 @router.post("/requisitions/{req_id}/to-purchase", tags=["采购管理"])
-def requisition_to_purchase(req_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def requisition_to_purchase(req_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:requisitions", "menu:purchase:orders"))):
     """采购需求 → 生成采购订单（采购人员维护供应商/单价/税率，数量可改）"""
     r = db.query(PurchaseRequisition).filter(PurchaseRequisition.id == req_id).first()
     if not r:
@@ -197,7 +214,7 @@ def list_orders(
     date_from: str = Query(""), date_to: str = Query(""),
     amount_min: float = Query(None), amount_max: float = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*PURCHASE_ORDERS_READ_PERMS)),
 ):
     """采购订单列表"""
     query = db.query(PurchaseOrder)
@@ -294,7 +311,7 @@ def list_orders(
 
 
 @router.get("/orders/{order_id}", tags=["采购管理"])
-def get_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PURCHASE_ORDERS_READ_PERMS))):
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
@@ -334,7 +351,7 @@ def get_order(order_id: int, db: Session = Depends(get_db), current_user: User =
 
 
 @router.delete("/orders/{order_id}", tags=["采购管理"])
-def delete_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:orders"))):
     """删除采购订单（仅待审核状态允许，且无下游待入库单/入库单/发票）"""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
@@ -409,7 +426,7 @@ def delete_order(order_id: int, db: Session = Depends(get_db), current_user: Use
 
 
 @router.put("/orders/{order_id}", tags=["采购管理"])
-def update_order(order_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_order(order_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:orders"))):
     """修改采购订单（仅待审核状态允许）"""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
     if not order:
@@ -466,7 +483,7 @@ def update_order(order_id: int, data: dict, db: Session = Depends(get_db), curre
 def create_order(
     data: PurchaseOrderCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission("menu:purchase:orders", "menu:purchase:from-sales")),
 ):
     """创建采购订单"""
     from app.utils.batch_no import generate_doc_no
@@ -594,7 +611,7 @@ def _so_purchase_status(db: Session, order):
 def list_sales_to_purchase(
     page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
     keyword: str = Query(""), date_from: str = Query(""), date_to: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*SALES_TO_PURCHASE_READ_PERMS)),
 ):
     """销售订单转采购：已「转入库」的销售明细行列表（按行显示产品+批次号）+ 采购状态"""
     from app.models.sales import SalesOrder, SalesOrderItem
@@ -662,7 +679,7 @@ def list_sales_to_purchase(
 
 
 @router.post("/sales-to-purchase/{item_id}/return", tags=["采购管理"])
-def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:from-sales", "menu:purchase:orders"))):
     """退回销售明细行关联的采购订单（销售订单明细变更前必须先退采购单）
     待审核的直接删除；已审核的先取消审核再删除；有入库/发票的下游则拒绝"""
     from app.models.sales import SalesOrderItem
@@ -686,7 +703,7 @@ def return_sales_to_purchase(item_id: int, db: Session = Depends(get_db), curren
 
 
 @router.post("/sales-to-purchase/{item_id}/complete", tags=["采购管理"])
-def complete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def complete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:from-sales", "menu:purchase:orders"))):
     """人工确认采购完成（业务员判断数量足够）"""
     from app.models.sales import SalesOrderItem
     si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
@@ -698,7 +715,7 @@ def complete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), curr
 
 
 @router.post("/sales-to-purchase/{item_id}/uncomplete", tags=["采购管理"])
-def uncomplete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def uncomplete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:from-sales", "menu:purchase:orders"))):
     """取消采购完成（业务员改主意，可继续追加采购）"""
     from app.models.sales import SalesOrderItem
     si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
@@ -710,7 +727,7 @@ def uncomplete_sales_to_purchase(item_id: int, db: Session = Depends(get_db), cu
 
 
 @router.get("/sales-to-purchase/{item_id}", tags=["采购管理"])
-def get_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*SALES_TO_PURCHASE_READ_PERMS))):
     """销售明细行采购需求：按 BOM 展开成物料清单（无 BOM 则直接采购产品本身）"""
     from app.models.sales import SalesOrderItem
     from app.models.foundation import BomItem
@@ -761,7 +778,7 @@ def get_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_u
 
 
 @router.post("/orders/from-sales", tags=["采购管理"])
-def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:from-sales", "menu:purchase:orders"))):
     """销售订单转采购：按供应商自动拆单，一次生成多张采购订单
     data: { sales_order_id: int, rows: [{sales_item_id, material_id?, product_id?, supplier_id, quantity, unit_price, tax_rate}] }
     """
@@ -872,7 +889,7 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
 
 @router.post("/orders/{order_id}/items/{item_id}/to-stock-in", tags=["采购管理"])
 def to_stock_in(order_id: int, item_id: int, data: dict,
-                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:orders", "menu:inventory:stock-ins", "menu:inventory:material-ins"))):
     """采购明细「转成品库入库」— 生成/关联待入库单（成品入库模块收货）
 
     data: { stock_in_order_id: int | 0 }
@@ -937,7 +954,7 @@ def to_stock_in(order_id: int, item_id: int, data: dict,
 
 @router.post("/orders/{order_id}/items/{item_id}/to-material", tags=["采购管理"])
 def to_material(order_id: int, item_id: int,
-                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:orders", "menu:inventory:stock-ins", "menu:inventory:material-ins"))):
     """采购明细「转原料库入库」— 生成待入库单（原料入库模块收货）"""
     from app.models.inventory import StockInOrder
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id).first()
@@ -1010,7 +1027,7 @@ def unapprove_order(order_id: int, db: Session = Depends(get_db),
 def create_receipt(
     data: PurchaseReceiptCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission("menu:purchase:receipts", "menu:inventory:material-ins", "menu:inventory:stock-ins")),
 ):
     """采购入库 — 自动生成批次号并更新库存"""
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == data.order_id).first()
@@ -1069,6 +1086,11 @@ def create_receipt(
             order_item = order_items_by_product.get(item_data.product_id)
 
         is_product = bool(order_item and order_item.product_id)
+        # 双轨防重复：明细已转待入库单（receive_type=成品库/原料库）后，禁止再走采购入库页，
+        # 否则同一明细会被两套入库通道重复入库（库存/已收数量翻倍）
+        if order_item and order_item.receive_type:
+            raise HTTPException(
+                400, f"该明细已转「{order_item.receive_type}」，请到对应入库页收货（成品入库/原料入库）")
         # 成本 = 订单明细单价(本币) 或 明细项单价
         inv_unit_cost = 0
         if order_item:
@@ -1186,7 +1208,7 @@ def list_receipts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*PURCHASE_RECEIPTS_READ_PERMS)),
 ):
     """入库单列表"""
     items = db.query(PurchaseReceipt).order_by(PurchaseReceipt.id.desc()).offset(
@@ -1213,7 +1235,7 @@ def list_receipts(
 
 
 @router.get("/receipts/{receipt_id}", tags=["采购管理"])
-def get_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PURCHASE_RECEIPTS_READ_PERMS))):
     """入库单详情"""
     r = db.query(PurchaseReceipt).filter(PurchaseReceipt.id == receipt_id).first()
     if not r:
@@ -1247,7 +1269,7 @@ def get_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: Us
 
 
 @router.delete("/receipts/{receipt_id}", tags=["采购管理"])
-def delete_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_receipt(receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:receipts", "menu:inventory:material-ins", "menu:inventory:stock-ins"))):
     """取消入库 — 仅限批次未发生任何下游出入库；回滚库存、订单状态并补冲销流水"""
     receipt = db.query(PurchaseReceipt).filter(PurchaseReceipt.id == receipt_id).first()
     if not receipt:
@@ -1255,19 +1277,35 @@ def delete_receipt(receipt_id: int, db: Session = Depends(get_db), current_user:
     if receipt.is_red:
         raise HTTPException(400, "红冲单不能取消，请直接删除红冲记录")
 
-    # 检查下游发票
-    invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == receipt.order_id).count()
-    if invoices > 0:
-        raise HTTPException(400, "该订单已有关联发票，无法取消入库")
+    # 检查下游发票（无条件拦截：已开票的订单不能物理取消入库，防止发票-库存账实脱节）
+    has_invoice = db.query(PurchaseInvoice).filter(
+        PurchaseInvoice.order_id == receipt.order_id).count() > 0
+    if has_invoice:
+        raise HTTPException(400, "该订单已有关联发票，无法取消入库；请走采购退货或红字发票")
 
-    # 校验：批次若已被消耗（发料/发货/盘点/退货等），禁止物理取消 → 应走红冲
+    # 校验：批次若已被消耗（发料/发货/盘点/退货等），禁止物理取消 → 按场景引导正确撤销路径
+    consumed = []
     for item in receipt.items:
         other_txn = db.query(StockTransaction).filter(
             StockTransaction.batch_no == item.batch_no,
             ~StockTransaction.trans_type.in_(["purchase_in", "purchase_return_out"]),
         ).first()
         if other_txn:
-            raise HTTPException(400, f"批次 {item.batch_no} 已发生其他出入库，无法取消；请使用红冲")
+            consumed.append((item.batch_no, item.quantity))
+
+    if consumed:
+        # 批次已被全部领用时红冲无剩余库存可冲 → 引导反退发料
+        exhausted = []
+        for batch_no, _orig_qty in consumed:
+            inv = db.query(WarehouseInventory).filter(
+                WarehouseInventory.batch_no == batch_no,
+            ).first()
+            remaining = float(inv.quantity) if inv else 0.0
+            if remaining <= 0.001:
+                exhausted.append(batch_no)
+        if exhausted:
+            raise HTTPException(400, f"批次 {exhausted[0]} 已被全部领用，红冲无剩余库存可冲；请反退对应发料单（工序退料/委外退料）")
+        raise HTTPException(400, f"批次 {consumed[0][0]} 已发生其他出入库，无法取消；请使用红冲")
 
     order = db.query(PurchaseOrder).filter(PurchaseOrder.id == receipt.order_id).first()
 
@@ -1342,7 +1380,7 @@ def delete_receipt(receipt_id: int, db: Session = Depends(get_db), current_user:
 @router.post("/receipts/{receipt_id}/red", tags=["采购管理"])
 def red_receipt(
     receipt_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:purchase:receipts", "menu:inventory:material-ins", "menu:inventory:stock-ins")),
 ):
     """红冲入库单 — 允许批次已被消耗的场景，生成负向红冲单+冲销流水，保留审计轨迹
 
@@ -1359,7 +1397,7 @@ def red_receipt(
     # 检查下游发票
     invoices = db.query(PurchaseInvoice).filter(PurchaseInvoice.order_id == receipt.order_id).count()
     if invoices > 0:
-        raise HTTPException(400, "该订单已有关联发票，无法红冲")
+        raise HTTPException(400, "该订单已有关联发票，无法红冲入库；请走采购退货或红字发票")
 
     # 已红冲数量（支持多次红冲）
     red_receipts = db.query(PurchaseReceipt).filter(
@@ -1493,7 +1531,7 @@ def red_receipt(
         db.flush()
 
     if red_total_qty <= 0:
-        raise HTTPException(400, "没有可红冲的数量（可能已全部红冲）")
+        raise HTTPException(400, "没有可红冲的数量：批次已被全部领用或已全部红冲；若为领料消耗请先反退发料单（工序退料/委外退料）")
 
     red.total_qty = red_total_qty
 
@@ -1537,7 +1575,7 @@ def red_receipt(
 def create_invoice(
     data: PurchaseInvoiceCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:purchase:invoices")),
 ):
     """创建采购发票并生成应付"""
     order_id = data.order_id if hasattr(data, 'order_id') else getattr(data, 'purchase_order_id', None) or getattr(data, 'order_id', None)
@@ -1617,7 +1655,8 @@ def create_invoice(
 # ==================== 采购发票列表 ====================
 
 @router.get("/invoice-statuses", tags=["采购管理"])
-def list_invoice_statuses(db: Session = Depends(get_db)):
+def list_invoice_statuses(db: Session = Depends(get_db),
+                          current_user: User = Depends(require_any_permission(*PURCHASE_INVOICES_READ_PERMS))):
     rows = db.query(PurchaseInvoice.status).distinct().all()
     return [r[0] for r in rows if r[0]]
 
@@ -1626,7 +1665,7 @@ def list_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*PURCHASE_INVOICES_READ_PERMS)),
 ):
     query = db.query(PurchaseInvoice)
     total = query.count()
@@ -1650,7 +1689,7 @@ def list_invoices(
 
 
 @router.put("/invoices/{invoice_id}", tags=["采购管理"])
-def update_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:invoices"))):
     """修改采购发票"""
     inv = db.query(PurchaseInvoice).filter(PurchaseInvoice.id == invoice_id).first()
     if not inv:
@@ -1673,7 +1712,7 @@ def update_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.delete("/invoices/{invoice_id}", tags=["采购管理"])
-def delete_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:invoices"))):
     """删除采购发票"""
     inv = db.query(PurchaseInvoice).filter(PurchaseInvoice.id == invoice_id).first()
     if not inv:
@@ -1709,7 +1748,7 @@ def delete_invoice(invoice_id: int, db: Session = Depends(get_db), current_user:
 def create_payment(
     data: PaymentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:purchase:payments")),
 ):
     """付款并核销应付"""
     from app.utils.batch_no import generate_doc_no
@@ -1758,7 +1797,7 @@ def create_payment(
 def list_payments(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PURCHASE_PAYMENTS_READ_PERMS)),
 ):
     query = db.query(Payment)
     if keyword:
@@ -1782,13 +1821,16 @@ def list_payments(
             "remark": p.remark or "",
             "operator": p.operator or "",
             "allocated_amount": sum(a.allocated_amount or 0 for a in allocs),
+            "reviewed": getattr(p, "reviewed", 0) or 0,
+            "reviewed_by": getattr(p, "reviewed_by", "") or "",
+            "reviewed_at": str(p.reviewed_at)[:19] if getattr(p, "reviewed_at", None) else "",
             "created_at": str(p.created_at) if p.created_at else "",
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 
 @router.get("/payments/{payment_id}", tags=["采购管理"])
-def get_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PURCHASE_PAYMENTS_READ_PERMS))):
     p = db.query(Payment).filter(Payment.id == payment_id).first()
     if not p:
         raise HTTPException(404, "付款单不存在")
@@ -1805,6 +1847,9 @@ def get_payment(payment_id: int, db: Session = Depends(get_db), current_user: Us
         "currency_id": p.currency_id, "exchange_rate": p.exchange_rate,
         "payment_method": p.payment_method, "remark": p.remark or "",
         "operator": p.operator or "",
+        "reviewed": getattr(p, "reviewed", 0) or 0,
+        "reviewed_by": getattr(p, "reviewed_by", "") or "",
+        "reviewed_at": str(p.reviewed_at)[:19] if getattr(p, "reviewed_at", None) else "",
         "created_at": str(p.created_at) if p.created_at else "",
         "allocations": [{
             "id": a.id, "ap_account_id": a.ap_account_id,
@@ -1815,10 +1860,12 @@ def get_payment(payment_id: int, db: Session = Depends(get_db), current_user: Us
 
 
 @router.put("/payments/{payment_id}", tags=["采购管理"])
-def update_payment(payment_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_payment(payment_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:payments"))):
     p = db.query(Payment).filter(Payment.id == payment_id).first()
     if not p:
         raise HTTPException(404, "付款单不存在")
+    if getattr(p, "reviewed", 0):
+        raise HTTPException(400, "该付款单已审核（财务确认，业务锁定），不能修改；请先取消审核")
     for field in ["payment_method", "remark", "payment_date"]:
         if field in data:
             val = data[field]
@@ -1830,10 +1877,12 @@ def update_payment(payment_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.delete("/payments/{payment_id}", tags=["采购管理"])
-def delete_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:payments"))):
     p = db.query(Payment).filter(Payment.id == payment_id).first()
     if not p:
         raise HTTPException(404, "付款单不存在")
+    if getattr(p, "reviewed", 0):
+        raise HTTPException(400, "该付款单已审核（财务确认，业务锁定），不能删除；请先取消审核")
     allocs = db.query(PaymentAllocation).filter(PaymentAllocation.payment_id == p.id).all()
     for alloc in allocs:
         ap = db.query(AccountsPayable).filter(AccountsPayable.id == alloc.ap_account_id).first()
@@ -1848,6 +1897,36 @@ def delete_payment(payment_id: int, db: Session = Depends(get_db), current_user:
     return {"message": "付款单已删除，应付已回滚"}
 
 
+@router.post("/payments/{payment_id}/review", tags=["采购管理"])
+def review_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:payments"))):
+    """付款单审核 — 财务确认标记，审核后业务全部锁定（改/删禁止）"""
+    p = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(404, "付款单不存在")
+    if getattr(p, "reviewed", 0):
+        raise HTTPException(400, "该付款单已审核")
+    p.reviewed = 1
+    p.reviewed_by = current_user.display_name or current_user.username
+    p.reviewed_at = datetime.now()
+    db.commit()
+    return {"message": f"付款单已审核（{p.reviewed_by}，财务确认，业务锁定）"}
+
+
+@router.post("/payments/{payment_id}/unreview", tags=["采购管理"])
+def unreview_payment(payment_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:purchase:payments"))):
+    """取消付款单审核 — 解除业务锁定"""
+    p = db.query(Payment).filter(Payment.id == payment_id).first()
+    if not p:
+        raise HTTPException(404, "付款单不存在")
+    if not getattr(p, "reviewed", 0):
+        raise HTTPException(400, "该付款单未审核")
+    p.reviewed = 0
+    p.reviewed_by = None
+    p.reviewed_at = None
+    db.commit()
+    return {"message": "已取消审核，业务解锁"}
+
+
 # ==================== 应付账款 ====================
 
 @router.get("/ap", tags=["采购管理"])
@@ -1856,7 +1935,7 @@ def list_ap(
     page_size: int = Query(20, ge=1, le=100),
     status: str = Query("", description="状态筛选"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*PURCHASE_AP_READ_PERMS)),
 ):
     """应付账款列表"""
     query = db.query(AccountsPayable)
@@ -1879,6 +1958,7 @@ def list_ap(
         result.append({
             "id": ap.id, "ap_no": ap.ap_no or "",
             "source_type": ap.source_type,
+            "source_id": ap.source_id,
             "supplier_id": ap.supplier_id,
             "supplier_name": supplier.name if supplier else "",
             "amount": ap.amount, "paid_amount": ap.paid_amount,
@@ -1891,7 +1971,8 @@ def list_ap(
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 @router.get("/ap/payment-detail", tags=["采购管理"])
-def list_ap_payment_detail(db: Session = Depends(get_db)):
+def list_ap_payment_detail(db: Session = Depends(get_db),
+                           current_user: User = Depends(require_any_permission(*PURCHASE_AP_READ_PERMS))):
     from app.models.purchase import Payment, PaymentAllocation
     rows = db.query(AccountsPayable, Payment, PaymentAllocation).outerjoin(
         PaymentAllocation, PaymentAllocation.ap_account_id == AccountsPayable.id

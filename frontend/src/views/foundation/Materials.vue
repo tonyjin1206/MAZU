@@ -165,8 +165,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 下拉选项（来自参数设置）
 const tableRef = ref(null)
@@ -182,9 +181,9 @@ const subCategoryOptions = computed(() => {
 })
 function onMainCategoryChange() { form.category_sub = '' }
 async function loadParamOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch (e) { unitOptions.value = [] }
-  try { mainCategoryOptions.value = await request.get('/foundation/params/options', { params: { group: 'material_main_category' } }) || [] } catch (e) { mainCategoryOptions.value = [] }
-  try { subCategoryOptionsRaw.value = await request.get('/foundation/params/options', { params: { group: 'material_sub_category' } }) || [] } catch (e) { subCategoryOptionsRaw.value = [] }
+  try { unitOptions.value = await foundationApi.params.options({ group: 'unit' }) || [] } catch (e) { unitOptions.value = [] }
+  try { mainCategoryOptions.value = await foundationApi.params.options({ group: 'material_main_category' }) || [] } catch (e) { mainCategoryOptions.value = [] }
+  try { subCategoryOptionsRaw.value = await foundationApi.params.options({ group: 'material_sub_category' }) || [] } catch (e) { subCategoryOptionsRaw.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====

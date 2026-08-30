@@ -128,8 +128,7 @@
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 const productKeyword = ref('')
 const selectedProductId = ref(null)
@@ -210,7 +209,7 @@ async function fetchProcessTemplates() {
   if (!processList.value.length) await fetchProcesses()
   processLoading.value = true
   try {
-    const res = await request.get(`/foundation/products/${selectedProductId.value}/processes`)
+    const res = await foundationApi.products.processTemplates.list(selectedProductId.value)
     const items = Array.isArray(res) ? res : (res.items || res.data || [])
     processData.value = items.map(row => {
       const p = findProcess(row.process_id)
@@ -235,7 +234,7 @@ async function fetchProcesses() {
 
 async function fetchSupplierList() {
   try {
-    const res = await request.get('/foundation/suppliers-select')
+    const res = await foundationApi.suppliers.select()
     supplierList.value = Array.isArray(res) ? res : []
   } catch (e) {}
 }
@@ -302,7 +301,7 @@ async function saveProcessTemplates() {
       default_unit_price: row.default_unit_price || 0,
       default_supplier_id: row.default_supplier_id ?? null,
     }))
-    await request.put(`/foundation/products/${selectedProductId.value}/processes`, payload)
+    await foundationApi.products.processTemplates.save(selectedProductId.value, payload)
     ElMessage.success('保存成功')
     await fetchProcessTemplates()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { processLoading.value = false }

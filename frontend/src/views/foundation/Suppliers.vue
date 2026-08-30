@@ -212,22 +212,21 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 国家列表（来自参数设置「国家」组，可在参数设置里自行增删）
 const tableRef = ref(null)
 const countryList = ref([])
 async function loadCountries() {
   try {
-    const opts = await request.get('/foundation/params/options', { params: { group: 'country' } }) || []
+    const opts = await foundationApi.params.options({ group: 'country' }) || []
     countryList.value = opts.map(o => o.label)
   } catch (e) { countryList.value = [] }
 }
 // 供应商类型选项（来自参数设置）
 const supplierTypeOptions = ref([])
 async function loadSupplierTypes() {
-  try { supplierTypeOptions.value = await request.get('/foundation/params/options', { params: { group: 'supplier_type' } }) || [] } catch (e) { supplierTypeOptions.value = [] }
+  try { supplierTypeOptions.value = await foundationApi.params.options({ group: 'supplier_type' }) || [] } catch (e) { supplierTypeOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序，localStorage 记住个人偏好）=====

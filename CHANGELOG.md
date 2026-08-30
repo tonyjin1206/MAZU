@@ -1,5 +1,32 @@
 # Changelog
 
+## 未发布（2026-08-30 持续迭代）
+
+> 长流程迭代：代码审计 + bug 修复 + AO 分支功能吸收（详见 docs/known-issues.md #18-#30）。
+
+### 安全
+- **BUG-L4-01/02 扩展修复**：purchase/production/outsource/stock_in/tax_refund 模块写端点统一补 `require_permission`/`require_any_permission`（60+ 端点），读端点按「本域+业务引用域」授权；新增 `test_rbac_l4_extended.py` 8 用例（越权 403 + 合法角色 200）
+
+### 功能（AO 分支吸收）
+- **AI 执行器修复**：建单单号不撞号、发料扣库存+流水、完工入库建库存+流水（对齐人工业务）
+- **采购红冲/取消按场景引导**提示（发票→退货、批次全消耗→反退发料、部分消耗→红冲）
+- **收款/付款单审核锁定**（reviewed 字段 + review/unreview 端点 + 前端按钮）
+- **报关单明细化**：so_customs_item 商品行（一票多商品多 HS）、申报行双端匹配（报关商品行+进项发票）、customs-for-refund 商品行粒度、迁移脚本
+- **launcher.py init-db 命令**（重置+录入演示数据）
+
+### Bug 修复
+- 驾驶舱毛利：两段式发货漏算 + 退货不冲减
+- 待入库退回 FIFO 扣减（原只扣首条可致负库存）
+- 多次部分认领累计状态更新
+- 仓库类型两套取值致自动匹配 400
+- `GET /exchange-rates/latest` 路由抢占 422
+- AI 发票录入不生成应付/应收/进项发票
+- `list_sales_orders` N+1 优化变量名错误（订单有发票时 500）
+- Pydantic class Config → ConfigDict、StockCheck 旧表清理、前端散写 request 28 页面迁移
+
+### 验证
+- 后端 **285 passed** / E2E **59 passed** / 前端 build 通过
+
 ## v2.8.0 (2026-08-29)
 
 > 本版本为 **销售订单三路分流（三分支）+ 生产模块去委外化** 大版本重构。生产订单（`mo_production`）= 纯自产，委外业务从生产模块剥离、统一归口转外发（`outsource`）路线。（V1 后端 / V2 前端 / V3 权限+AI+预警 / V4 迁移+测试 分步落地）

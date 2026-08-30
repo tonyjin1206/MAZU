@@ -93,14 +93,23 @@ class TestEventReminders:
             db.close()
 
     def test_dedup_window(self, client, auth_headers, foundation):
-        """同一单据同提醒点 1 小时内不重复推 → 审批不重复生成 SO_APPROVED"""
-        _ensure_role_user("sales_manager", "rm_sales")
+        """同一单据同提醒点 1 小时内不重复推 → 审批不重复生成 SO_APPROVED
+
+        去重语义 = 每个收件人同单据同提醒点窗口内仅 1 条（按角色广播，角色可有多个用户）。
+        """
+        sales = _ensure_role_user("sales_manager", "rm_sales")
         oid, _ = _create_approved_order(client, auth_headers, foundation)
         db = SessionLocal()
         try:
-            count = db.query(Notification).filter(
-                Notification.point_code == "SO_APPROVED", Notification.doc_id == oid).count()
-            assert count == 1, f"SO_APPROVED 应只 1 条（去重），实际 {count}"
+            rows = db.query(Notification).filter(
+                Notification.point_code == "SO_APPROVED", Notification.doc_id == oid).all()
+            assert rows, "SO_APPROVED 未生成通知"
+            per_user = {}
+            for r in rows:
+                per_user[r.user_id] = per_user.get(r.user_id, 0) + 1
+            # 每个收件人（含销售经理）同单据同提醒点只能有 1 条
+            assert all(v == 1 for v in per_user.values()), f"SO_APPROVED 应按收件人去重，实际 {per_user}"
+            assert per_user.get(sales) == 1, f"销售经理应收到 1 条 SO_APPROVED，实际 {per_user.get(sales)}"
         finally:
             db.close()
 

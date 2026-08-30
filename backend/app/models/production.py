@@ -23,7 +23,9 @@ class ProductionOrder(Base):
     due_date = Column(Date, comment="计划完成日")
     status = Column(String(16), default="待确认", comment="状态: 待确认/待排产/已排产/生产中/已完成/部分入库/已入库/待采购/采购中/已关闭")
     production_type = Column(String(16), comment="备货方式: 自产/外购")
-    requisition_id = Column(Integer, ForeignKey("po_requisition.id"), comment="外购时关联的采购需求")
+    # 普通 Integer（不建 FK）：与 po_requisition.production_order_id 互为引用会形成表级循环，
+    # 导致 SQLAlchemy sorted_tables 无法排序（启动/测试告警）；业务上仅为 ID 关联，无 relationship 依赖
+    requisition_id = Column(Integer, comment="外购时关联的采购需求")
     total_material_cost = Column(Float, default=0, comment="物料成本合计(全部发出)")
     total_process_cost = Column(Float, default=0, comment="加工费合计(全部完工)")
     received_qty = Column(Float, default=0, comment="已入库数量")

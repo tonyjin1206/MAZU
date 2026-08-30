@@ -21,6 +21,11 @@ from app.utils.ai_chat import (
     _execute_query_pending_approvals,
     _execute_approve_order,
     _execute_query_manual,
+    _execute_create_order,
+    _execute_issue_materials,
+    _execute_production_receipt,
+    _execute_create_purchase_invoice,
+    _execute_create_sales_invoice,
     _log_operation,
 )
 
@@ -34,13 +39,13 @@ def base_data(client, admin_token):
     """最小基础数据：货币/仓库/供应商/客户/物料/产品"""
     h = {"Authorization": f"Bearer {admin_token}"}
     cny = client.post(f"{BASE}/foundation/currencies", json={
-        "code": "CNY-BOT", "name": "人民币-BOT", "symbol": "¥", "is_base": 1}, headers=h).json()["id"]
+        "code": "BOTC", "name": "人民币-BOT", "symbol": "¥", "is_base": 1}, headers=h).json()["id"]
     wh = client.post(f"{BASE}/foundation/warehouses", json={
         "code": "WH-BOT", "name": "主仓-BOT", "wh_type": "原料仓",
         "address": "浙江省绍兴市柯桥区", "manager": "BOT测试员"}, headers=h).json()["id"]
     sup = client.post(f"{BASE}/foundation/suppliers", json={
         "name": "BOT测试供应商", "contact_person": "王", "phone": "13800000000",
-        "tax_id": "91330100BOT", "address": "杭州", "supplier_type": "供应商"}, headers=h).json()["id"]
+        "tax_id": "91330100BOT", "address": "杭州", "supplier_type": "原材料"}, headers=h).json()["id"]
     cust = client.post(f"{BASE}/foundation/customers", json={
         "name_cn": "BOT测试客户", "country": "中国", "contact_person": "李",
         "phone": "13900000000", "tax_id": "91330000BOT", "address": "上海"}, headers=h).json()["id"]
@@ -208,6 +213,149 @@ class TestExecutors:
         # 明细行生产状态初始化为「未生产」
         for item in so.items:
             assert item.production_status in (None, "", "未生产")
+
+    def test_ai_create_order_no_collision(self, db, users, base_data, client, admin_token):
+        """AI 建单单号必须与业务表序列一致（不查错表导致撞号 500）"""
+        # 先人工建一张 PO（占用当天序号），AI 再建必须得到不同单号
+        manual_no = _mk_po(client, admin_token, base_data, remark="BOT撞号")
+        from app.models.purchase import PurchaseOrder
+        from app.models.sales import SalesOrder
+        r = _execute_create_order({
+            "order_type": "purchase_order", "supplier_name": "BOT测试供应商",
+            "items": [{"material_name": "BOT测试材料", "quantity": 3, "unit_price": 8}],
+        }, db, _user(db, "admin"))
+        assert "✅ 采购订单" in r, f"AI 建 PO 失败: {r}"
+        ai_no = r.split(" ")[2]
+        assert ai_no != manual_no, f"AI 单号与人工单号撞号: {ai_no} == {manual_no}"
+        assert db.query(PurchaseOrder).filter(PurchaseOrder.order_no == ai_no).first(), "AI 单号未落库"
+
+    def test_ai_create_sales_order_no_collision(self, db, users, base_data, client, admin_token):
+        """AI 建销售订单单号不撞号"""
+        manual_no = _mk_so(client, admin_token, base_data)
+        from app.models.sales import SalesOrder
+        r = _execute_create_order({
+            "order_type": "sales_order", "customer_name": "BOT测试客户",
+            "items": [{"product_name": "BOT测试产品", "quantity": 2, "unit_price": 30}],
+        }, db, _user(db, "admin"))
+        assert "✅ 销售订单" in r, f"AI 建 SO 失败: {r}"
+        ai_no = r.split(" ")[2]
+        assert ai_no != manual_no, f"AI 单号与人工单号撞号: {ai_no} == {manual_no}"
+
+    def test_ai_issue_materials_deducts_stock(self, db, users, base_data, client, admin_token):
+        """AI 发料必须扣库存 + 写流水 + 更新工序状态（此前只插记录库存不变）"""
+        from app.models.inventory import WarehouseInventory, StockTransaction
+        from app.models.production import ProductionOrder, ProductionProcess
+        from app.models.foundation import Process
+        # 建生产订单（含待发料工序）+ 物料库存
+        h = {"Authorization": f"Bearer {admin_token}"}
+        so = _mk_so(client, admin_token, base_data)
+        so_id = client.get(f"{BASE}/sales/orders?keyword={so}", headers=h).json()["items"][0]["id"]
+        # 转生产（自产）生成 MO
+        so_detail = client.get(f"{BASE}/sales/orders/{so_id}", headers=h).json()
+        item_id = so_detail["items"][0]["id"]
+        client.post(f"{BASE}/sales/orders/{so_id}/approve", json={}, headers=h)
+        r = client.post(f"{BASE}/sales/orders/{so_id}/items/{item_id}/re-produce", json={}, headers=h)
+        assert r.status_code == 200, f"转生产失败: {r.text[:200]}"
+        mo = db.query(ProductionOrder).filter(ProductionOrder.sales_order_item_id == item_id).first()
+        # 确认自产 + 展开 BOM + 派产
+        client.post(f"{BASE}/production/productions/{mo.id}/set-type", json={"production_type": "自产"}, headers=h)
+        client.post(f"{BASE}/production/productions/{mo.id}/expand-bom", headers=h)
+        client.post(f"{BASE}/production/productions/{mo.id}/release", headers=h)
+        # 物料库存
+        db.add(WarehouseInventory(warehouse_id=base_data["wh"], material_id=base_data["mat"],
+                                  batch_no="B-BOT-MI", quantity=100, unit_cost=10,
+                                  total_cost=1000, in_date=date(2026, 1, 1)))
+        db.commit()
+        r = _execute_issue_materials({
+            "production_order_no": mo.order_no, "material_name": "BOT测试材料", "quantity": 20,
+        }, db, _user(db, "admin"))
+        assert "✅ 已发料" in r, f"AI 发料失败: {r}"
+        inv = db.query(WarehouseInventory).filter(WarehouseInventory.batch_no == "B-BOT-MI").first()
+        assert inv.quantity == 80, f"库存应扣至 80，实际 {inv.quantity}"
+        txn = db.query(StockTransaction).filter(
+            StockTransaction.trans_type == "material_issue_out",
+            StockTransaction.batch_no == "B-BOT-MI").first()
+        assert txn and txn.quantity == -20, "AI 发料未写库存流水"
+
+    def test_ai_production_receipt_creates_stock(self, db, users, base_data, client, admin_token):
+        """AI 完工入库必须建库存 + 写流水 + 更新生产单状态（此前只插记录库存不变）"""
+        from app.models.inventory import WarehouseInventory, StockTransaction
+        from app.models.production import ProductionOrder
+        h = {"Authorization": f"Bearer {admin_token}"}
+        # AI 入库需要成品仓（base_data 只建了原料仓）
+        r_wh = client.post(f"{BASE}/foundation/warehouses", json={
+            "code": "WH-BOT-FG", "name": "成品仓-BOT", "wh_type": "成品仓",
+            "address": "浙江省绍兴市柯桥区", "manager": "BOT测试员",
+        }, headers=h)
+        assert r_wh.status_code < 400, r_wh.text[:150]
+        so = _mk_so(client, admin_token, base_data)
+        so_id = client.get(f"{BASE}/sales/orders?keyword={so}", headers=h).json()["items"][0]["id"]
+        so_detail = client.get(f"{BASE}/sales/orders/{so_id}", headers=h).json()
+        item_id = so_detail["items"][0]["id"]
+        client.post(f"{BASE}/sales/orders/{so_id}/approve", json={}, headers=h)
+        client.post(f"{BASE}/sales/orders/{so_id}/items/{item_id}/re-produce", json={}, headers=h)
+        mo = db.query(ProductionOrder).filter(ProductionOrder.sales_order_item_id == item_id).first()
+        r = _execute_production_receipt({
+            "production_order_no": mo.order_no, "quantity": mo.quantity,
+        }, db, _user(db, "admin"))
+        assert "✅ 入库单" in r, f"AI 入库失败: {r}"
+        inv = db.query(WarehouseInventory).filter(
+            WarehouseInventory.product_id == base_data["prod"]).first()
+        assert inv and inv.quantity == mo.quantity, f"AI 入库未建库存: {inv}"
+        txn = db.query(StockTransaction).filter(
+            StockTransaction.trans_type == "production_in",
+            StockTransaction.product_id == base_data["prod"]).first()
+        assert txn, "AI 入库未写流水"
+        db.refresh(mo)
+        assert mo.received_qty == mo.quantity and mo.status in ("部分入库", "已入库"), \
+            f"生产单状态未更新: {mo.status} received={mo.received_qty}"
+
+    def test_ai_purchase_invoice_creates_ap_and_input(self, db, users, base_data, client, admin_token):
+        """AI 录采购发票必须生成应付账款 + 进项发票（原实现只插发票，无法付款核销/退税关联）"""
+        from app.models.purchase import PurchaseInvoice, AccountsPayable
+        from app.models.tax_refund import TaxRefundInputInvoice
+        po_no = _mk_po(client, admin_token, base_data, remark="BOT发票")
+        r = _execute_create_purchase_invoice({
+            "order_no": po_no, "invoice_no": "INV-AI-P-001",
+            "amount": 320, "tax_amount": 41.6,
+        }, db, _user(db, "admin"))
+        assert "✅" in r, f"AI 录采购发票失败: {r}"
+        inv = db.query(PurchaseInvoice).filter(PurchaseInvoice.invoice_no == "INV-AI-P-001").first()
+        assert inv, "采购发票未落库"
+        ap = db.query(AccountsPayable).filter(
+            AccountsPayable.source_type == "purchase_invoice",
+            AccountsPayable.source_id == inv.id).first()
+        assert ap and ap.balance == 361.6, f"应付账款未生成或金额错误: {ap and ap.balance}"
+        tri = db.query(TaxRefundInputInvoice).filter(
+            TaxRefundInputInvoice.invoice_no == "INV-AI-P-001").first()
+        assert tri, "进项发票未生成（可抵扣类型应同步创建）"
+
+    def test_ai_sales_invoice_creates_ar(self, db, users, base_data, client, admin_token):
+        """AI 录销售发票必须生成应收账款（原实现只插发票，无法收款核销）"""
+        from app.models.sales import SalesInvoice, AccountsReceivable
+        so_no = _mk_so(client, admin_token, base_data)
+        r = _execute_create_sales_invoice({
+            "order_no": so_no, "invoice_no": "INV-AI-S-001", "amount": 113,
+        }, db, _user(db, "admin"))
+        assert "✅" in r, f"AI 录销售发票失败: {r}"
+        inv = db.query(SalesInvoice).filter(SalesInvoice.invoice_no == "INV-AI-S-001").first()
+        assert inv, "销售发票未落库"
+        ar = db.query(AccountsReceivable).filter(
+            AccountsReceivable.source_type == "sales_invoice",
+            AccountsReceivable.source_id == inv.id).first()
+        assert ar and ar.balance == 113, f"应收账款未生成或金额错误: {ar and ar.balance}"
+
+    def test_ai_invoice_dup_no_rejected(self, db, users, base_data, client, admin_token):
+        """AI 发票号重复 → 拒绝（唯一性校验）"""
+        po_no = _mk_po(client, admin_token, base_data, remark="BOT发票2")
+        r1 = _execute_create_purchase_invoice({
+            "order_no": po_no, "invoice_no": "INV-AI-DUP", "amount": 100,
+        }, db, _user(db, "admin"))
+        assert "✅" in r1
+        r2 = _execute_create_purchase_invoice({
+            "order_no": po_no, "invoice_no": "INV-AI-DUP", "amount": 100,
+        }, db, _user(db, "admin"))
+        assert "发票号已存在" in r2, f"重复发票号应被拒绝: {r2}"
 
 
 # ==================== 审计日志 ====================

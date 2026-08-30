@@ -138,7 +138,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import request from '../../api/request'; import { purchaseApi, outsourceApi, inventoryApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ========== 销售订单列表 ==========
 const loading = ref(false)
@@ -152,7 +152,7 @@ async function fetchData() {
   try {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
-    const res = await request.get('/purchase/sales-to-purchase', { params })
+    const res = await purchaseApi.salesToPurchase.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
@@ -187,7 +187,7 @@ const submitting = ref(false)
 
 async function openPurchase(row) {
   try {
-    const res = await request.get(`/purchase/sales-to-purchase/${row.sales_item_id}`)
+    const res = await purchaseApi.salesToPurchase.get(row.sales_item_id)
     currentOrderId.value = row.order_id || row.sales_item_id
     currentOrderNo.value = res.order_no || ''
     currentCustomer.value = res.customer_name || ''
@@ -214,7 +214,7 @@ async function openPurchase(row) {
 async function handleUncomplete(row) {
   try {
     await ElMessageBox.confirm(`确定取消采购完成？取消后可以继续追加采购。`, '取消完成确认', { type: 'warning' })
-    const res = await request.post(`/purchase/sales-to-purchase/${row.sales_item_id}/uncomplete`)
+    const res = await purchaseApi.salesToPurchase.uncomplete(row.sales_item_id)
     ElMessage.success(res.message || '已取消采购完成')
     fetchData()
   } catch (e) {
@@ -225,7 +225,7 @@ async function handleUncomplete(row) {
 async function handleReturn(row) {
   try {
     await ElMessageBox.confirm(`确定退回（撤销转入库）？退回后销售订单明细可重新变更/转采购。`, '退回确认', { type: 'warning' })
-    const res = await request.post(`/purchase/sales-to-purchase/${row.sales_item_id}/return`)
+    const res = await purchaseApi.salesToPurchase.return(row.sales_item_id)
     ElMessage.success(res.message || '已退回')
     fetchData()
   } catch (e) {
@@ -262,7 +262,7 @@ async function submitPurchase() {
         name: r.name,
       })),
     }
-    const res = await request.post('/purchase/orders/from-sales', payload)
+    const res = await purchaseApi.fromSales(payload)
     ElMessage.success(res.message || '采购订单已生成')
     purchaseVisible.value = false
     fetchData()
@@ -282,7 +282,7 @@ async function searchSuppliers() {
   try {
     const params = { page: supplierPage.value, page_size: supplierPageSize.value }
     if (supplierSearch.value) params.keyword = supplierSearch.value
-    const res = await request.get('/foundation/suppliers', { params })
+    const res = await foundationApi.suppliers.list(params)
     pickerSupplierList.value = res.items || []
     supplierTotal.value = res.total || 0
   } catch (e) {}

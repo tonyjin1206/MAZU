@@ -69,6 +69,9 @@ export const foundationApi = {
   procurementItemsSelect: () => request.get('/foundation/procurement-items-select'),
   materials: crudApi('materials', ['list', 'create', 'update', 'delete', 'select']),
   products: crudApi('products'),
+  productCustomers: {
+    update: (productId, data) => request.put(`/foundation/products/${productId}/customers`, data),
+  },
   processes: crudApi('processes'),
   departments: crudApi('departments'),
   employees: crudApi('employees'),
@@ -89,4 +92,15 @@ export const foundationApi = {
 
   // 汇率
   latestRates: () => request.get('/foundation/exchange-rates/latest'),
+
+  // 参数设置（SystemParams.vue）
+  params: {
+    list: (params) => request.get('/foundation/params', { params }),
+    getGroup: (group) => request.get(`/foundation/params/group/${group}`),
+    groups: () => request.get('/foundation/params/groups'),
+    options: (params) => request.get('/foundation/params/options', { params }),
+    create: (data) => request.post('/foundation/params', data),
+    update: (id, data) => request.put(`/foundation/params/${id}`, data),
+    remove: (id) => request.delete(`/foundation/params/${id}/hard`),
+  },
 }

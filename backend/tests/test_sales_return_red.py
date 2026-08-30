@@ -5,6 +5,8 @@
      核销转移（红字→正余额、同客户、上限、审计留痕）、负数申报（return-candidates/return-adjustments）。
 """
 
+import pytest
+
 
 class TestSalesInvoiceRed:
     """发票红冲 + 红字应收 + 蓝字开票上限"""
@@ -132,6 +134,84 @@ class TestSalesInvoiceRed:
                            {"red_of_invoice_id": inv_id})
         assert r2.status_code == 400, f"重复红冲应拒绝，实际 {r2.status_code}"
         assert "已红冲" in r2.text
+
+
+class TestReviewLock:
+    """收款/付款单审核锁定（移植 AO 08f86b2：reviewed 字段 + review/unreview 端点）"""
+
+    def test_collection_review_lock(self, client, auth_headers, foundation):
+        """收款单审核后禁改禁删；取消审核后解锁"""
+        h = auth_headers
+        so_id, total = TestSalesInvoiceRed()._create_order(client, h, foundation, qty=10, price=100)
+        amt = round(total / 1.13, 2)
+        tax = round(total - amt, 2)
+        r = TestSalesInvoiceRed._api(client, "POST", "/api/sales/invoices", {
+            "invoice_no": f"INV-RVW-{so_id}", "order_id": so_id, "invoice_date": "2026-08-28",
+            "amount": amt, "amount_fc": amt, "tax_amount": tax, "total_amount": total, "tax_rate": 13,
+        }, h)
+        assert r.status_code == 200, r.text
+        r = TestSalesInvoiceRed._api(client, "POST", "/api/sales/collections", {
+            "customer_id": foundation["cust"][0], "amount": total, "amount_fc": total,
+        }, h)
+        assert r.status_code == 200, r.text
+        coll_id = r.json()["id"]
+
+        # 审核 → 改/删锁定
+        r = TestSalesInvoiceRed._api(client, "POST", f"/api/sales/collections/{coll_id}/review", {}, h)
+        assert r.status_code == 200, r.text
+        r = TestSalesInvoiceRed._api(client, "PUT", f"/api/sales/collections/{coll_id}", {"remark": "x"}, h)
+        assert r.status_code == 400, f"已审核收款单应禁改，实际 {r.status_code}"
+        r = TestSalesInvoiceRed._api(client, "DELETE", f"/api/sales/collections/{coll_id}", None, h)
+        assert r.status_code == 400, f"已审核收款单应禁删，实际 {r.status_code}"
+
+        # 取消审核 → 解锁可删
+        r = TestSalesInvoiceRed._api(client, "POST", f"/api/sales/collections/{coll_id}/unreview", {}, h)
+        assert r.status_code == 200, r.text
+        r = TestSalesInvoiceRed._api(client, "DELETE", f"/api/sales/collections/{coll_id}", None, h)
+        assert r.status_code == 200, f"取消审核后应可删除，实际 {r.status_code}: {r.text[:150]}"
+
+    def test_payment_review_lock(self, client, auth_headers, foundation):
+        """付款单审核后禁改禁删；取消审核后解锁"""
+        h = auth_headers
+        sup = foundation["sup"]
+        mat = foundation["mats"]["精梳棉纱32S"]
+        r = TestSalesInvoiceRed._api(client, "POST", "/api/purchase/orders", {
+            "supplier_id": sup, "currency_id": foundation["cny"]["id"],
+            "items": [{"material_id": mat, "quantity": 10, "unit_price": 32, "tax_rate": 13}],
+        }, h)
+        assert r.status_code == 200, r.text
+        po_id = r.json()["id"]
+        TestSalesInvoiceRed._api(client, "POST", f"/api/purchase/orders/{po_id}/approve", {}, h)
+        total = round(10 * 32, 2)
+        amt = round(total / 1.13, 2)
+        tax = round(total - amt, 2)
+        r = TestSalesInvoiceRed._api(client, "POST", "/api/purchase/invoices", {
+            "invoice_no": f"INV-PRVW-{po_id}", "order_id": po_id, "supplier_id": sup,
+            "invoice_date": "2026-08-28",
+            "amount": amt, "amount_fc": amt, "tax_amount": tax, "tax_rate": 13,
+        }, h)
+        assert r.status_code == 200, r.text
+        ap_list = TestSalesInvoiceRed._api(client, "GET", "/api/purchase/ap", None, h).json()["items"]
+        ap = next(a for a in ap_list if a["source_id"] == r.json()["id"])
+        r = TestSalesInvoiceRed._api(client, "POST", "/api/purchase/payments", {
+            "supplier_id": sup, "amount": total, "amount_fc": total, "ap_account_ids": ap["id"],
+        }, h)
+        assert r.status_code == 200, r.text
+        pay_id = r.json()["id"]
+
+        # 审核 → 改/删锁定
+        r = TestSalesInvoiceRed._api(client, "POST", f"/api/purchase/payments/{pay_id}/review", {}, h)
+        assert r.status_code == 200, r.text
+        r = TestSalesInvoiceRed._api(client, "PUT", f"/api/purchase/payments/{pay_id}", {"remark": "x"}, h)
+        assert r.status_code == 400, f"已审核付款单应禁改，实际 {r.status_code}"
+        r = TestSalesInvoiceRed._api(client, "DELETE", f"/api/purchase/payments/{pay_id}", None, h)
+        assert r.status_code == 400, f"已审核付款单应禁删，实际 {r.status_code}"
+
+        # 取消审核 → 解锁可删
+        r = TestSalesInvoiceRed._api(client, "POST", f"/api/purchase/payments/{pay_id}/unreview", {}, h)
+        assert r.status_code == 200, r.text
+        r = TestSalesInvoiceRed._api(client, "DELETE", f"/api/purchase/payments/{pay_id}", None, h)
+        assert r.status_code == 200, f"取消审核后应可删除，实际 {r.status_code}: {r.text[:150]}"
 
 
 class TestSalesRefund:

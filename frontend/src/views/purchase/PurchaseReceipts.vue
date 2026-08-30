@@ -191,9 +191,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { purchaseApi } from '../../api/business'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const route = useRoute()
 const { fitTable } = useColumnAutoFit()
@@ -328,7 +326,7 @@ async function loadReceiptDetail(receiptId) {
   if (!receiptId) { receiptDetailList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get(`/purchase/receipts/${receiptId}`)
+    const res = await purchaseApi.receipts.get(receiptId)
     receiptDetailList.value = res.items || []
   } catch (e) {} finally {
     itemLoading.value = false
@@ -492,7 +490,7 @@ async function handleCancel(row) {
     '提示', { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '再想想' }
   )
   try {
-    await request.delete(`/purchase/receipts/${row.id}`)
+    await purchaseApi.receipts.delete(row.id)
     ElMessage.success('入库已取消，库存已回滚')
     fetchData()
   } catch (e) {
@@ -512,7 +510,7 @@ onMounted(async () => {
   if (orderId) {
     autoFillMode.value = true
     try {
-      const res = await request.get('/purchase/orders/' + orderId)
+      const res = await purchaseApi.orders.get(orderId)
       if (res && res.items) {
         const batchNo = 'BATCH-' + Date.now()
         // 直接赋值，不用 openDialog（避免重置 items）

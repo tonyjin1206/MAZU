@@ -34,7 +34,8 @@
           <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column">
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" height="100%" @current-change="onOrderSelect" @row-dblclick="onOrderDblClick">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -72,6 +73,7 @@
           </template>
         </el-table-column>
       </el-table>
+      </div>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 6px; flex: none" />
     </el-card>
 
@@ -330,7 +332,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const { fitTable } = useColumnAutoFit()
 
@@ -471,6 +473,12 @@ function itemSummary({ columns: cols, data }) {
 
 function onOrderSelect(row) {
   if (!row) return
+  // 单击仅选中（供明细行操作按钮上下文），不加载明细 —— 双击进入明细（两层交互）
+  selectedOrder.value = row
+}
+
+function onOrderDblClick(row) {
+  if (!row) return
   selectedOrder.value = row
   loadOrderDetail(row.id)
 }
@@ -479,7 +487,7 @@ async function loadOrderDetail(orderId) {
   if (!orderId) { orderDetailList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get(`/sales/orders/${orderId}`)
+    const res = await salesApi.orders.get(orderId)
     orderDetailList.value = res.items || []
   } catch (e) {} finally {
     itemLoading.value = false
@@ -510,7 +518,7 @@ function productionStatusLabel(status) {
 async function handleStockIn(row) {
   await ElMessageBox.confirm(`将「${row.product_name}」转直采？单据将进入「采购管理 → 销售订单转采购」，在那里办理采购。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/stock-in`)
+    const res = await salesApi.orders.stockIn(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转直采')
     loadOrderDetail(selectedOrder.value.id)
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -519,7 +527,7 @@ async function handleStockIn(row) {
 async function handleOutsource(row) {
   await ElMessageBox.confirm(`将「${row.product_name}」转外发？单据将进入「委外管理 → 销售订单转委外」，在那里办理委外。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/outsource`)
+    const res = await salesApi.orders.outsource(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转外发')
     loadOrderDetail(selectedOrder.value.id)
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -528,7 +536,7 @@ async function handleOutsource(row) {
 async function handleProduce(row) {
   await ElMessageBox.confirm(`将「${row.product_name}」转生产（自产）？单据将进入「生产管理 → 生产订单」，在那里排产/完工。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/re-produce`)
+    const res = await salesApi.orders.reProduce(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转生产')
     loadOrderDetail(selectedOrder.value.id)
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -558,7 +566,7 @@ async function handleChange() {
     payload.unit_price = parseFloat(changeForm.unit_price) || 0
   }
   try {
-    const res = await request.put(`/sales/orders/${selectedOrder.value.id}/items/${changeForm.id}`, payload)
+    const res = await salesApi.orders.updateItem(selectedOrder.value.id, changeForm.id, payload)
     ElMessage.success(res.message || '变更成功')
     changeVisible.value = false
     loadOrderDetail(selectedOrder.value.id)
@@ -600,7 +608,7 @@ async function fetchData() {
     }
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
-    const res = await request.get('/sales/orders', { params })
+    const res = await salesApi.orders.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     // 自动选中第一行，联动加载明细
@@ -622,19 +630,19 @@ async function fetchData() {
 }
 
 async function loadCustomers() {
-  try { const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } }); customerList.value = res.items || [] } catch (e) {}
+  try { const res = await foundationApi.customers.list({ page: 1, page_size: 100 }); customerList.value = res.items || [] } catch (e) {}
 }
 async function loadCurrencies() {
   try {
-    const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.currencies.list({ page: 1, page_size: 100 })
     currencyList.value = (res.items || []).filter(c => c.is_active !== 0)
   } catch (e) {}
 }
 async function loadTradeTerms() {
-  try { const res = await request.get('/foundation/trade-terms', { params: { page: 1, page_size: 100 } }); tradeTermList.value = res.items || [] } catch (e) {}
+  try { const res = await foundationApi.tradeTerms.list({ page: 1, page_size: 100 }); tradeTermList.value = res.items || [] } catch (e) {}
 }
 async function loadProducts() {
-  try { const res = await request.get('/foundation/products', { params: { page: 1, page_size: 100 } }); productList.value = res.items || [] } catch (e) {}
+  try { const res = await foundationApi.products.list({ page: 1, page_size: 100 }); productList.value = res.items || [] } catch (e) {}
 }
 
 // ========== 客户选择弹窗 ==========
@@ -649,7 +657,7 @@ async function searchCustomers() {
   try {
     const params = { page: customerPage.value, page_size: customerPageSize.value }
     if (customerSearch.value) params.keyword = customerSearch.value
-    const res = await request.get('/foundation/customers', { params })
+    const res = await foundationApi.customers.list(params)
     pickerCustomerList.value = res.items || []
     customerTotal.value = res.total || 0
   } catch (e) {}
@@ -691,7 +699,7 @@ async function searchProducts() {
     // 按订单客户过滤：新建订单弹窗取表单客户；编辑已有订单取订单客户（未选客户显示全部）
     const filterCustomer = !editMode.value ? orderForm.customer_id : (selectedOrder.value?.customer_id || orderForm.customer_id)
     if (filterCustomer) params.customer_id = filterCustomer
-    const res = await request.get('/foundation/products', { params })
+    const res = await foundationApi.products.list(params)
     pickerProductList.value = res.items || []
     productTotal.value = res.total || 0
   } catch (e) {}
@@ -746,7 +754,7 @@ async function openDialog(row) {
   viewMode.value = true
   editMode.value = false
   try {
-    const res = await request.get(`/sales/orders/${row.id}`)
+    const res = await salesApi.orders.get(row.id)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
   } catch (e) {}
@@ -800,7 +808,7 @@ async function handleSubmit() {
       total_amount_excl_tax: parseFloat(item.total_amount_excl_tax) || 0,
       tax_rate: parseFloat(item.tax_rate) || 13,
     }))
-    await request.post('/sales/orders', {
+    await salesApi.orders.create({
       customer_id: orderForm.customer_id, currency_id: orderForm.currency_id,
       trade_term_id: orderForm.trade_term_id, payment_terms: orderForm.payment_terms,
       order_date: orderForm.order_date, delivery_date: orderForm.delivery_date,
@@ -815,7 +823,7 @@ async function handleSubmit() {
 async function handleApprove(row) {
   await ElMessageBox.confirm(`审核订单 ${row.order_no}？审核后明细行可转入库（转直采）/转外发（转委外）。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${row.id}/approve`)
+    const res = await salesApi.orders.approve(row.id)
     ElMessage.success(res.message || '审核成功')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
@@ -824,7 +832,7 @@ async function handleApprove(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除订单 ${row.order_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/sales/orders/${row.id}`)
+    await salesApi.orders.delete(row.id)
     ElMessage.success('删除成功')
     fetchData()
   } catch (e) {}
@@ -834,7 +842,7 @@ async function openEdit(row) {
   editMode.value = true
   viewMode.value = false
   try {
-    const res = await request.get(`/sales/orders/${row.id}`)
+    const res = await salesApi.orders.get(row.id)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
   } catch (e) {}
@@ -857,7 +865,7 @@ async function handleUpdate() {
       total_amount_excl_tax: parseFloat(item.total_amount_excl_tax) || 0,
       tax_rate: parseFloat(item.tax_rate) || 13,
     }))
-    await request.put(`/sales/orders/${orderForm.id}`, {
+    await salesApi.orders.update(orderForm.id, {
       customer_id: orderForm.customer_id, currency_id: orderForm.currency_id,
       trade_term_id: orderForm.trade_term_id, payment_terms: orderForm.payment_terms,
       order_date: orderForm.order_date, delivery_date: orderForm.delivery_date,
@@ -897,7 +905,7 @@ async function handleItemUpdate() {
     const price = parseFloat(itemEditForm.unit_price) || 0
     const rate = parseFloat(itemEditForm.tax_rate) || 13
     const total = qty * price
-    await request.put(`/sales/orders/${itemEditForm.order_id}/items/${itemEditForm.id}`, {
+    await salesApi.orders.updateItem(itemEditForm.order_id, itemEditForm.id, {
       product_id: itemEditForm.product_id,
       quantity: qty,
       unit_price: price,

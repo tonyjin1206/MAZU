@@ -106,7 +106,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const loading = ref(false)
 const dataList = ref([])
@@ -131,7 +131,7 @@ async function fetchData() {
       params.start_date = dateRange.value[0]
       params.end_date = dateRange.value[1]
     }
-    const res = await request.get('/inventory/material-outs', { params })
+    const res = await inventoryApi.materialOuts.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false }
@@ -173,7 +173,7 @@ function openMaterialPicker(row) {
 
 async function searchMaterial() {
   try {
-    const res = await request.get('/foundation/materials-select', { params: { keyword: materialSearch.value, page: 1, page_size: 100 } })
+    const res = await foundationApi.materials.select({ keyword: materialSearch.value, page: 1, page_size: 100 })
     materialList.value = res || []
   } catch (e) {}
 }
@@ -191,7 +191,7 @@ async function loadBatches(row) {
   row.batchLoading = true
   row.batches = []
   try {
-    const res = await request.get('/inventory/available-batches', { params: { material_id: row.material_id } })
+    const res = await inventoryApi.availableBatches({ material_id: row.material_id })
     row.batches = (res.items || []).filter(b => b.available > 0)
   } catch (e) {} finally { row.batchLoading = false }
 }
@@ -209,7 +209,7 @@ async function handleSubmit() {
   }
   submitting.value = true
   try {
-    const res = await request.post('/inventory/material-outs', { items })
+    const res = await inventoryApi.materialOuts.create({ items })
     ElMessage.success(res.message || '原料出库成功')
     outVisible.value = false
     fetchData()
@@ -221,7 +221,7 @@ onMounted(fetchData)
 async function handleReturn(row) {
   try {
     await ElMessageBox.confirm(`确认退回出库单「${row.out_no}」？库存将回补原批次，并生成红字流水。`, '退回确认', { type: 'warning' })
-    const res = await request.post(`/inventory/material-outs/${row.out_no}/return`)
+    const res = await inventoryApi.materialOuts.return(row.out_no)
     ElMessage.success(res.message || '已退回')
     fetchData()
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '操作失败') }

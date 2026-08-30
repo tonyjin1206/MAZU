@@ -167,8 +167,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
-import { salesApi } from '../../api/business'
+import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_sales_invoice_columns'
@@ -258,7 +257,7 @@ async function fetchList() {
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/sales/invoices', { params })
+    const res = await salesApi.invoices.list(params)
     list.value = res.items || res.list || []
     total.value = res.total || 0
   } catch (e) {
@@ -271,14 +270,14 @@ async function fetchList() {
 
 async function fetchCustomers() {
   try {
-    const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.customers.list({ page: 1, page_size: 100 })
     customerList.value = res.items || res.list || []
   } catch (e) {}
 }
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.orders.list({ page: 1, page_size: 100 })
     orderList.value = (res.items || []).filter(o => (o.uninvoiced_amount || 0) > 0)
   } catch (e) {}
 }
@@ -337,7 +336,7 @@ function openEdit(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除发票 ${row.invoice_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/sales/invoices/${row.id}`)
+    await salesApi.invoices.delete(row.id)
     ElMessage.success('删除成功')
     fetchList()
   } catch (e) {}
@@ -349,10 +348,10 @@ async function submitForm() {
   submitting.value = true
   try {
     if (editMode.value) {
-      await request.put(`/sales/invoices/${form.id}`, { ...form })
+      await salesApi.invoices.update(form.id, { ...form })
       ElMessage.success('修改成功')
     } else {
-      await request.post('/sales/invoices', { ...form })
+      await salesApi.invoices.create({ ...form })
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -394,7 +393,7 @@ async function handleRedReverse() {
   try {
     const taxRate = 13
     const total = redForm.orig_total
-    await request.post('/sales/invoices', {
+    await salesApi.invoices.create({
       invoice_no: redForm.invoice_no,
       order_id: redForm.order_id,
       red_of_invoice_id: redForm.id,

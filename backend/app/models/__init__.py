@@ -13,7 +13,6 @@ from app.models.foundation import (
 from app.models.inventory import (
     WarehouseInventory, StockTransaction,
     Stocktake, StocktakeItem,
-    StockCheck, StockCheckItem,
     StockInOrder,
 )
 from app.models.purchase import (
@@ -33,7 +32,7 @@ from app.models.production import (
 )
 from app.models.sales import (
     SalesQuote, SalesOrder,
-    SalesDelivery, CustomsDeclaration,
+    SalesDelivery, CustomsDeclaration, CustomsDeclarationItem,
     SalesInvoice,
     AccountsReceivable, Collection, CollectionAllocation, ArAdjustment,
 )
@@ -57,7 +56,6 @@ __all__ = [
     "SystemParam",
     "WarehouseInventory", "StockTransaction",
     "Stocktake", "StocktakeItem",
-    "StockCheck", "StockCheckItem",
     "StockInOrder",
     "PurchaseOrder", "PurchaseOrderItem",
     "PurchaseReceipt", "PurchaseReceiptItem",
@@ -70,7 +68,7 @@ __all__ = [
     "OsClaimMaterial",
     "MaterialIssueItem",
     "SalesQuote", "SalesOrder",
-    "SalesDelivery", "CustomsDeclaration",
+    "SalesDelivery", "CustomsDeclaration", "CustomsDeclarationItem",
     "SalesInvoice",
     "AccountsReceivable", "Collection", "CollectionAllocation", "ArAdjustment",
     "TaxRefundInputInvoice", "TaxRefundDeclaration",

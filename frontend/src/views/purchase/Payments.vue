@@ -32,8 +32,14 @@
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="openDetail(row)">详情</el-button>
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+            <template v-if="row.reviewed">
+              <el-button link type="warning" @click="handleUnreview(row)">取消审核</el-button>
+            </template>
+            <template v-else>
+              <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+              <el-button link type="danger" @click="handleDelete(row)">删除</el-button>
+              <el-button link type="success" @click="handleReview(row)">审核</el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -106,12 +112,12 @@
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
-import request from '../../api/request'
+import request from '../../api/request'; import { purchaseApi, outsourceApi, inventoryApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // 付款方式选项（来自参数设置）
 const paymentMethodOptions = ref([])
 async function loadPaymentMethods() {
-  try { paymentMethodOptions.value = await request.get('/foundation/params/options', { params: { group: 'payment_method' } }) || [] } catch (e) { paymentMethodOptions.value = [] }
+  try { paymentMethodOptions.value = await foundationApi.params.options({ group: 'payment_method' }) || [] } catch (e) { paymentMethodOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -155,7 +161,7 @@ async function fetchList() {
     const params = { page: page.value, page_size: pageSize.value }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.dateRange) { params.start_date = searchForm.dateRange[0]; params.end_date = searchForm.dateRange[1] }
-    const res = await request.get('/purchase/payments', { params })
+    const res = await purchaseApi.payments.list(params)
     list.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') }
@@ -164,7 +170,7 @@ async function fetchList() {
 
 async function openDetail(row) {
   try {
-    const res = await request.get(`/purchase/payments/${row.id}`)
+    const res = await purchaseApi.payments.get(row.id)
     detail.value = res
     detailVisible.value = true
   } catch (e) { ElMessage.error('加载详情失败') }
@@ -184,7 +190,7 @@ function openEdit(row) {
 async function submitEdit() {
   submitting.value = true
   try {
-    await request.put(`/purchase/payments/${editForm.id}`, {
+    await purchaseApi.payments.update(editForm.id, {
       payment_date: editForm.payment_date,
       payment_method: editForm.payment_method,
       remark: editForm.remark,
@@ -203,9 +209,34 @@ async function handleDelete(row) {
     '提示', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
   )
   try {
-    await request.delete(`/purchase/payments/${row.id}`)
+    await purchaseApi.payments.delete(row.id)
     ElMessage.success('删除成功，应付已回滚')
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
+}
+
+// ===== 审核锁定（财务确认标记，审核后业务全部锁定） =====
+async function handleReview(row) {
+  await ElMessageBox.confirm(
+    `审核付款单 ${row.payment_no}？审核后该单据不可修改/删除（财务确认，业务锁定），只能取消审核。`,
+    '付款单审核', { type: 'warning', confirmButtonText: '确认审核', cancelButtonText: '取消' }
+  )
+  try {
+    const res = await purchaseApi.payments.review(row.id)
+    ElMessage.success(res.message || '审核成功')
+    fetchList()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
+}
+
+async function handleUnreview(row) {
+  await ElMessageBox.confirm(
+    `取消审核付款单 ${row.payment_no}？取消后该单据可修改/删除。`,
+    '取消审核', { type: 'warning', confirmButtonText: '确认取消审核', cancelButtonText: '再想想' }
+  )
+  try {
+    const res = await purchaseApi.payments.unreview(row.id)
+    ElMessage.success(res.message || '已取消审核')
+    fetchList()
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
 </script>

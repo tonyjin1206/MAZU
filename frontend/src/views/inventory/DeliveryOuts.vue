@@ -135,7 +135,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const dataList = ref([])
 const loading = ref(false)
@@ -172,7 +172,7 @@ async function fetchData() {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/sales/deliveries/outs', { params })
+    const res = await salesApi.deliveries.outs(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载失败') } finally { loading.value = false }
@@ -188,7 +188,7 @@ async function openIssueDialog(row) {
   issueMax.value = Math.max(1, row.unout_qty || 1)
   issueBatchList.value = []
   try {
-    const res = await request.get('/inventory/available-batches', { params: { product_id: row.product_id, order_id: null } })
+    const res = await inventoryApi.availableBatches({ product_id: row.product_id, order_id: null })
     issueBatchList.value = res.items || []
   } catch (e) { issueBatchList.value = [] }
   issueVisible.value = true
@@ -206,7 +206,7 @@ async function handleIssueSubmit() {
   if (!qty || qty <= 0 || qty > issueForm.max_issue) { ElMessage.warning(`请输入 1~${issueForm.max_issue} 的出库数量`); return }
   issueSubmitting.value = true
   try {
-    await request.post(`/sales/deliveries/${issueForm.id}/issue`, {
+    await salesApi.deliveries.issue(issueForm.id, {
       batch_no: issueForm.batch_no,
       quantity: qty,
       issue_date: issueForm.issue_date,
@@ -250,7 +250,7 @@ async function handleIssueReturnSubmit() {
   if (!qty || qty <= 0 || qty > issueReturnMax.value) { ElMessage.warning(`请输入 1~${issueReturnMax.value} 的退回数量`); return }
   issueReturnSubmitting.value = true
   try {
-    await request.post(`/sales/deliveries/${issueReturnForm.id}/issue-return`, {
+    await salesApi.deliveries.issueReturn(issueReturnForm.id, {
       batch_no: issueReturnForm.batch_no,
       quantity: qty,
       remark: issueReturnForm.remark,

@@ -543,8 +543,7 @@ class SystemParamOut(BaseModel):
     remark: str = ""
     is_active: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SystemParamOptionOut(BaseModel):

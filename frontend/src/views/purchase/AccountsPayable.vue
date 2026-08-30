@@ -103,7 +103,7 @@ import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
-import request from '../../api/request'
+import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_ap_summary_columns'
@@ -219,7 +219,7 @@ function showDetail(row) {
 async function fetchData() {
   loading.value = true
   try {
-    const res = await request.get('/purchase/ap', { params: { page: 1, page_size: 100 } })
+    const res = await purchaseApi.ap.list({ page: 1, page_size: 100 })
     list.value = res.items || []
     total.value = res.total || 0
   } finally { loading.value = false; nextTick(initColumnDrag) }
@@ -230,7 +230,7 @@ watch(activeTab, (tab) => { if (tab === 'detail') { if (!pdFilter.value) pdFilte
 async function fetchPaymentDetails() {
   pdLoading.value = true
   try {
-    const res = await request.get('/purchase/ap/payment-detail')
+    const res = await purchaseApi.ap.paymentDetail()
     pdList.value = res.items || []
   } finally { pdLoading.value = false; nextTick(initPdColumnDrag) }
 }
@@ -253,7 +253,7 @@ async function handleSubmit() {
   if (amt > form.balance) { ElMessage.warning('付款金额不能超过余额'); return }
   submitting.value = true
   try {
-    await request.post('/purchase/payments', {
+    await purchaseApi.payments.create({
       supplier_id: form.supplier_id,
       amount: amt, payment_date: form.payment_date,
       payment_method: form.payment_method, remark: form.remark || '',
@@ -282,7 +282,7 @@ function openPaymentByDetail(row) {
 async function viewPayment(row) {
   if (!row.payment_id) return
   try {
-    const res = await request.get(`/purchase/payments/${row.payment_id}`)
+    const res = await purchaseApi.payments.get(row.payment_id)
     paymentDetail.value = res
     paymentDetailVisible.value = true
   } catch (e) {

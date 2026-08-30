@@ -64,7 +64,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '@/api/request'
+import request from '@/api/request'; import { inventoryApi } from '@/api/business'; import { foundationApi } from '@/api/foundation'
 
 const loading = ref(false)
 const tableRef = ref(null)
@@ -88,7 +88,7 @@ async function fetchData() {
       params.start_date = query.dateRange[0]
       params.end_date = query.dateRange[1]
     }
-    const res = await request.get('/inventory/balance', { params })
+    const res = await inventoryApi.balance(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally { loading.value = false }
@@ -115,7 +115,7 @@ function summaryMethod({ columns, data }) {
 
 onMounted(async () => {
   try {
-    const res = await request.get('/foundation/warehouses', { params: { page_size: 100 } })
+    const res = await foundationApi.warehouses.list({ page_size: 100 })
     warehouseList.value = res.items || []
   } catch (e) {}
   // 默认本月

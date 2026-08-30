@@ -81,13 +81,41 @@
             <el-option v-for="o in orderList" :key="o.id" :label="o.order_no + ' - ' + (o.customer_name || '')" :value="o.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="HS编码" prop="hs_code_id">
-          <el-select v-model="form.hs_code_id" placeholder="请选择HS编码" filterable style="width: 100%">
-            <el-option v-for="h in hsCodeList" :key="h.id" :label="h.hs_code + ' - ' + (h.name_cn || '')" :value="h.id" />
-          </el-select>
+        <el-form-item label="商品行" required>
+          <el-table :data="form.items" size="small" border max-height="260" style="width: 100%">
+            <el-table-column label="商品" min-width="150">
+              <template #default="{ row }">
+                <span>{{ row.product_name || ('商品#' + row.product_id) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="HS编码" min-width="200">
+              <template #default="{ row }">
+                <el-select v-model="row.hs_code_id" placeholder="选择HS" filterable size="small" style="width: 100%">
+                  <el-option v-for="h in hsCodeList" :key="h.id"
+                             :label="h.hs_code + ' - ' + (h.name_cn || h.name || '')" :value="h.id" />
+                </el-select>
+              </template>
+            </el-table-column>
+            <el-table-column label="数量" width="110">
+              <template #default="{ row }">
+                <el-input-number v-model="row.quantity" :min="0.01" size="small" style="width: 100%" @change="calcItemAmount(row)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="单价" width="120">
+              <template #default="{ row }">
+                <el-input-number v-model="row.unit_price" :min="0" :precision="2" size="small" style="width: 100%" @change="calcItemAmount(row)" />
+              </template>
+            </el-table-column>
+            <el-table-column label="报关金额" width="130" align="right">
+              <template #default="{ row }">{{ $fm(row.declare_amount || 0) }}</template>
+            </el-table-column>
+          </el-table>
+          <div style="margin-top: 6px; color: #909399; font-size: 12px">
+            选择订单后自动带出商品明细；可修改 HS/数量/单价，报关金额自动计算。
+          </div>
         </el-form-item>
-        <el-form-item label="报关金额" prop="declare_amount">
-          <el-input type="number" v-model="form.declare_amount" :min="0" :precision="2" style="width: 100%" />
+        <el-form-item label="报关金额">
+          <el-input :model-value="$fm(form.declare_amount)" disabled style="width: 100%" />
         </el-form-item>
         <el-form-item label="币种" prop="declare_currency">
           <el-select v-model="form.declare_currency" placeholder="请选择币种" style="width: 100%">
@@ -120,7 +148,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_customs_declaration_columns'
@@ -170,19 +198,17 @@ const currencyList = ref([])
 const form = reactive({
   customs_no: '',
   order_id: null,
-  hs_code_id: null,
   declare_amount: 0,
   declare_currency: null,
   declare_date: '',
   customs_broker: '',
   remark: '',
+  items: [],
 })
 
 const rules = {
   customs_no: [{ required: true, message: '请输入报关单号', trigger: 'blur' }],
   order_id: [{ required: true, message: '请选择销售订单', trigger: 'change' }],
-  hs_code_id: [{ required: true, message: '请选择HS编码', trigger: 'change' }],
-  declare_amount: [{ required: true, message: '请输入报关金额', trigger: 'blur' }],
   declare_currency: [{ required: true, message: '请选择币种', trigger: 'change' }],
   declare_date: [{ required: true, message: '请选择报关日期', trigger: 'change' }],
   customs_broker: [{ required: true, message: '请输入报关行', trigger: 'blur' }],
@@ -211,7 +237,7 @@ async function fetchList() {
       params.date_to = searchForm.dateRange[1]
     }
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/sales/customs', { params })
+    const res = await salesApi.customs.list(params)
     list.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') }
@@ -220,21 +246,21 @@ async function fetchList() {
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/sales/orders', { params: { page: 1, page_size: 100 } })
+    const res = await salesApi.orders.list({ page: 1, page_size: 100 })
     orderList.value = res.items || []
   } catch (e) {}
 }
 
 async function fetchHsCodes() {
   try {
-    const res = await request.get('/foundation/hs-codes', { params: { page: 1, page_size: 200 } })
+    const res = await foundationApi.hsCodes.list({ page: 1, page_size: 200 })
     hsCodeList.value = res.items || res.list || []
   } catch (e) {}
 }
 
 async function fetchCurrencies() {
   try {
-    const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 50 } })
+    const res = await foundationApi.currencies.list({ page: 1, page_size: 50 })
     currencyList.value = (res.items || res.list || []).filter(c => c.is_active !== 0)
   } catch (e) {}
 }
@@ -243,25 +269,50 @@ function onOrderChange(orderId) {
   const o = orderList.value.find(x => x.id === orderId)
   if (o) {
     if (!form.declare_currency) form.declare_currency = o.currency_id || null
-    if (!form.declare_amount || form.declare_amount === 0) form.declare_amount = o.total_amount_local || o.total_amount || 0
+    // 带出订单明细商品行（HS 默认产品档案，后端再兜底）
+    salesApi.orders.get(orderId).then(res => {
+      form.items = (res.items || []).map(it => ({
+        product_id: it.product_id,
+        product_name: it.product_name,
+        hs_code_id: it.hs_code_id || null,
+        quantity: it.quantity || 0,
+        unit_price: it.unit_price || 0,
+        declare_amount: Math.round((it.quantity || 0) * (it.unit_price || 0) * 100) / 100,
+      }))
+      calcTotalAmount()
+    }).catch(() => {})
   }
+}
+
+function calcItemAmount(row) {
+  row.declare_amount = Math.round(((row.quantity || 0) * (row.unit_price || 0)) * 100) / 100
+  calcTotalAmount()
+}
+
+function calcTotalAmount() {
+  form.declare_amount = Math.round((form.items || []).reduce((s, it) => s + (it.declare_amount || 0), 0) * 100) / 100
 }
 
 function openCreate() {
   editMode.value = false
-  Object.assign(form, { id: null, customs_no: '', order_id: null, hs_code_id: null, declare_amount: 0, declare_currency: null, declare_date: '', customs_broker: '', remark: '' })
+  Object.assign(form, { id: null, customs_no: '', order_id: null, declare_amount: 0, declare_currency: null, declare_date: '', customs_broker: '', remark: '', items: [] })
   dialogVisible.value = true
 }
 
 async function openEdit(row) {
   editMode.value = true
   try {
-    const res = await request.get(`/sales/customs/${row.id}`)
+    const res = await salesApi.customs.get(row.id)
     Object.assign(form, {
       id: res.id, customs_no: res.customs_no, order_id: res.order_id,
-      hs_code_id: res.hs_code_id, declare_amount: res.declare_amount,
+      declare_amount: res.declare_amount,
       declare_currency: res.declare_currency, declare_date: res.declare_date,
       customs_broker: res.customs_broker, remark: res.remark || '',
+      items: (res.items || []).map(it => ({
+        product_id: it.product_id, product_name: it.product_name,
+        hs_code_id: it.hs_code_id, quantity: it.quantity,
+        unit_price: it.unit_price, declare_amount: it.declare_amount,
+      })),
     })
     dialogVisible.value = true
   } catch (e) { ElMessage.error('加载详情失败') }
@@ -273,10 +324,10 @@ async function submitForm() {
   submitting.value = true
   try {
     if (editMode.value) {
-      await request.put(`/sales/customs/${form.id}`, { ...form })
+      await salesApi.customs.update(form.id, { ...form })
       ElMessage.success('修改成功')
     } else {
-      await request.post('/sales/customs', { ...form })
+      await salesApi.customs.create({ ...form })
       ElMessage.success('创建成功')
     }
     dialogVisible.value = false
@@ -289,7 +340,7 @@ async function submitForm() {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除报关单 ${row.customs_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/sales/customs/${row.id}`)
+    await salesApi.customs.delete(row.id)
     ElMessage.success('删除成功')
     fetchList()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
