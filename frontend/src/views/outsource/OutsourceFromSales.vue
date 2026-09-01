@@ -20,22 +20,21 @@
         <div style="display: flex; align-items: center">
           <span>转外发明细（订单区域）</span>
           <span style="margin-left: 10px; font-size: 12px; color: #909399">点击行，下方展示该产品工序层级关系面</span>
+          <span style="flex: 1" />
+          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
         </div>
       </template>
       <div style="flex: 1; min-height: 0; overflow: auto">
-        <el-table ref="tableRef" v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row row-key="sales_item_id" @current-change="onSelectRow">
-          <el-table-column prop="order_no" label="销售订单号" min-width="135" sortable />
-          <el-table-column prop="customer_name" label="客户" min-width="90" show-overflow-tooltip sortable />
-          <el-table-column prop="code" label="产品编码" min-width="95" sortable />
-          <el-table-column prop="name" label="产品名称" min-width="105" show-overflow-tooltip sortable />
-          <el-table-column prop="spec" label="规格" min-width="75" show-overflow-tooltip sortable />
-          <el-table-column prop="unit" label="单位" width="52" align="center" sortable />
-          <el-table-column prop="quantity" label="数量" width="82" align="right" sortable>
-            <template #default="{ row }">{{ fmtQty(row.quantity) }}</template>
-          </el-table-column>
-          <el-table-column prop="batch_no" label="批次号" min-width="130" show-overflow-tooltip sortable />
-          <el-table-column label="委外状态" width="100" align="center" sortable :sort-method="(a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status)">
-            <template #default="{ row }">
+        <el-table ref="tableRef" :key="columnVersion" v-loading="loading" :data="dataList" height="100%" border stripe size="small" highlight-current-row row-key="sales_item_id" @current-change="onSelectRow">
+          <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :sort-method="col.sortMethod" :align="col.align" :show-overflow-tooltip="col.prop === 'customer_name' || col.prop === 'name' || col.prop === 'spec' || col.prop === 'batch_no'">
+            <template #header>
+              <span class="col-header-wrap">
+                <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+                {{ col.label }}
+              </span>
+            </template>
+            <template v-if="col.prop === 'quantity'" #default="{ row }">{{ fmtQty(row.quantity) }}</template>
+            <template v-else-if="col.prop === 'outsource_status'" #default="{ row }">
               <el-tag v-if="row.outsource_status === 'completed'" type="success" size="small">委外完成</el-tag>
               <el-tag v-else-if="row.outsource_status === 'transferred'" type="success" size="small">已转委外订单</el-tag>
               <el-tag v-else-if="row.outsource_status === 'partial'" type="warning" size="small">部分转委外</el-tag>
@@ -211,13 +210,31 @@
         <el-button type="primary" @click="confirmClaim">确认认领</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import request from '../../api/request'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
+import request from '../../api/request'; import { outsourceApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'; import { inventoryApi } from '../../api/business'
+
+// ===== 列配置 =====
+const STORAGE_KEY = 'mazu_outsource_from_sales_columns'
+const defaultColumns = [
+  { prop: 'order_no', label: '销售订单号', minWidth: 135, sortable: true },
+  { prop: 'customer_name', label: '客户', minWidth: 90, sortable: true },
+  { prop: 'code', label: '产品编码', minWidth: 95, sortable: true },
+  { prop: 'name', label: '产品名称', minWidth: 105, sortable: true },
+  { prop: 'spec', label: '规格', minWidth: 75, sortable: true },
+  { prop: 'unit', label: '单位', width: 52, align: 'center', sortable: true },
+  { prop: 'quantity', label: '数量', width: 82, align: 'right', sortable: true },
+  { prop: 'batch_no', label: '批次号', minWidth: 130, sortable: true },
+  { prop: 'outsource_status', label: '委外状态', width: 100, align: 'center', sortable: true, sortMethod: (a, b) => statusRank(a.outsource_status) - statusRank(b.outsource_status) },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 // ========== 上下区域高度拖动 ==========
 const SPLIT_KEY = 'mazu_outsource_from_sales_splitH'
@@ -256,7 +273,7 @@ async function fetchData() {
   try {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
-    const res = await request.get('/outsource/sales-to-outsource', { params })
+    const res = await outsourceApi.salesToOutsource.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     const keep = selectedItem.value && dataList.value.some(r => r.sales_item_id === selectedItem.value.sales_item_id)
@@ -266,7 +283,7 @@ async function fetchData() {
       if (selectedItem.value) loadDetail(selectedItem.value)
       nextTick(() => { tableRef.value?.setCurrentRow(dataList.value[0] || null) })
     }
-  } catch { ElMessage.error('加载销售订单失败') } finally { loading.value = false }
+  } catch (e) { ElMessage.error('加载销售订单失败') } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 function resetSearch() {
@@ -393,18 +410,18 @@ function onSelectRow(currentRow) {
 async function loadDetail(row) {
   loadingDetail.value = true
   try {
-    const res = await request.get(`/outsource/sales-to-outsource/${row.sales_item_id}`)
+    const res = await outsourceApi.salesToOutsource.get(row.sales_item_id)
     detail.value = res
     // 快照原始工序（换行/刷新时删除状态自动重置）
     originalProcesses.value = (res.processes || []).map(p => ({ ...p, generated: [...(p.generated || [])] }))
     lossPct.value = 10
     // 订单级认领数据（BOM材料清单 + 已认领记录）
     try {
-      const claimsRes = await request.get('/outsource/claims', { params: { sales_item_id: row.sales_item_id } })
+      const claimsRes = await outsourceApi.claims.list({ sales_item_id: row.sales_item_id })
       supplyType.value = claimsRes.supply_type || '己方提供'
       bomMaterials.value = claimsRes.bom_materials || []
       claims.value = claimsRes.claims || []
-    } catch { supplyType.value = '己方提供'; bomMaterials.value = []; claims.value = [] }
+    } catch (e) { supplyType.value = '己方提供'; bomMaterials.value = []; claims.value = [] }
     initEditors()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载工序信息失败') } finally { loadingDetail.value = false }
 }
@@ -435,7 +452,7 @@ function initEditors() {
 async function onRemoveProcess(proc) {
   try {
     await ElMessageBox.confirm(`确认删除工序「${proc.process_name}」?删除后本次转委外将不生成该工序的委外单,删除工序不影响已认领的原料`, '删除工序', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
-  } catch { return }
+  } catch (e) { return }
   const d = detail.value
   if (!d) return
   d.processes = d.processes.filter(p => p.process_id !== proc.process_id)
@@ -460,9 +477,9 @@ function restoreProcesses() {
 // ========== 加工商下拉 ==========
 async function searchSuppliers() {
   try {
-    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.suppliers.list({ page: 1, page_size: 100 })
     suppliers.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 认领原料（订单级弹窗：BOM全部材料，按仓库总数量认领，不选批次） ==========
@@ -472,7 +489,7 @@ const claimRows = ref([])
 // 单材料行加载仓库总可用（available-batches 各批次可用量合计）
 async function loadStockFor(row) {
   try {
-    const res = await request.get('/inventory/available-batches', { params: { material_id: row.material_id } })
+    const res = await inventoryApi.availableBatches({ material_id: row.material_id })
     row.batches = (res.items || []).filter(b => (b.available || 0) > 0)
     row.maxQty = row.batches.reduce((s, b) => s + (b.available || 0), 0)
   } catch (e) { ElMessage.error(e.response?.data?.detail || `加载材料「${row.name}」库存失败`) }
@@ -483,7 +500,7 @@ async function openClaim() {
   if (!mats.length) { ElMessage.warning('该产品暂无BOM材料，无需认领原料'); return }
   // 重新拉取最新 BOM 材料 + 已认领记录
   try {
-    const res = await request.get('/outsource/claims', { params: { sales_item_id: selectedItem.value.sales_item_id } })
+    const res = await outsourceApi.claims.list({ sales_item_id: selectedItem.value.sales_item_id })
     bomMaterials.value = res.bom_materials || []
     claims.value = res.claims || []
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载认领数据失败'); return }
@@ -524,7 +541,7 @@ async function confirmClaim() {
   if (errors.length) { ElMessage.warning(errors.join('\n')); return }
   if (!materials.length) { ElMessage.warning('请至少认领一种材料'); return }
   try {
-    const res = await request.post('/outsource/claims', {
+    const res = await outsourceApi.claims.create({
       sales_item_id: selectedItem.value.sales_item_id,
       supply_type: '己方提供',
       loss_pct: lossPct.value,
@@ -542,7 +559,7 @@ async function deleteClaimGroup(g) {
   try {
     await ElMessageBox.confirm(`确认删除「${g.material_name}」的认领记录（${fmtQty(g.total_qty)} ${g.unit || ''}）？材料将退回原料库。`, '删除认领', { type: 'warning' })
     for (const claimId of g.claim_ids) {
-      await request.delete(`/outsource/claims/${claimId}`)
+      await outsourceApi.claims.remove(claimId)
     }
     ElMessage.success('已删除，材料已退回原料库')
     await loadDetail(selectedItem.value)
@@ -589,7 +606,7 @@ async function submitTransfer() {
   if (!rows.length) { ElMessage.warning('没有待配置的工序'); return }
   try {
     await ElMessageBox.confirm(`将为 ${rows.length} 道工序生成委外订单，是否继续？`, '转委外确认', { type: 'info' })
-  } catch { return }
+  } catch (e) { return }
   submitting.value = true
   try {
     const payload = {
@@ -599,7 +616,7 @@ async function submitTransfer() {
       loss_pct: lossPct.value,
       rows,
     }
-    const res = await request.post('/outsource/orders/from-sales-process', payload)
+    const res = await outsourceApi.orders.fromSalesProcess(payload)
     ElMessage.success(res.message || '委外订单已生成')
     // 成功后刷新详情（已生成工序变绿框只读）+ 刷新上面列表（委外状态更新）
     await loadDetail(selectedItem.value)
@@ -611,7 +628,7 @@ async function submitTransfer() {
 async function handleComplete(row) {
   try {
     await ElMessageBox.confirm(`确认完成委外？系统按人工判定：数量是否足够由你决定。完成后不能再追加委外，可随时「取消完成」。`, '完成确认', { type: 'info' })
-    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/complete`)
+    const res = await outsourceApi.salesToOutsource.complete(row.sales_item_id)
     ElMessage.success(res.message || '已标记委外完成')
     if (selectedItem.value && selectedItem.value.sales_item_id === row.sales_item_id) loadDetail(row)
     fetchData()
@@ -623,7 +640,7 @@ async function handleComplete(row) {
 async function handleUncomplete(row) {
   try {
     await ElMessageBox.confirm(`确定取消委外完成？取消后可以继续追加委外。`, '取消完成确认', { type: 'warning' })
-    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/uncomplete`)
+    const res = await outsourceApi.salesToOutsource.uncomplete(row.sales_item_id)
     ElMessage.success(res.message || '已取消委外完成')
     if (selectedItem.value && selectedItem.value.sales_item_id === row.sales_item_id) loadDetail(row)
     fetchData()
@@ -635,7 +652,7 @@ async function handleUncomplete(row) {
 async function handleReturn(row) {
   try {
     await ElMessageBox.confirm(`确定退回（撤销转外发）？退回后销售订单明细可重新变更/转委外。`, '退回确认', { type: 'warning' })
-    const res = await request.post(`/outsource/sales-to-outsource/${row.sales_item_id}/return`)
+    const res = await outsourceApi.salesToOutsource.return(row.sales_item_id)
     ElMessage.success(res.message || '已退回')
     if (selectedItem.value && selectedItem.value.sales_item_id === row.sales_item_id) {
       selectedItem.value = null

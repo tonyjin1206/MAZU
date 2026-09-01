@@ -153,3 +153,41 @@
 1. **委外工单缺口**：`/production/outsourcings` 等 3 组接口后端缺失——是后端还没开发完（本分支工作的一部分），还是设计上已废弃该页面？这决定契约测试是把它们标为"已知问题"还是立即修复。
 2. **E2E 的浏览器**：本机 Windows 装 Playwright 需要下载 Chromium（约 150MB），是否接受？
 3. **范围**：先做阶段 0-2（后端全覆盖，最快见效），还是按顺序一路做到 E2E？
+
+---
+
+## 六、批2 销售退货财务层 专项测试（已落地）
+
+> 依赖 SP 流程调整后已适配；对应分层架构中的「状态机/业务规则 + 边界数据」层。
+
+**测试文件：** `backend/tests/test_sales_return_red.py`（6 场景，随批2 一并落地）
+
+| # | 场景 | 断言 |
+|---|---|---|
+| 1 | 蓝字开票 + 上限校验 | 全额开票成功；再开超未开票金额 → 400"超过未开票金额" |
+| 2 | 红字发票链路 | 红冲成功（全额负数 + 原票标记已红冲）；红字票禁改（PUT 400）禁删（DELETE 400）；已红冲蓝字票禁删；列表带 `is_red`/`red_of_invoice_id`；红字应收 `is_red=1`、`balance<0` |
+| 3 | 重复红冲拦截 | 原票已红冲后再红冲 → 400；红字票不能再红冲 |
+| 4 | 退款登记 | 负数收款核销红字应收（余额向 0 靠拢）；退超 → 400"超过可退余额" |
+| 5 | 核销转移 | 红字→同客户正余额成功（写 `ar_adjustment`）；超上限 → 400"超过可转移上限"；跨客户/源非红字拦截 |
+| 6 | 退货联动 + 负数申报 | 已报税退货打标 `refund_declared=1`；`return-candidates`/`return-adjustments` 添加负数行并重算出口额 |
+
+> 建议：将此文件接入全量回归与 CI（backend-test job）；后续批3 报关单明细化、批4 预警系统另建专项文件，遵循同一 conftest + test_data 单一数据源规范。
+
+---
+
+## 七、批4 预警提醒系统 专项测试（已落地）
+
+> 依赖 SP 流程；按当前产品逻辑重校（销售订单下游走三分支：转直采/转外发/转生产-自产；生产模块=纯自产，委外归口转外发）。通知落库即视为已发（D7）。
+
+**测试文件：** `backend/tests/test_reminders.py`（6 场景，随批4 一并落地）
+
+| # | 场景 | 断言 |
+|---|---|---|
+| 1 | 规则种子 | 规则应≥10（6 事件+4 定时）；无 MO_PLANNED/MO_OUTSOURCED；含 SO_TO_PURCHASE/SO_TO_OUTSOURCE/AR_CREATED/AR_OVERDUE |
+| 2 | 事件埋点 SO_APPROVED | 审核后生成通知发给销售经理；标题含订单号 |
+| 3 | 去重 | 同一单据同提醒点 1 小时内只 1 条 |
+| 4 | AR_CREATED 双收件人 | 应收生成 → 财务+销售各 1 条 |
+| 5 | 定时扫描 | 应收将到期/逾期分别落库；**红字应收不参与**；逾期通知销售+财务 |
+| 6 | 通知 API | unread-count 返回 count；admin-query 返回 items+total（管理端） |
+
+> 基建：`test.sh` 本次改为**隔离测试库**（每次全新临时库，不复用可能陈旧/含数据的 `backend/data/erp.db`）；`conftest.setup_db` 补种提醒规则；`reset_local_db` KEEP 补 `sys_reminder_rule`/`sys_notification`。建议接入 CI（backend-test job）。

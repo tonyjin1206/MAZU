@@ -6,7 +6,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openCreate">新建订单</el-button>
+          <el-button type="primary" data-testid="btn-create-order" @click="openCreate">新建订单</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
@@ -25,7 +25,7 @@
     </el-card>
 
     <!-- ========== 采购订单列表（高度可拖） ========== -->
-    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
+    <el-card ref="listCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>采购订单</span>
@@ -34,7 +34,8 @@
           <el-button size="small" @click="openOrderSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column">
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="orderTableHeight + 'px'" @current-change="onOrderSelect">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -75,14 +76,15 @@
         </el-table-column>
         <el-table-column label="操作" width="280" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === '待审核'" link type="success" @click="handleApprove(row)">审核</el-button>
+            <el-button v-if="row.status === '待审核'" link type="success" data-testid="btn-approve" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待审核' && !row.from_sales" link type="primary" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="row.status === '已审核'" link type="warning" @click="handleUnapprove(row)">取消审核</el-button>
+            <el-button v-if="row.status === '已审核'" link type="warning" data-testid="btn-unapprove" @click="handleUnapprove(row)">取消审核</el-button>
             <el-button v-if="row.status === '待审核' && row.from_sales" link type="danger" @click="handleDelete(row)">退回</el-button>
             <el-button v-if="row.status === '待审核' && !row.from_sales" link type="danger" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
+      </div>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 6px; flex: none" />
     </el-card>
 
@@ -96,7 +98,7 @@
     </div>
 
     <!-- ========== 订单明细（跟随选中订单，占剩余高度） ========== -->
-    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+    <el-card ref="itemCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>订单明细</span>
@@ -104,7 +106,7 @@
           <el-button size="small" @click="openItemSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="orderItemHeight + 'px'">
         <el-table-column v-for="col in visibleItemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -142,7 +144,7 @@
     </el-card>
 
     <!-- 新建/编辑/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1400px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1400px" destroy-on-close data-testid="dialog-order">
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-form-item label="供应商" prop="supplier_id">
           <el-input v-if="viewMode" :model-value="supplierDisplayName" readonly placeholder="-" />
@@ -245,7 +247,7 @@
       <template #footer>
         <el-button @click="dialogVisible = false">{{ viewMode ? '关闭' : '取消' }}</el-button>
         <el-button v-if="editMode" type="primary" :loading="submitting" @click="handleUpdate">保存修改</el-button>
-        <el-button v-if="!viewMode && !editMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button v-if="!viewMode && !editMode" type="primary" data-testid="btn-save" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -310,8 +312,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { purchaseApi } from '../../api/business'
-import request from '../../api/request'
+import request from '../../api/request'; import { purchaseApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const router = useRouter()
 const { fitTable } = useColumnAutoFit()
@@ -370,6 +371,11 @@ function resetSearch() {
 // ========== 订单明细（跟随选中订单） ==========
 const orderTableRef = ref(null)
 const itemTableRef = ref(null)
+const listCardRef = ref(null)
+const itemCardRef = ref(null)
+const orderTableHeight = ref(400)
+const orderItemHeight = ref(400)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
 const itemLoading = ref(false)
 const selectedOrder = ref(null)
 const orderDetailList = ref([])
@@ -384,6 +390,7 @@ function onSplitterDown(e) {
   const onMove = (ev) => {
     const h = startH + (ev.clientY - startY)
     topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    nextTick(calcListHeight)
     localStorage.setItem(SPLIT_KEY, String(topHeight.value))
   }
   const onUp = () => {
@@ -397,6 +404,28 @@ function onSplitterDown(e) {
   document.body.style.cursor = 'row-resize'
   document.body.style.userSelect = 'none'
   e.preventDefault()
+}
+
+function _calcCardTableHeight(card, pagElSelector) {
+  if (!card) return 400
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  const bodyRect = body ? body.getBoundingClientRect() : el.getBoundingClientRect()
+  const pagEl = pagElSelector ? el.querySelector(pagElSelector) : null
+  const pagH = pagEl ? pagEl.getBoundingClientRect().height : 0
+  return Math.max(140, Math.round(bodyRect.height - pagH))
+}
+
+function calcListHeight() {
+  orderTableHeight.value = _calcCardTableHeight(listCardRef.value, '.el-pagination')
+}
+
+function calcItemHeight() {
+  const card = itemCardRef.value
+  if (!card) return
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  orderItemHeight.value = Math.max(140, Math.round((body || el).getBoundingClientRect().height - 16))
 }
 
 // ========== 合计栏 ==========
@@ -438,9 +467,9 @@ async function loadOrderDetail(orderId) {
   if (!orderId) { orderDetailList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get(`/purchase/orders/${orderId}`)
+    const res = await purchaseApi.orders.get(orderId)
     orderDetailList.value = res.items || []
-  } catch {} finally {
+  } catch (e) {} finally {
     itemLoading.value = false
     nextTick(() => {
       initItemColumnDrag()
@@ -522,10 +551,10 @@ async function searchSuppliers() {
   try {
     const params = { page: supplierPage.value, page_size: supplierPageSize.value }
     if (supplierSearch.value) params.keyword = supplierSearch.value
-    const res = await request.get('/foundation/suppliers', { params })
+    const res = await foundationApi.suppliers.list(params)
     pickerSupplierList.value = res.items || []
     supplierTotal.value = res.total || 0
-  } catch {}
+  } catch (e) {}
 }
 
 function openSupplierPicker() {
@@ -569,18 +598,18 @@ async function searchPicker() {
     try {
       const params = { page: materialPage.value, page_size: materialPageSize.value }
       if (materialSearch.value) params.keyword = materialSearch.value
-      const res = await request.get('/foundation/materials', { params })
+      const res = await foundationApi.materials.list(params)
       pickerMaterialList.value = res.items || []
       materialTotal.value = res.total || 0
-    } catch {}
+    } catch (e) {}
   } else {
     try {
       const params = { page: materialPage.value, page_size: materialPageSize.value }
       if (materialSearch.value) params.keyword = materialSearch.value
-      const res = await request.get('/foundation/products', { params })
+      const res = await foundationApi.products.list(params)
       pickerProductList.value = res.items || []
       materialTotal.value = res.total || 0
-    } catch {}
+    } catch (e) {}
   }
 }
 
@@ -631,9 +660,9 @@ function itemDisplayName(item) {
 
 async function loadSuppliers() {
   try {
-    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.suppliers.list({ page: 1, page_size: 100 })
     supplierList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 采购明细去向：转成品库入库 / 转原料库入库 ==========
@@ -642,7 +671,7 @@ async function openToStockIn(row) {
   await ElMessageBox.confirm(`确定该明细转「成品库入库」？将生成待入库单，收货在「库存管理 → 成品入库」模块进行。`, '提示', { type: 'info' })
   submitting.value = true
   try {
-    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${row.id}/to-stock-in`, { stock_in_order_id: 0 })
+    const res = await purchaseApi.orders.toStockIn(selectedOrder.value.id, row.id, { stock_in_order_id: 0 })
     ElMessage.success(res.message || '已转成品库入库')
     loadOrderDetail(selectedOrder.value.id)
     fetchData()
@@ -652,7 +681,7 @@ async function openToStockIn(row) {
 async function handleToMaterial(row) {
   await ElMessageBox.confirm('确定该明细转「原料库入库」？收货在「库存管理 → 原料入库」模块进行。', '提示', { type: 'info' })
   try {
-    const res = await request.post(`/purchase/orders/${selectedOrder.value.id}/items/${row.id}/to-material`)
+    const res = await purchaseApi.orders.toMaterial(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转原料库入库')
     loadOrderDetail(selectedOrder.value.id)
     fetchData()
@@ -661,16 +690,16 @@ async function handleToMaterial(row) {
 
 async function refreshOrderForm() {
   try {
-    const res = await request.get(`/purchase/orders/${orderForm.id}`)
+    const res = await purchaseApi.orders.get(orderForm.id)
     Object.assign(orderForm, { items: res.items || [], status: res.status })
-  } catch {}
+  } catch (e) {}
 }
 
 async function loadMaterials() {
   try {
-    const res = await request.get('/foundation/materials', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.materials.list({ page: 1, page_size: 100 })
     materialList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 新建/编辑/详情 ==========
@@ -689,7 +718,7 @@ async function openEdit(row) {
   viewMode.value = false
   editMode.value = true
   try {
-    const res = await request.get(`/purchase/orders/${row.id}`)
+    const res = await purchaseApi.orders.get(row.id)
     Object.assign(orderForm, {
       id: res.id, supplier_id: res.supplier_id, supplier_name: res.supplier_name || '',
       total_amount: res.total_amount || 0, tax_amount: res.tax_amount || 0,
@@ -697,7 +726,7 @@ async function openEdit(row) {
       tax_rate: res.tax_rate || 13, payment_terms: res.payment_terms || '', remark: res.remark || '',
       items: res.items || [],
     })
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 
@@ -705,7 +734,7 @@ async function openDetail(row) {
   viewMode.value = true
   editMode.value = false
   try {
-    const res = await request.get(`/purchase/orders/${row.id}`)
+    const res = await purchaseApi.orders.get(row.id)
     Object.assign(orderForm, {
       id: res.id, supplier_id: res.supplier_id, supplier_name: res.supplier_name || '',
       status: res.status || '',
@@ -714,7 +743,7 @@ async function openDetail(row) {
       tax_rate: res.tax_rate || 13, payment_terms: res.payment_terms || '', remark: res.remark || '',
       items: res.items || [],
     })
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 
@@ -761,7 +790,7 @@ async function handleUpdate() {
       tax_rate: orderForm.tax_rate,
       items: buildItemsPayload(),
     }
-    await request.put(`/purchase/orders/${orderForm.id}`, payload)
+    await purchaseApi.orders.update(orderForm.id, payload)
     ElMessage.success('修改成功')
     dialogVisible.value = false
     editMode.value = false
@@ -808,7 +837,7 @@ async function handleApprove(row) {
 
 async function handleUnapprove(row) {
   await ElMessageBox.confirm('确定取消审核该订单？取消后可重新编辑。', '提示', { type: 'warning' })
-  try { await request.post(`/purchase/orders/${row.id}/unapprove`); ElMessage.success('已取消审核'); fetchData() } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
+  try { await purchaseApi.orders.unapprove(row.id); ElMessage.success('已取消审核'); fetchData() } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
 }
 
 async function handleDelete(row) {
@@ -820,7 +849,12 @@ async function handleDelete(row) {
   try { await purchaseApi.orders.delete(row.id); ElMessage.success(row.from_sales ? '已退回' : '删除成功'); fetchData() } catch (e) {}
 }
 
-onMounted(() => { initColumnVisible(); initItemVisible(); fetchData(); loadSuppliers(); loadMaterials() })
+onMounted(() => {
+  initColumnVisible(); initItemVisible(); fetchData()
+  loadSuppliers(); loadMaterials()
+  nextTick(() => { calcListHeight(); calcItemHeight() })
+  window.addEventListener('resize', () => { calcListHeight(); calcItemHeight() })
+})
 
 // 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）
 watch(columnVersion, () => {

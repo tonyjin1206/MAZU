@@ -18,6 +18,8 @@ REPO = Path(__file__).resolve().parent.parent
 MODELS = REPO / "backend" / "app" / "models"
 ROUTERS = REPO / "backend" / "app" / "routers"
 SCHEMAS = REPO / "backend" / "app" / "schemas"
+UTILS = REPO / "backend" / "app" / "utils"
+SERVICES = REPO / "backend" / "app" / "services"
 FE_API = REPO / "frontend" / "src" / "api"
 FE_VIEWS = REPO / "frontend" / "src" / "views"
 
@@ -43,9 +45,9 @@ def scan():
             if t:
                 model_classes[cls] = (t.group(1), f.name)
 
-    # 全部后端源码（路由/模式/其他模型）作为引用池（用相对路径区分同名文件）
+    # 全部后端源码（路由/模式/其他模型/工具/服务）作为引用池（用相对路径区分同名文件）
     all_src = {}
-    for d in (ROUTERS, SCHEMAS, MODELS):
+    for d in (ROUTERS, SCHEMAS, MODELS, UTILS, SERVICES):
         for f in d.glob("*.py"):
             all_src[f.relative_to(REPO).as_posix()] = f.read_text(encoding="utf-8")
 

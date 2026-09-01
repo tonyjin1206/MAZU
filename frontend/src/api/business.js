@@ -9,6 +9,8 @@ export const purchaseApi = {
     delete: (id) => request.delete(`/purchase/orders/${id}`),
     approve: (id) => request.post(`/purchase/orders/${id}/approve`),
     unapprove: (id) => request.post(`/purchase/orders/${id}/unapprove`),
+    toStockIn: (orderId, itemId, data) => request.post(`/purchase/orders/${orderId}/items/${itemId}/to-stock-in`, data),
+    toMaterial: (orderId, itemId, data) => request.post(`/purchase/orders/${orderId}/items/${itemId}/to-material`, data),
   },
   receipts: {
     list: (params) => request.get('/purchase/receipts', { params }),
@@ -29,11 +31,21 @@ export const purchaseApi = {
     create: (data) => request.post('/purchase/payments', data),
     update: (id, data) => request.put(`/purchase/payments/${id}`, data),
     delete: (id) => request.delete(`/purchase/payments/${id}`),
+    review: (id) => request.post(`/purchase/payments/${id}/review`),
+    unreview: (id) => request.post(`/purchase/payments/${id}/unreview`),
   },
   ap: {
     list: (params) => request.get('/purchase/ap', { params }),
     paymentDetail: (params) => request.get('/purchase/ap/payment-detail', { params }),
   },
+  salesToPurchase: {
+    list: (params) => request.get('/purchase/sales-to-purchase', { params }),
+    get: (itemId) => request.get(`/purchase/sales-to-purchase/${itemId}`),
+    complete: (itemId) => request.post(`/purchase/sales-to-purchase/${itemId}/complete`),
+    uncomplete: (itemId) => request.post(`/purchase/sales-to-purchase/${itemId}/uncomplete`),
+    return: (itemId) => request.post(`/purchase/sales-to-purchase/${itemId}/return`),
+  },
+  fromSales: (data) => request.post('/purchase/orders/from-sales', data),
 }
 
 export const salesApi = {
@@ -50,7 +62,12 @@ export const salesApi = {
     approve: (id) => request.post(`/sales/orders/${id}/approve`),
     listItems: (params) => request.get('/sales/order-items', { params }),
     reProduce: (orderId, itemId) => request.post(`/sales/orders/${orderId}/items/${itemId}/re-produce`),
+    stockIn: (orderId, itemId) => request.post(`/sales/orders/${orderId}/items/${itemId}/stock-in`),
+    outsource: (orderId, itemId) => request.post(`/sales/orders/${orderId}/items/${itemId}/outsource`),
+    claimBatch: (orderId, itemId, data) => request.post(`/sales/orders/${orderId}/items/${itemId}/claim-batch`, data),
+    unclaimBatch: (orderId, itemId) => request.post(`/sales/orders/${orderId}/items/${itemId}/unclaim-batch`),
     updateItem: (orderId, itemId, data) => request.put(`/sales/orders/${orderId}/items/${itemId}`, data),
+    confirmDelivery: (orderId, itemId, data) => request.post(`/sales/orders/${orderId}/items/${itemId}/delivery-confirm`, data),
   },
   deliveries: {
     list: (params) => request.get('/sales/deliveries', { params }),
@@ -59,6 +76,9 @@ export const salesApi = {
     issue: (id, data) => request.post(`/sales/deliveries/${id}/issue`, data),
     outs: (params) => request.get('/sales/deliveries/outs', { params }),
     return: (id, data) => request.post(`/sales/deliveries/${id}/return`, data),
+    returnByItem: (data) => request.post('/sales/deliveries/return', data),
+    deliveryWorkbench: (params) => request.get('/sales/delivery-workbench', { params }),
+    issueReturn: (id, data) => request.post(`/sales/deliveries/${id}/issue-return`, data),
   },
   customs: {
     list: (params) => request.get('/sales/customs', { params }),
@@ -76,6 +96,8 @@ export const salesApi = {
   ar: {
     list: (params) => request.get('/sales/ar', { params }),
     collectionDetail: (params) => request.get('/sales/ar/collection-detail', { params }),
+    transfer: (data) => request.post('/sales/ar/transfer', data),
+    cancelTransfer: (adjId) => request.post(`/sales/ar/transfer/${adjId}/cancel`),
   },
   collections: {
     list: (params) => request.get('/sales/collections', { params }),
@@ -83,6 +105,8 @@ export const salesApi = {
     create: (data) => request.post('/sales/collections', data),
     update: (id, data) => request.put(`/sales/collections/${id}`, data),
     delete: (id) => request.delete(`/sales/collections/${id}`),
+    review: (id) => request.post(`/sales/collections/${id}/review`),
+    unreview: (id) => request.post(`/sales/collections/${id}/unreview`),
   },
 }
 
@@ -127,15 +151,38 @@ export const productionApi = {
 
 export const foundationApi = {
   procurementItemsSelect: () => request.get('/foundation/procurement-items-select'),
-  outsourcers: {
-    select: () => request.get('/foundation/outsourcers-select'),
-  },
   products: {
     processTemplates: {
       list: (productId) => request.get(`/foundation/products/${productId}/processes`),
       save: (productId, items) => request.put(`/foundation/products/${productId}/processes`, { items }),
       delete: (productId, id) => request.delete(`/foundation/products/${productId}/processes/${id}`),
     },
+  },
+}
+
+// 委外管理（转外发）
+export const outsourceApi = {
+  salesToOutsource: {
+    list: (params) => request.get('/outsource/sales-to-outsource', { params }),
+    get: (itemId) => request.get(`/outsource/sales-to-outsource/${itemId}`),
+    complete: (itemId) => request.post(`/outsource/sales-to-outsource/${itemId}/complete`),
+    uncomplete: (itemId) => request.post(`/outsource/sales-to-outsource/${itemId}/uncomplete`),
+    return: (itemId) => request.post(`/outsource/sales-to-outsource/${itemId}/return`),
+  },
+  orders: {
+    list: (params) => request.get('/outsource/orders', { params }),
+    get: (id) => request.get(`/outsource/orders/${id}`),
+    update: (id, data) => request.put(`/outsource/orders/${id}`, data),
+    approve: (id) => request.post(`/outsource/orders/${id}/approve`),
+    unapprove: (id) => request.post(`/outsource/orders/${id}/unapprove`),
+    remove: (id) => request.delete(`/outsource/orders/${id}`),
+    fromSales: (data) => request.post('/outsource/orders/from-sales', data),
+    fromSalesProcess: (data) => request.post('/outsource/orders/from-sales-process', data),
+  },
+  claims: {
+    list: (params) => request.get('/outsource/claims', { params }),
+    create: (data) => request.post('/outsource/claims', data),
+    remove: (id) => request.delete(`/outsource/claims/${id}`),
   },
 }
 
@@ -151,16 +198,18 @@ export const taxRefundApi = {
     delete: (id) => request.delete(`/tax-refund/declarations/${id}`),
     submit: (id) => request.put(`/tax-refund/declarations/${id}/submit`),
     cancelSubmit: (id) => request.put(`/tax-refund/declarations/${id}/cancel-submit`),
-    refund: (id) => request.put(`/tax-refund/declarations/${id}/refund`),
+    refund: (id, data) => request.put(`/tax-refund/declarations/${id}/refund`, data),
     cancelRefund: (id) => request.put(`/tax-refund/declarations/${id}/cancel-refund`),
     addRow: (declId, data) => request.post(`/tax-refund/declarations/${declId}/rows`, data),
     updateRow: (declId, rowId, data) => request.put(`/tax-refund/declarations/${declId}/rows/${rowId}`, data),
     deleteRow: (declId, rowId) => request.delete(`/tax-refund/declarations/${declId}/rows/${rowId}`),
+    returnCandidates: (declId) => request.get(`/tax-refund/declarations/${declId}/return-candidates`),
+    returnAdjustments: (declId, data) => request.post(`/tax-refund/declarations/${declId}/return-adjustments`, data),
   },
   calculate: (data) => request.post('/tax-refund/calculate', data),
   customsForRefund: (params) => request.get('/tax-refund/customs-for-refund', { params }),
   progress: {
-    get: (declId) => request.get(`/tax-refund/progress/${declId}`),
+    get: (declId) => request.get('/tax-refund/progress', { params: { declaration_id: declId } }),
     create: (data) => request.post('/tax-refund/progress', data),
   },
   statistics: (params) => request.get('/tax-refund/statistics', { params }),
@@ -178,6 +227,20 @@ export const inventoryApi = {
   balance: (params) => request.get('/inventory/balance', { params }),
   transactions: (params) => request.get('/inventory/transactions', { params }),
   availableBatches: (params) => request.get('/inventory/available-batches', { params }),
+  stockIn: {
+    list: (params) => request.get('/stock-in', { params }),
+    receive: (id, data) => request.post(`/stock-in/${id}/receive`, data),
+    complete: (id) => request.post(`/stock-in/${id}/complete`),
+    cancel: (id) => request.post(`/stock-in/${id}/cancel`),
+    return: (id, data) => request.post(`/stock-in/${id}/return`, data),
+    records: (id) => request.get(`/stock-in/${id}/records`),
+  },
+  materialOuts: {
+    list: (params) => request.get('/inventory/material-outs', { params }),
+    create: (data) => request.post('/inventory/material-outs', data),
+    return: (outNo) => request.post(`/inventory/material-outs/${outNo}/return`),
+  },
+  materialReceipts: (params) => request.get('/inventory/material-receipts', { params }),
   // 盘点
   stocktakes: {
     list: (params) => request.get('/inventory/stocktakes', { params }),
@@ -197,3 +260,20 @@ export const chatApi = {
   reset: () => request.post('/chat/reset'),
 }
 
+// 站内通知（铃铛/消息中心/管理端查询）
+export const notificationApi = {
+  list: (params) => request.get('/notifications', { params }),
+  unreadCount: () => request.get('/notifications/unread-count'),
+  latest: (params) => request.get('/notifications/latest', { params }),
+  markRead: (id) => request.put(`/notifications/${id}/read`),
+  markAllRead: () => request.put('/notifications/read-all'),
+  adminQuery: (params) => request.get('/notifications/admin-query', { params }),
+}
+
+// 预警提醒规则（管理端配置化，D8）
+export const reminderRuleApi = {
+  list: (params) => request.get('/system/reminder-rules', { params }),
+  create: (data) => request.post('/system/reminder-rules', data),
+  update: (id, data) => request.put(`/system/reminder-rules/${id}`, data),
+  remove: (id) => request.delete(`/system/reminder-rules/${id}`),
+}

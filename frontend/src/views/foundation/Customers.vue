@@ -6,7 +6,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">搜索</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openDialog('create')">新增客户</el-button>
+          <el-button type="primary" data-testid="btn-create-customer" @click="openDialog('create')">新增客户</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm">
@@ -101,7 +101,7 @@
       />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="900px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增客户' : '编辑客户'" width="900px" data-testid="dialog-customer">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -111,7 +111,7 @@
           </el-col>
           <el-col :span="12">
 <el-form-item label="中文名" prop="name_cn">
-          <el-input v-model="form.name_cn" />
+          <el-input v-model="form.name_cn" data-testid="input-name-cn" />
         </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -121,19 +121,19 @@
           </el-col>
           <el-col :span="12">
 <el-form-item label="国家" prop="country">
-          <el-select v-model="form.country" filterable placeholder="选择国家" style="width: 100%">
+          <el-select v-model="form.country" filterable placeholder="选择国家" style="width: 100%" data-testid="select-country">
             <el-option v-for="c in countryList" :key="c" :label="c" :value="c" />
           </el-select>
         </el-form-item>
           </el-col>
           <el-col :span="12">
 <el-form-item label="联系人" prop="contact_person">
-          <el-input v-model="form.contact_person" />
+          <el-input v-model="form.contact_person" data-testid="input-contact" />
         </el-form-item>
           </el-col>
           <el-col :span="12">
 <el-form-item label="电话" prop="phone">
-          <el-input v-model="form.phone" />
+          <el-input v-model="form.phone" data-testid="input-phone" />
         </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -143,7 +143,7 @@
           </el-col>
           <el-col :span="12">
 <el-form-item label="税号" prop="tax_id">
-          <el-input v-model="form.tax_id" />
+          <el-input v-model="form.tax_id" data-testid="input-tax-id" />
         </el-form-item>
           </el-col>
           <el-col :span="24">
@@ -196,7 +196,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" data-testid="btn-save" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
@@ -211,16 +211,15 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 国家列表（来自参数设置「国家」组，可在参数设置里自行增删）
 const countryList = ref([])
 async function loadCountries() {
   try {
-    const opts = await request.get('/foundation/params/options', { params: { group: 'country' } }) || []
+    const opts = await foundationApi.params.options({ group: 'country' }) || []
     countryList.value = opts.map(o => o.label)
-  } catch { countryList.value = [] }
+  } catch (e) { countryList.value = [] }
 }
 
 // ===== 列配置（可拖拽排序，localStorage 记住个人偏好）=====
@@ -390,7 +389,7 @@ async function handleToggle(row) {
     ElMessage.success(`${action}成功`)
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(`${action}失败`)
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || `${action}失败`)
   }
 }
 

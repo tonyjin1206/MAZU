@@ -144,7 +144,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '@/api/request'
+import request from '@/api/request'; import { inventoryApi } from '@/api/business'; import { foundationApi } from '@/api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 // 余额表：快照视图(snapshot)与期间视图(period)列互斥，由 balancePeriod 过滤显示
@@ -268,7 +268,7 @@ async function fetchBalance() {
       params.start_date = balanceQuery.dateRange[0]
       params.end_date = balanceQuery.dateRange[1]
     }
-    const res = await request.get('/inventory/balance', { params })
+    const res = await inventoryApi.balance(params)
     balanceList.value = aggregateBalance(res.items || [])
     balanceTotal.value = balanceList.value.length
   } catch (e) { ElMessage.error('加载失败') } finally {
@@ -327,11 +327,15 @@ const transQuery = reactive({ warehouse_id: null, type: '', direction: '', keywo
 
 const transTypeMap = {
   purchase_in: '采购入库', production_in: '完工入库',
-  sale_out: '销售出库', outsource_out: '委外发料',
+  sale_out: '销售出库', delivery_out: '销售出库', delivery_out_return: '成品出库退回',
+  outsource_out: '委外发料', material_issue_out: '生产发料',
+  material_out: '原料出库', material_out_return: '原料出库退回', material_in: '原料退回',
+  purchase_return_out: '采购红冲', sale_return: '销售退货', sale_return_in: '销售退货入库',
+  batch_claim: '批次认领', stock_in: '收货入库', stock_in_return: '收货退回',
+  stocktake_in: '盘点盘盈', stocktake_out: '盘点盘亏',
   transfer_in: '调拨入库', transfer_out: '调拨出库',
   check_in: '盘点盘盈', check_out: '盘点盘亏',
   issue_cancel: '取消发料', receipt_cancel: '取消入库',
-  stock_in_return: '入库退回',
 }
 function transTypeLabel(type) { return transTypeMap[type] || type }
 
@@ -345,7 +349,7 @@ async function fetchTransactions() {
     if (transQuery.keyword) params.keyword = transQuery.keyword
     if (transQuery.material_id) params.material_id = transQuery.material_id
     if (transQuery.product_id) params.product_id = transQuery.product_id
-    const res = await request.get('/inventory/transactions', { params })
+    const res = await inventoryApi.transactions(params)
     transactionList.value = res.items || []
     transTotal.value = res.total || 0
   } catch (e) { ElMessage.error('加载失败') } finally {
@@ -425,9 +429,9 @@ async function openMaterialReceipts(row) {
     const params = {}
     if (row.material_id) params.material_id = row.material_id
     if (row.product_id) params.product_id = row.product_id
-    const res = await request.get('/inventory/material-receipts', { params })
+    const res = await inventoryApi.materialReceipts(params)
     batchReceiptList.value = res.items || []
-  } catch { batchReceiptList.value = [] } finally {
+  } catch (e) { batchReceiptList.value = [] } finally {
     receiptLoading.value = false
     nextTick(initReceiptColumnDrag)
   }
@@ -480,7 +484,7 @@ onMounted(() => {
   initBalanceVisible()
   initTransVisible()
   initReceiptVisible()
-  request.get('/foundation/warehouses', { params: { page_size: 50 } }).then(res => {
+  foundationApi.warehouses.list({ page_size: 50 }).then(res => {
     warehouseList.value = res.items || []
   }).catch(() => {})
   fetchBalance()

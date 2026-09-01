@@ -28,8 +28,13 @@
     </el-card>
 
     <el-card>
-<el-table :key="columnVersion" :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end">
+          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table :key="columnVersion" :data="tableData" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
               <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
@@ -62,6 +67,7 @@
       </el-table>
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
     </el-card>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
@@ -70,6 +76,7 @@ import { ref, reactive, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { productionApi } from '../../api/business'
 
 const router = useRouter()
@@ -84,7 +91,7 @@ const defaultColumns = [
   { prop: 'status', label: '状态', width: 100, sortable: true },
   { prop: 'due_date', label: '交期', width: 110, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])

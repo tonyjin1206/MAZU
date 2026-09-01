@@ -26,6 +26,26 @@ FRONTEND_PORT = 5174  # 避开开发端口 5173
 BASE_URL = f"http://localhost:{FRONTEND_PORT}"
 BACKEND_URL = f"http://localhost:{BACKEND_PORT}"
 
+# 第三方/基建已知噪音：命中即忽略，不视为测试失败
+# （vite HMR 消息、Vue devtools 探测、favicon 404 等均非业务错误）
+KNOWN_NOISE_PATTERNS = [
+    "[vite] connected.",
+    "[vite] hot updated",
+    "[vite] hmr update",
+    "[vite] page reload",
+    "[vite] optimized dependencies changed",
+    "Download the Vue Devtools extension",
+    "Vue.js devtools",
+    "devtools detection",
+    "favicon",
+]
+
+
+def _is_noise(text: str) -> bool:
+    """判断控制台/URL 文本是否属于已知噪音"""
+    lowered = text.lower()
+    return any(p.lower() in lowered for p in KNOWN_NOISE_PATTERNS)
+
 
 def _wait_http(url: str, timeout: int = 90) -> bool:
     """轮询 HTTP 就绪。vite 只监听 IPv6 [::1]，localhost 解析失败时自动尝试 [::1]"""
@@ -101,14 +121,14 @@ def page(browser):
     errors = {"console": [], "page": [], "http": []}
 
     def on_console(msg):
-        if msg.type == "error":
+        if msg.type == "error" and not _is_noise(msg.text):
             errors["console"].append(msg.text)
 
     def on_pageerror(exc):
         errors["page"].append(str(exc))
 
     def on_response(resp):
-        if resp.status >= 400:
+        if resp.status >= 400 and not _is_noise(resp.url):
             errors["http"].append(f"{resp.status} {resp.request.method} {resp.url}")
 
     pg.on("console", on_console)

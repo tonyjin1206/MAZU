@@ -26,7 +26,7 @@
         stripe border size="small"
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -126,7 +126,7 @@ const defaultColumns = [
   { prop: 'is_active', label: '状态', width: 80, align: 'center' , sortable: true },
   { prop: 'created_at', label: '创建时间', width: 160 , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)

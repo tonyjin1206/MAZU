@@ -9,8 +9,9 @@
 任何"该拒绝的没拒绝 / 该放行的被拦"都会立即暴露。
 
 覆盖单据：采购需求(PR)、采购订单(PO)、销售订单(SO)、生产订单(MO)。
-"""
 
+✅ 已按 SP 流程重写（2026-08-28）：销售审核不再自动生成 MO，改走 re-produce 端点。
+"""
 import pytest
 
 from app.database import SessionLocal
@@ -62,13 +63,14 @@ def _make_so(client, h, base):
 
 
 def _make_mo(client, h, base):
-    """销售订单审核 → 自动生成生产订单，返回 MO id"""
+    """SP 流程：销售订单审核 → 重发生产 → 生成生产订单，返回 MO id"""
     so_id = _make_so(client, h, base)
     client.post(f"{BASE}/sales/orders/{so_id}/approve", json={}, headers=h)
-    items = client.get(f"{BASE}/production/productions?page=1&page_size=50", headers=h).json()["items"]
-    mo = next((i for i in items if i.get("sales_order_id") == so_id), None)
-    assert mo, "销售审核后未生成生产订单"
-    return mo["id"]
+    # SP 流程：审核后需调用 re-produce 生成 MO
+    so_detail = client.get(f"{BASE}/sales/orders/{so_id}", headers=h).json()
+    item_id = so_detail["items"][0]["id"]
+    mo_resp = client.post(f"{BASE}/sales/orders/{so_id}/items/{item_id}/re-produce", json={}, headers=h).json()
+    return mo_resp["id"]
 
 
 def _make_po(client, h, base):
@@ -108,8 +110,7 @@ PO_ACTIONS = {
     "approve": {"payload": {}, "allowed": {"待审核"}},
     "unapprove": {"payload": {}, "allowed": {"已审核"}},
     "receipt": {"payload": {"items": []}, "allowed": {"已审核", "部分入库", "已完成"},
-                "need_wh": True,
-                "known_bug": "BUG#1 采购入库500: purchase.py create_receipt 传 product_id 给无此字段的 PurchaseReceiptItem（未提交改动引入）"},
+                "need_wh": True},
 }
 
 SO_ACTIONS = {
@@ -193,7 +194,8 @@ def _run_matrix(client, h, base, doc_type, action, status, rule, maker):
             # 采购入库需要订单明细
             detail = client.get(f"{BASE}/purchase/orders/{doc_id}", headers=h).json()
             payload["items"] = [
-                {"order_item_id": i["id"], "quantity": 0.001} for i in detail.get("items", [])]
+                {"order_item_id": i["id"], "material_id": i.get("material_id"), "quantity": 0.001} 
+                for i in detail.get("items", [])]
     if rule.get("need_sup"):
         payload["supplier_id"] = base["sup"]
 

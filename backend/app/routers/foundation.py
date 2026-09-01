@@ -29,7 +29,7 @@ from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionReceipt, MaterialIssueItem,
 )
 from app.models.inventory import (
-    WarehouseInventory, StockTransaction, StockCheckItem,
+    WarehouseInventory, StockTransaction, StocktakeItem, StockInOrder,
 )
 from app.models.tax_refund import TaxRefundInputInvoice
 from app.schemas.foundation import (
@@ -50,9 +50,33 @@ from app.schemas.foundation import (
     SystemParamCreate, SystemParamUpdate, SystemParamOut, SystemParamOptionOut,
 )
 from app.routers.base_crud import register_crud
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission, get_current_admin, require_any_permission
 
 router = APIRouter()
+
+# ==================== 读端点授权域（BUG-L4-02 读越权修复） ====================
+# 读端点采用「本域 + 业务引用域」授权（任一满足即可读）：
+# 既挡住低权限角色（库管员/只读）读非授权域，又保留下游单据页引用上游主数据的业务需求
+#（如销售下单选产品/客户、财务开票读订单、采购/委外读供应商）。
+# ⚠ 禁将 menu:inventory* / menu:production:batch / menu:dashboard 用作引用域——
+#   库管员持 inventory+production:batch、只读持 dashboard，会由此漏入授权域。
+SALES_READ_BASE = ("menu:sales:orders", "menu:sales:deliveries", "menu:sales:invoices",
+                   "menu:sales:customs", "menu:sales:ar", "menu:sales:collections")
+PURCHASE_READ_BASE = ("menu:purchase:from-sales", "menu:purchase:requisitions", "menu:purchase:orders",
+                      "menu:purchase:receipts", "menu:purchase:invoices", "menu:purchase:ap",
+                      "menu:purchase:payments")
+OUTSOURCE_READ_BASE = ("menu:outsource:from-sales", "menu:outsource:orders")
+# 生产域引用：显式列出，排除 menu:production:batch（库管员持 batch 会越权读入）
+PRODUCTION_READ_BASE = ("menu:production:orders", "menu:production:workspace",
+                        "menu:production:invoices", "menu:production:receipts")
+MATERIALS_READ_PERMS = ("menu:materials",) + PURCHASE_READ_BASE
+PRODUCTS_READ_PERMS = ("menu:products",) + SALES_READ_BASE + PRODUCTION_READ_BASE
+CUSTOMERS_READ_PERMS = ("menu:customers",) + SALES_READ_BASE
+SUPPLIERS_READ_PERMS = ("menu:suppliers",) + PURCHASE_READ_BASE + OUTSOURCE_READ_BASE
+OUTSOURCERS_READ_PERMS = ("menu:outsource:orders", "menu:outsource:from-sales", "menu:suppliers",
+                          "menu:production:orders", "menu:production:workspace",
+                          "menu:production:invoices", "menu:production:receipts",
+                          "menu:purchase:orders", "menu:purchase:receipts")
 
 # ==================== 参数设置（专用路由，必须注册在通用 CRUD 之前）====================
 
@@ -112,6 +136,98 @@ def _warehouse_delete_guard(db: Session, item: Warehouse):
 
 register_crud(router, Warehouse,      WarehouseCreate,  None,             WarehouseOut,  "warehouses",  "基础档案-仓库",   search_fields=["code", "name"], delete_guard=_warehouse_delete_guard)
 register_crud(router, Currency,       CurrencyCreate,   None,             CurrencyOut,   "currencies",  "基础档案-币种",   search_fields=["code", "name"])
+
+
+# ==================== 汇率特殊路由（必须注册在通用 CRUD 之前） ====================
+# register_crud 会注册 GET /exchange-rates/{item_id}（item_id: int）。
+# 若 /latest /fetch 注册在后，会被 /{item_id} 抢先匹配 → "latest" 无法解析为 int → 422。
+# 故两个静态路由必须先注册，通用 CRUD 后注册。
+
+@router.get("/exchange-rates/latest", tags=["基础档案-汇率"])
+def get_latest_rates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """获取所有币种的最新汇率"""
+    from sqlalchemy import func
+    subq = (
+        db.query(
+            ExchangeRate.currency_id,
+            func.max(ExchangeRate.rate_date).label("max_date"),
+        )
+        .group_by(ExchangeRate.currency_id)
+        .subquery()
+    )
+    rates = (
+        db.query(ExchangeRate)
+        .join(
+            subq,
+            (ExchangeRate.currency_id == subq.c.currency_id)
+            & (ExchangeRate.rate_date == subq.c.max_date),
+        )
+        .all()
+    )
+    result = []
+    for rate in rates:
+        currency = db.query(Currency).filter(Currency.id == rate.currency_id).first()
+        result.append({
+            "id": rate.id,
+            "currency_id": rate.currency_id,
+            "currency_code": currency.code if currency else "",
+            "rate": rate.rate,
+            "rate_date": rate.rate_date.isoformat(),
+        })
+    return result
+
+
+@router.post("/exchange-rates/fetch", tags=["基础档案-汇率"])
+def fetch_latest_rates(db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:currencies"))):
+    """手动触发：从腾讯财经（国内源）拉取最新汇率并入库
+
+    拉取全部非本位币种兑本位币汇率；同币种+同日已存在 → 更新（source=API），否则新建。
+    """
+    from datetime import date as _date
+    from app.services.exchange_rate_fetcher import fetch_rates, convert_to_base
+
+    currencies = db.query(Currency).filter(Currency.is_active == 1).all()
+    base = next((c for c in currencies if c.is_base == 1), None)
+    codes = [c.code for c in currencies if not (base and c.id == base.id)]
+    if not codes:
+        raise HTTPException(400, "没有可拉取的币种（请先维护币种档案）")
+
+    rates_cny = fetch_rates(codes)
+    if not rates_cny:
+        raise HTTPException(502, "汇率获取失败：腾讯财经不可达或返回为空，请检查网络后重试")
+
+    rates = convert_to_base(rates_cny, base.code if base else "CNY")
+    today = _date.today()
+    updated, created, failed = 0, 0, []
+    for c in currencies:
+        if base and c.id == base.id:
+            continue
+        rate_val = rates.get(c.code)
+        if rate_val is None:
+            failed.append(c.code)
+            continue
+        row = db.query(ExchangeRate).filter(
+            ExchangeRate.currency_id == c.id,
+            ExchangeRate.rate_date == today,
+        ).first()
+        if row:
+            row.rate = rate_val
+            row.source = "API"
+            updated += 1
+        else:
+            db.add(ExchangeRate(currency_id=c.id, rate=rate_val,
+                                rate_date=today, source="API"))
+            created += 1
+    db.commit()
+    return {
+        "message": f"汇率更新完成：新增 {created}，更新 {updated}，失败 {len(failed)}",
+        "created": created, "updated": updated,
+        "failed": failed, "base": base.code if base else "CNY",
+        "rate_date": today.isoformat(),
+        "rates": {c.code: rates.get(c.code) for c in currencies if not (base and c.id == base.id)},
+    }
+
+
 register_crud(router, ExchangeRate,   ExchangeRateCreate, None,           ExchangeRateOut, "exchange-rates", "基础档案-汇率", search_fields=["currency_id"])
 register_crud(router, HsCode,         HsCodeCreate,     HsCodeUpdate,     HsCodeOut,     "hs-codes",    "基础档案-HS编码", search_fields=["hs_code", "name"])
 register_crud(router, TradeTerm,      TradeTermCreate,  None,             TradeTermOut,  "trade-terms", "基础档案-贸易术语", search_fields=["code", "name"])
@@ -148,7 +264,7 @@ register_crud(router, SystemParam,    SystemParamCreate, SystemParamUpdate, Syst
 
 
 @router.delete("/params/{item_id}/hard", tags=["基础档案-参数设置"])
-def hard_delete_param(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def hard_delete_param(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:params"))):
     """物理删除参数（通用 CRUD 是软删除，会与唯一约束冲突导致无法重建同名参数）"""
     item = db.query(SystemParam).filter(SystemParam.id == item_id).first()
     if not item:
@@ -177,7 +293,7 @@ def _ensure_unique_name(db, model, name_field, name_value, exclude_id=None, labe
 
 @router.post("/materials", tags=["基础档案-材料"])
 def create_material(data: MaterialCreate, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:materials"))):
     code = data.code or _next_code(db, Material, "RM")
     _ensure_unique_name(db, Material, "name", data.name, label="材料名称")
     m = Material(code=code, name=data.name, spec=data.spec, model=data.model or "",
@@ -196,7 +312,7 @@ def list_materials(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
                    name: str = Query(""), spec: str = Query(""),
                    category: str = Query(""),
                    db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
+                   current_user: User = Depends(require_any_permission(*MATERIALS_READ_PERMS))):
     query = db.query(Material)
     if keyword:
         from sqlalchemy import or_
@@ -219,7 +335,7 @@ def list_materials(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
 
 @router.put("/materials/{item_id}", response_model=MaterialOut, tags=["基础档案-材料"])
 def update_material(item_id: int, data: MaterialUpdate, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:materials"))):
     item = db.query(Material).filter(Material.id == item_id).first()
     if not item:
         raise HTTPException(404, "材料不存在")
@@ -235,7 +351,7 @@ def update_material(item_id: int, data: MaterialUpdate, db: Session = Depends(ge
 
 @router.delete("/materials/{item_id}", tags=["基础档案-材料"])
 def delete_material(item_id: int, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:materials"))):
     item = db.query(Material).filter(Material.id == item_id).first()
     if not item:
         raise HTTPException(404, "材料不存在")
@@ -253,7 +369,7 @@ def delete_material(item_id: int, db: Session = Depends(get_db),
 def create_product_with_hs(
     data: ProductCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:products")),
 ):
     """创建产品，自动创建/关联 HS 编码，自动编码 FG+6位流水"""
     code = data.code or _next_code(db, Product, "FG")
@@ -293,7 +409,7 @@ def list_products(
     name_cn: str = Query(""), spec: str = Query(""),
     customer_id: int | None = Query(None, description="只返回关联了该客户的产品（销售下单用）"),
     is_active: int | None = None,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTS_READ_PERMS)),
 ):
     query = db.query(Product)
     if customer_id:
@@ -327,7 +443,7 @@ def list_products(
 
 
 @router.get("/products/{item_id}", response_model=ProductOut, tags=["基础档案-产品"])
-def get_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTS_READ_PERMS))):
     item = db.query(Product).filter(Product.id == item_id).first()
     if not item:
         raise HTTPException(404, "产品不存在")
@@ -342,7 +458,7 @@ def get_product(item_id: int, db: Session = Depends(get_db), current_user: User 
 
 @router.put("/products/{item_id}/customers", tags=["基础档案-产品"])
 def update_product_customers(item_id: int, data: ProductCustomersUpdate,
-                             db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                             db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:products"))):
     """设置产品关联客户（全量替换）"""
     product = db.query(Product).filter(Product.id == item_id).first()
     if not product:
@@ -363,7 +479,7 @@ def update_product_customers(item_id: int, data: ProductCustomersUpdate,
 @router.put("/products/{item_id}", response_model=ProductOut, tags=["基础档案-产品"])
 def update_product(
     item_id: int, data: ProductUpdate,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:products")),
 ):
     item = db.query(Product).filter(Product.id == item_id).first()
     if not item:
@@ -379,7 +495,7 @@ def update_product(
 
 
 @router.delete("/products/{item_id}", tags=["基础档案-产品"])
-def delete_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_product(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:products"))):
     item = db.query(Product).filter(Product.id == item_id).first()
     if not item:
         raise HTTPException(404, "产品不存在")
@@ -396,7 +512,7 @@ def delete_product(item_id: int, db: Session = Depends(get_db), current_user: Us
 @router.get("/outsourcers", tags=["基础档案-委外商"])
 def list_outsourcers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
                      keyword: str = Query(""),
-                     db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                     db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCERS_READ_PERMS))):
     """委外商列表 = 供应商中 supplier_type=委外 的档案"""
     query = db.query(Supplier).filter(Supplier.supplier_type == "委外")
     if keyword:
@@ -426,14 +542,14 @@ def _next_code(db, model, prefix: str, field="code"):
 
 @router.get("/customers/next-code", tags=["基础档案-客户"])
 def preview_customer_code(db: Session = Depends(get_db),
-                          current_user: User = Depends(get_current_user)):
+                          current_user: User = Depends(require_permission("menu:customers"))):
     """预览下一个客户编码（仅预览，不消耗流水）"""
     return {"code": _next_code(db, Customer, "CU")}
 
 
 @router.post("/customers", tags=["基础档案-客户"])
 def create_customer(data: CustomerCreate, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:customers"))):
     code = _next_code(db, Customer, "CU")  # 编码强制自动生成，不允许手动输入
     _ensure_unique_name(db, Customer, "name_cn", data.name_cn, label="客户名称")
     # 编码唯一性校验（避免唯一约束冲突 → 500）
@@ -460,7 +576,7 @@ def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
                    name_cn: str = Query(""), contact_person: str = Query(""),
                    country: str = Query(""),
                    db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
+                   current_user: User = Depends(require_any_permission(*CUSTOMERS_READ_PERMS))):
     query = db.query(Customer)
     if keyword:
         from sqlalchemy import or_
@@ -484,7 +600,7 @@ def list_customers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
 
 @router.put("/customers/{item_id}", response_model=CustomerOut, tags=["基础档案-客户"])
 def update_customer(item_id: int, data: CustomerUpdate, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:customers"))):
     item = db.query(Customer).filter(Customer.id == item_id).first()
     if not item:
         raise HTTPException(404, "客户不存在")
@@ -504,6 +620,10 @@ def _has_business_refs(db: Session, model, item_id: int, refs: list) -> str | No
         try:
             exists = db.query(table_name).filter(getattr(table_name, field_name) == item_id).first()
         except Exception:
+            # 审计 A7：引用表查询失败不得静默放行（fail-closed）
+            import logging
+            logging.getLogger("foundation").error(
+                "删除保护引用检查失败: %s.%s", getattr(table_name, "__name__", table_name), field_name)
             continue
         if exists:
             return biz_name
@@ -533,7 +653,7 @@ SUPPLIER_REFS = [
     (TaxRefundInputInvoice, "supplier_id", "进项发票"),
 ]
 
-# 材料被引用的业务表：采购明细/入库明细/BOM/生产物料/发料/库存/流水/盘点
+# 材料被引用的业务表：采购明细/入库明细/BOM/生产物料/发料/库存/流水/盘点/待入库单
 MATERIAL_REFS = [
     (PurchaseOrderItem, "material_id", "采购订单"),
     (PurchaseReceiptItem, "material_id", "采购入库"),
@@ -542,7 +662,8 @@ MATERIAL_REFS = [
     (MaterialIssueItem, "material_id", "发料记录"),
     (WarehouseInventory, "material_id", "库存"),
     (StockTransaction, "material_id", "库存流水"),
-    (StockCheckItem, "material_id", "盘点单"),
+    (StocktakeItem, "material_id", "盘点单"),
+    (StockInOrder, "material_id", "待入库单"),
 ]
 
 # 产品被引用的业务表：报价/销售明细/发货/BOM/工艺/生产/完工入库/委外/加工费/库存/流水/进项发票
@@ -557,16 +678,17 @@ PRODUCT_REFS = [
     (ProductionReceipt, "product_id", "完工入库"),
     (OutsourcingOrder, "product_id", "委外工单"),
     (ProcessingInvoice, "product_id", "加工费发票"),
+    (StockInOrder, "product_id", "待入库单"),
     (WarehouseInventory, "product_id", "库存"),
     (StockTransaction, "product_id", "库存流水"),
-    (StockCheckItem, "product_id", "盘点单"),
+    (StocktakeItem, "product_id", "盘点单"),
     (TaxRefundInputInvoice, "product_id", "进项发票"),
 ]
 
 
 @router.delete("/customers/{item_id}", tags=["基础档案-客户"])
 def delete_customer(item_id: int, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:customers"))):
     item = db.query(Customer).filter(Customer.id == item_id).first()
     if not item:
         raise HTTPException(404, "客户不存在")
@@ -580,7 +702,7 @@ def delete_customer(item_id: int, db: Session = Depends(get_db),
 
 @router.delete("/suppliers/{item_id}", tags=["基础档案-供应商"])
 def delete_supplier(item_id: int, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:suppliers"))):
     item = db.query(Supplier).filter(Supplier.id == item_id).first()
     if not item:
         raise HTTPException(404, "供应商不存在")
@@ -596,14 +718,14 @@ def delete_supplier(item_id: int, db: Session = Depends(get_db),
 
 @router.get("/suppliers/next-code", tags=["基础档案-供应商"])
 def preview_supplier_code(db: Session = Depends(get_db),
-                          current_user: User = Depends(get_current_user)):
+                          current_user: User = Depends(require_permission("menu:suppliers"))):
     """预览下一个供应商编码（仅预览，不消耗流水）"""
     return {"code": _next_code(db, Supplier, "SU")}
 
 
 @router.post("/suppliers", tags=["基础档案-供应商"])
 def create_supplier(data: SupplierCreate, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:suppliers"))):
     code = _next_code(db, Supplier, "SU")  # 编码强制自动生成，不允许手动输入
     _ensure_unique_name(db, Supplier, "name", data.name, label="供应商名称")
     # 编码唯一性校验（避免唯一约束冲突 → 500）
@@ -631,7 +753,7 @@ def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
                    name: str = Query(""), contact_person: str = Query(""),
                    country: str = Query(""),
                    db: Session = Depends(get_db),
-                   current_user: User = Depends(get_current_user)):
+                   current_user: User = Depends(require_any_permission(*SUPPLIERS_READ_PERMS))):
     query = db.query(Supplier)
     if keyword:
         from sqlalchemy import or_
@@ -654,7 +776,7 @@ def list_suppliers(page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, 
 
 @router.put("/suppliers/{item_id}", response_model=SupplierOut, tags=["基础档案-供应商"])
 def update_supplier(item_id: int, data: SupplierUpdate, db: Session = Depends(get_db),
-                    current_user: User = Depends(get_current_user)):
+                    current_user: User = Depends(require_permission("menu:suppliers"))):
     item = db.query(Supplier).filter(Supplier.id == item_id).first()
     if not item:
         raise HTTPException(404, "供应商不存在")
@@ -706,7 +828,7 @@ def get_bom_by_product(
 def create_bom_item(
     data: BomItemCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:bom")),
 ):
     """创建 BOM 明细"""
     # 校验产品和材料存在（外键保护）
@@ -734,7 +856,7 @@ def update_bom_item(
     item_id: int,
     data: BomItemUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:bom")),
 ):
     """更新 BOM 明细"""
     item = db.query(BomItem).filter(BomItem.id == item_id).first()
@@ -752,7 +874,7 @@ def update_bom_item(
 def delete_bom_item(
     item_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:bom")),
 ):
     """删除 BOM 明细"""
     item = db.query(BomItem).filter(BomItem.id == item_id).first()
@@ -761,93 +883,6 @@ def delete_bom_item(
     db.delete(item)
     db.commit()
     return {"message": "BOM 明细已删除"}
-
-
-# ==================== 汇率特殊路由 ====================
-
-@router.get("/exchange-rates/latest", tags=["基础档案-汇率"])
-def get_latest_rates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """获取所有币种的最新汇率"""
-    from sqlalchemy import func
-    subq = (
-        db.query(
-            ExchangeRate.currency_id,
-            func.max(ExchangeRate.rate_date).label("max_date"),
-        )
-        .group_by(ExchangeRate.currency_id)
-        .subquery()
-    )
-    rates = (
-        db.query(ExchangeRate)
-        .join(
-            subq,
-            (ExchangeRate.currency_id == subq.c.currency_id)
-            & (ExchangeRate.rate_date == subq.c.max_date),
-        )
-        .all()
-    )
-    result = []
-    for rate in rates:
-        currency = db.query(Currency).filter(Currency.id == rate.currency_id).first()
-        result.append({
-            "id": rate.id,
-            "currency_id": rate.currency_id,
-            "currency_code": currency.code if currency else "",
-            "rate": rate.rate,
-            "rate_date": rate.rate_date.isoformat(),
-        })
-    return result
-
-
-@router.post("/exchange-rates/fetch", tags=["基础档案-汇率"])
-def fetch_latest_rates(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """手动触发：从腾讯财经（国内源）拉取最新汇率并入库
-
-    拉取全部非本位币种兑本位币汇率；同币种+同日已存在 → 更新（source=API），否则新建。
-    """
-    from datetime import date as _date
-    from app.services.exchange_rate_fetcher import fetch_rates, convert_to_base
-
-    currencies = db.query(Currency).filter(Currency.is_active == 1).all()
-    base = next((c for c in currencies if c.is_base == 1), None)
-    codes = [c.code for c in currencies if not (base and c.id == base.id)]
-    if not codes:
-        raise HTTPException(400, "没有可拉取的币种（请先维护币种档案）")
-
-    rates_cny = fetch_rates(codes)
-    if not rates_cny:
-        raise HTTPException(502, "汇率获取失败：腾讯财经不可达或返回为空，请检查网络后重试")
-
-    rates = convert_to_base(rates_cny, base.code if base else "CNY")
-    today = _date.today()
-    updated, created, failed = 0, 0, []
-    for c in currencies:
-        if base and c.id == base.id:
-            continue
-        rate_val = rates.get(c.code)
-        if rate_val is None:
-            failed.append(c.code)
-            continue
-        row = db.query(ExchangeRate).filter(
-            ExchangeRate.currency_id == c.id,
-            ExchangeRate.rate_date == today,
-        ).first()
-        if row:
-            row.rate = rate_val
-            row.source = "API"
-            updated += 1
-        else:
-            db.add(ExchangeRate(currency_id=c.id, rate=rate_val,
-                                rate_date=today, source="API"))
-            created += 1
-    db.commit()
-    return {
-        "message": f"汇率更新完成：新增 {created}，更新 {updated}，失败 {len(failed)}",
-        "created": created, "updated": updated,
-        "failed": failed, "base": base.code if base else "CNY",
-        "rate_date": today.isoformat(),
-        "rates": {c.code: rates.get(c.code) for c in currencies if not (base and c.id == base.id)},
-    }
 
 
 @router.get("/processes-select", tags=["基础档案-选择器"])
@@ -1024,7 +1059,7 @@ def get_company(db: Session = Depends(get_db), current_user: User = Depends(get_
 
 
 @router.post("/company", tags=["基础档案"])
-def save_company(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def save_company(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     """保存公司信息（仅一条，有则更新）"""
     company = db.query(Company).first()
     if company:
@@ -1044,7 +1079,7 @@ def save_company(data: dict, db: Session = Depends(get_db), current_user: User =
 
 
 @router.post("/company/contacts", tags=["基础档案"])
-def save_contact(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def save_contact(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     """新增联系人"""
     company = db.query(Company).first()
     if not company:
@@ -1064,7 +1099,7 @@ def save_contact(data: dict, db: Session = Depends(get_db), current_user: User =
 
 
 @router.put("/company/contacts/{contact_id}", tags=["基础档案"])
-def update_contact(contact_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_contact(contact_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     """修改联系人"""
     contact = db.query(CompanyContact).filter(CompanyContact.id == contact_id).first()
     if not contact:
@@ -1077,7 +1112,7 @@ def update_contact(contact_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.delete("/company/contacts/{contact_id}", tags=["基础档案"])
-def delete_contact(contact_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_contact(contact_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_admin)):
     """删除联系人"""
     contact = db.query(CompanyContact).filter(CompanyContact.id == contact_id).first()
     if not contact:
@@ -1119,7 +1154,7 @@ def batch_save_product_process_templates(
     product_id: int,
     templates: list[ProductProcessTemplateItem],
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:products")),
 ):
     """批量保存产品工艺路线模板（全量替换）"""
     # 删除现有模板
@@ -1151,7 +1186,7 @@ def delete_product_process_template(
     product_id: int,
     pid: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:products")),
 ):
     """删除单个产品工艺路线模板"""
     item = db.query(ProductProcess).filter(

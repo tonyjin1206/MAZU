@@ -4,7 +4,7 @@
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">刷新</el-button>
-          <el-button type="primary" @click="openCreate">新建提醒</el-button>
+          <el-button type="primary" data-testid="btn-create-reminder" @click="openCreate">新建提醒</el-button>
         </div>
       </template>
     </el-card>
@@ -20,7 +20,7 @@
         stripe border size="small"
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -61,7 +61,7 @@
       </el-table>
     </el-card>
 
-    <el-dialog v-model="dialogVisible" title="新建提醒" width="500px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" title="新建提醒" width="500px" destroy-on-close data-testid="dialog-reminder">
       <el-form :model="form" label-width="100px" ref="formRef" :rules="rules">
         <el-form-item label="用户" prop="user_id">
           <el-select v-model="form.user_id" placeholder="选择用户" filterable style="width:100%">
@@ -79,7 +79,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" data-testid="btn-save" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
@@ -104,7 +104,7 @@ const defaultColumns = [
   { prop: 'push_time', label: '推送时间', width: 100 , sortable: true },
   { prop: 'push_days', label: '推送日', width: 100 , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -123,14 +123,14 @@ const rules = {
 
 async function fetchData() {
   loading.value = true
-  try { list.value = await systemConfigApi.reminders.list() || [] } catch { list.value = [] }
+  try { list.value = await systemConfigApi.reminders.list() || [] } catch (e) { list.value = [] }
   loading.value = false
   nextTick(initColumnDrag)
 }
 
 async function fetchMeta() {
-  try { typeList.value = await systemConfigApi.reminders.types() || [] } catch {}
-  try { userList.value = await authApi.listUsers() || [] } catch {}
+  try { typeList.value = await systemConfigApi.reminders.types() || [] } catch (e) {}
+  try { userList.value = await authApi.listUsers() || [] } catch (e) {}
 }
 
 function openCreate() {
@@ -143,7 +143,7 @@ async function toggleEnable(row, val) {
     await systemConfigApi.reminders.update(row.id, { enabled: val ? 1 : 0 })
     row.enabled = val ? 1 : 0
     ElMessage.success(val ? '已启用' : '已停用')
-  } catch {}
+  } catch (e) {}
 }
 
 async function handleSave() {
@@ -159,7 +159,7 @@ async function handleSave() {
     ElMessage.success('已创建')
     dialogVisible.value = false
     fetchData()
-  } catch {}
+  } catch (e) {}
   saving.value = false
 }
 
@@ -169,7 +169,7 @@ async function handleDelete(row) {
     await systemConfigApi.reminders.delete(row.id)
     ElMessage.success('已删除')
     fetchData()
-  } catch {}
+  } catch (e) {}
 }
 
 

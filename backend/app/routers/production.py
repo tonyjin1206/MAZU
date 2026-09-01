@@ -1,20 +1,38 @@
-"""生产与委外模块 API 路由 — 生产订单→委外工单→发料(批次)→完工入库(批次)"""
+"""生产（自产）模块 API 路由 — 生产订单→工序→发料(批次)→完工入库(批次)"""
 
 from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.auth import User
-from app.models.foundation import Product, Material, Warehouse, Process, Supplier
+from app.models.foundation import Product, Material, Warehouse, Process
 from app.models.production import (
     ProductionOrder, ProductionMaterial, ProductionProcess, ProductionReceipt, ProcessingInvoice,
     MaterialIssueItem,
 )
 from app.models.inventory import WarehouseInventory, StockTransaction
 from app.models.purchase import AccountsPayable, PurchaseRequisition
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission, require_any_permission
 from app.utils.batch_no import generate_batch_no, generate_doc_no
 from sqlalchemy import func as sa_func, or_
+
+# ==================== 读端点授权域（BUG-L4-02 同模式：本域 + 业务引用域） ====================
+# 生产=纯自产（v2.8.0）：本域 = 生产订单/工作台/加工费发票/完工入库；
+# 销售侧需读生产状态（明细行「生产中/已生产」）→ 含 sales:orders；
+# 外购型 MO 推采购需求后采购侧读状态 → 含 purchase 域。
+# ⚠ 禁含 menu:inventory* / menu:production:batch（除批次查询本域外）/ menu:dashboard。
+PRODUCTION_READ_PERMS = (
+    "menu:production:orders", "menu:production:workspace",
+    "menu:production:invoices", "menu:production:receipts", "menu:sales:orders",
+    "menu:purchase:requisitions", "menu:purchase:orders",
+)
+PRODUCTION_BATCH_READ_PERMS = ("menu:production:batch", "menu:inventory")
+PRODUCTION_INVOICES_READ_PERMS = (
+    "menu:production:invoices", "menu:production:receipts",
+    "menu:purchase:ap", "menu:purchase:invoices",
+)
+# 写端点：生产工作台/订单域（生产经理）；加工费发票独立域
+PRODUCTION_WRITE_PERMS = ("menu:production:orders", "menu:production:workspace")
 
 
 def _recalc_material_cost(prod_id: int, db: Session):
@@ -32,9 +50,9 @@ def _recalc_material_cost(prod_id: int, db: Session):
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type in ("outsource_out", "material_issue_out"):
+        if t.trans_type in ("material_issue_out",):
             total += abs(t.total_amount or 0)
-        elif t.trans_type == "issue_cancel":
+        elif t.trans_type in ("issue_cancel", "material_out_return"):
             total -= abs(t.total_amount or 0)
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if prod:
@@ -54,9 +72,9 @@ def _calc_material_issued_amount(prod_id: int, material_id: int, db: Session) ->
     ).all()
     total = 0.0
     for t in txns:
-        if t.trans_type in ("outsource_out", "material_issue_out"):
+        if t.trans_type in ("material_issue_out",):
             total += abs(t.total_amount or 0)
-        elif t.trans_type == "issue_cancel":
+        elif t.trans_type in ("issue_cancel", "material_out_return"):
             total -= abs(t.total_amount or 0)
     return round(total, 2)
 
@@ -118,7 +136,7 @@ def list_productions(
     date_from: str = Query(""), date_to: str = Query(""),
     sales_order_id: int = Query(None, description="按销售订单过滤"),
     sales_order_item_id: int = Query(None, description="按销售明细行过滤"),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS)),
 ):
     query = db.query(ProductionOrder)
     if status:
@@ -150,7 +168,7 @@ def list_productions(
          "created_at": str(p.created_at)[:10] if p.created_at else "",
          "start_date": str(p.start_date) if p.start_date else "",
          "due_date": str(p.due_date) if p.due_date else "",
-         "outsource_count": len(p.processes),
+         "process_count": len(p.processes),
         } for p in items
     ]}
 
@@ -163,7 +181,7 @@ def query_batch_inventory(
     product_id: int = Query(None),
     material_id: int = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*PRODUCTION_BATCH_READ_PERMS)),
 ):
     """批次库存查询"""
     query = db.query(WarehouseInventory)
@@ -194,7 +212,7 @@ def query_batch_inventory(
 
 
 @router.get("/inventory/trace", tags=["生产管理"])
-def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_BATCH_READ_PERMS))):
     """批次号全程追溯"""
     batch = db.query(WarehouseInventory).filter(WarehouseInventory.batch_no == batch_no).first()
     item_name = ""
@@ -218,7 +236,7 @@ def trace_batch(batch_no: str, db: Session = Depends(get_db), current_user: User
 # ==================== 新系统：生产订单详情 + 物料清单 + 工艺路线 ====================
 
 @router.get("/productions/{prod_id}", tags=["生产管理-新"])
-def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """生产订单详情（含物料清单、工艺路线）"""
     p = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not p:
@@ -250,8 +268,7 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
             "id": pr.id, "process_id": pr.process_id,
             "process_name": pr.process.name if pr.process else "",
             "process_code": pr.process.code if pr.process else "",
-            "seq": pr.seq, "outsourcer_id": pr.outsourcer_id,
-            "outsourcer_name": pr.outsourcer.name if pr.outsourcer else "",
+            "seq": pr.seq,
             "unit_price": pr.unit_price or 0,
             "process_qty": pr.process_qty or 0,
             "process_amount": pr.process_amount or 0,
@@ -261,7 +278,7 @@ def get_production_detail(prod_id: int, db: Session = Depends(get_db), current_u
 
 
 @router.put("/productions/{prod_id}", tags=["生产管理-新"])
-def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """更新生产订单（交期、备注）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -276,8 +293,8 @@ def update_production(prod_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.post("/productions/{prod_id}/set-type", tags=["生产管理-新"])
-def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """确认备货方式: production_type = 自产/委外/外购"""
+def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
+    """确认备货方式: production_type = 自产/外购（生产=纯自产，委外走转外发）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
         raise HTTPException(404, "生产订单不存在")
@@ -285,8 +302,8 @@ def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db),
         raise HTTPException(400, "备货方式已确认，不可更改")
 
     ptype = data.get("production_type")
-    if ptype not in ("自产", "委外", "外购"):
-        raise HTTPException(400, "备货方式必须为: 自产/委外/外购")
+    if ptype not in ("自产", "外购"):
+        raise HTTPException(400, "备货方式必须为: 自产/外购")
 
     prod.production_type = ptype
     if ptype == "外购":
@@ -304,7 +321,7 @@ def set_production_type(prod_id: int, data: dict, db: Session = Depends(get_db),
 
 
 @router.post("/productions/{prod_id}/to-requisition", tags=["生产管理-新"])
-def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """外购型生产订单 → 推采购需求（采购部门后续转采购订单）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -316,7 +333,12 @@ def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), c
         if req and req.status != "已关闭":
             raise HTTPException(400, f"该生产订单已有关联采购需求（{req.requisition_no}，状态：{req.status}）")
 
-    quantity = float(data.get("quantity", prod.quantity) or prod.quantity)
+    try:
+        quantity = float(data.get("quantity", prod.quantity) or prod.quantity)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "需求数量必须为数字")
+    if quantity <= 0:
+        raise HTTPException(400, "需求数量必须大于 0")
     remark = data.get("remark", "")
 
     from app.utils.batch_no import generate_doc_no
@@ -345,7 +367,7 @@ def mo_to_requisition(prod_id: int, data: dict, db: Session = Depends(get_db), c
 
 
 @router.post("/productions/{prod_id}/expand-bom", tags=["生产管理-新"])
-def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """展开BOM → 生成物料需求清单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -387,7 +409,6 @@ def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User =
                 production_id=prod_id,
                 process_id=tpl.process_id,
                 seq=tpl.seq,
-                outsourcer_id=tpl.default_outsourcer_id,
                 unit_price=tpl.default_unit_price,
                 process_qty=prod.quantity,
                 process_amount=tpl.default_unit_price * prod.quantity,
@@ -399,7 +420,7 @@ def expand_bom(prod_id: int, db: Session = Depends(get_db), current_user: User =
 
 
 @router.put("/productions/{prod_id}/materials", tags=["生产管理-新"])
-def save_materials(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def save_materials(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """批量保存物料清单"""
     items = data.get("items", [])
     # 删除旧的
@@ -420,7 +441,7 @@ def save_materials(prod_id: int, data: dict, db: Session = Depends(get_db), curr
 
 
 @router.put("/productions/{prod_id}/processes", tags=["生产管理-新"])
-def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """批量保存工艺路线"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -436,7 +457,6 @@ def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), curr
             production_id=prod_id,
             process_id=item["process_id"],
             seq=idx + 1,
-            outsourcer_id=item.get("outsourcer_id"),
             unit_price=up,
             process_qty=qty or (prod.quantity or 0),
             process_amount=round((qty or (prod.quantity or 0)) * up, 2),
@@ -448,7 +468,7 @@ def save_processes(prod_id: int, data: dict, db: Session = Depends(get_db), curr
 
 
 @router.post("/productions/{prod_id}/release", tags=["生产管理-新"])
-def release_production_new(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def release_production_new(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """派产 — 锁定工艺路线，状态→已排产"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -475,13 +495,21 @@ def release_production_new(prod_id: int, db: Session = Depends(get_db), current_
 
 
 @router.delete("/productions/{prod_id}", tags=["生产管理-新"])
-def delete_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """删除生产订单（仅待排产状态允许）"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
         raise HTTPException(404, "生产订单不存在")
     if prod.status != "待排产":
         raise HTTPException(400, "仅待排产状态的订单允许删除")
+    # 下游保护（审计 A5）：已发料/已完工入库/已开加工费发票禁删
+    from app.models.production import MaterialIssueItem, ProductionReceipt, ProcessingInvoice
+    if db.query(MaterialIssueItem).filter(MaterialIssueItem.production_id == prod_id).first():
+        raise HTTPException(400, f"生产订单 {prod.order_no} 已发料，不能删除")
+    if db.query(ProductionReceipt).filter(ProductionReceipt.production_id == prod_id).first():
+        raise HTTPException(400, f"生产订单 {prod.order_no} 已完工入库，不能删除")
+    if db.query(ProcessingInvoice).filter(ProcessingInvoice.production_id == prod_id).first():
+        raise HTTPException(400, f"生产订单 {prod.order_no} 已开加工费发票，不能删除")
     prod_id_sales = prod.sales_order_id
     prod_id_item = prod.sales_order_item_id
     db.delete(prod)
@@ -512,7 +540,7 @@ def delete_production(prod_id: int, db: Session = Depends(get_db), current_user:
 
 
 @router.get("/productions/{prod_id}/transactions", tags=["生产管理-新"])
-def list_production_transactions(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_production_transactions(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """生产订单的出入库流水"""
     # 找到该订单所有发料单号
     issue_nos = [r[0] for r in db.query(MaterialIssueItem.issue_no).filter(
@@ -539,7 +567,7 @@ def list_production_transactions(prod_id: int, db: Session = Depends(get_db), cu
 
 
 @router.post("/productions/{prod_id}/unrelease", tags=["生产管理-新"])
-def unrelease_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def unrelease_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """反派产 — 回到待排产状态"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -577,7 +605,7 @@ def unrelease_production(prod_id: int, db: Session = Depends(get_db), current_us
 @router.post("/productions/{prod_id}/processes/{proc_id}/issue", tags=["生产管理-新"])
 def issue_material_to_process(
     prod_id: int, proc_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS)),
 ):
     """按工序发料 — 指定原料批次出库、扣库存"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
@@ -587,9 +615,18 @@ def issue_material_to_process(
     if not proc:
         raise HTTPException(404, "工序不存在")
 
-    material_id = data["material_id"]
-    qty = float(data["quantity"])
-    batch_no = data["batch_no"]
+    material_id = data.get("material_id")
+    if not material_id:
+        raise HTTPException(400, "缺少发料物料")
+    try:
+        qty = float(data.get("quantity") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "发料数量必须为数字")
+    if qty <= 0:
+        raise HTTPException(400, "发料数量必须大于 0")
+    batch_no = data.get("batch_no")
+    if not batch_no:
+        raise HTTPException(400, "缺少原料批次")
     warehouse_id = data.get("warehouse_id")
 
     # 检查批次库存
@@ -625,10 +662,9 @@ def issue_material_to_process(
     db.add(issue)
     db.flush()
 
-    # 库存流水（委外工序=委外发料→原料出库，自产工序=生产领料）
-    is_outsource = bool(proc.outsourcer_id)
+    # 库存流水（生产=纯自产，所有发料均为自产领料）
     trans = StockTransaction(
-        trans_type="material_out" if is_outsource else "material_issue_out",
+        trans_type="material_issue_out",
         warehouse_id=inventory.warehouse_id,
         material_id=material_id,
         batch_no=batch_no,
@@ -639,7 +675,7 @@ def issue_material_to_process(
         after_qty=inventory.quantity,
         before_cost=round(old_qty * inv_unit_cost, 2),
         after_cost=round(inventory.quantity * inv_unit_cost, 2),
-        source_doc_type="原料出库" if is_outsource else "工序发料",
+        source_doc_type="工序发料",
         source_doc_no=issue_no,
         trans_no=generate_doc_no(db, "ST"),
         operator=current_user.display_name or current_user.username,
@@ -672,7 +708,7 @@ def issue_material_to_process(
 @router.get("/productions/{prod_id}/issues", tags=["生产管理-新"])
 def list_production_issues(
     prod_id: int, process_id: int = Query(None),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS)),
 ):
     """查询生产订单的发料记录"""
     q = db.query(MaterialIssueItem).filter(MaterialIssueItem.production_id == prod_id)
@@ -691,7 +727,7 @@ def list_production_issues(
 
 
 @router.get("/productions/{prod_id}/material-issues/{material_id}", tags=["生产管理-新"])
-def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """查询某个物料在订单中的发料/退料明细（含金额）"""
     from app.models.inventory import StockTransaction
     issues = db.query(MaterialIssueItem).filter(
@@ -709,16 +745,16 @@ def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Dep
                 "trans_no": t.trans_no or "",
                 "batch_no": iss.batch_no,
                 "type": t.trans_type,
-                "type_label": "发料出库" if t.trans_type in ("outsource_out", "material_issue_out") else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
-                "quantity": abs(t.quantity or 0) if t.trans_type in ("outsource_out", "material_issue_out") else (-abs(t.quantity or 0)),
+                "type_label": "发料出库" if t.trans_type == "material_issue_out" else ("取消发料" if t.trans_type == "issue_cancel" else t.trans_type),
+                "quantity": abs(t.quantity or 0) if t.trans_type == "material_issue_out" else (-abs(t.quantity or 0)),
                 "amount": abs(t.total_amount or 0),
                 "operator": t.operator or "",
                 "date": str(t.trans_date)[:16] if t.trans_date else "",
             })
 
     # 汇总
-    out_qty = sum(it["quantity"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
-    out_amt = sum(it["amount"] for it in items if it["type"] in ("outsource_out", "material_issue_out"))
+    out_qty = sum(it["quantity"] for it in items if it["type"] == "material_issue_out")
+    out_amt = sum(it["amount"] for it in items if it["type"] == "material_issue_out")
     cancel_qty = sum(it["quantity"] for it in items if it["type"] == "issue_cancel")
     cancel_amt = sum(it["amount"] for it in items if it["type"] == "issue_cancel")
 
@@ -736,7 +772,7 @@ def list_material_issue_detail(prod_id: int, material_id: int, db: Session = Dep
 
 
 @router.post("/productions/{prod_id}/issues/{issue_id}/cancel", tags=["生产管理-新"])
-def cancel_material_issue(prod_id: int, issue_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def cancel_material_issue(prod_id: int, issue_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """取消发料 — 恢复库存、删除发料记录"""
     issue = db.query(MaterialIssueItem).filter(
         MaterialIssueItem.id == issue_id,
@@ -834,7 +870,7 @@ def cancel_material_issue(prod_id: int, issue_id: int, db: Session = Depends(get
 @router.post("/productions/{prod_id}/processes/{proc_id}/finish", tags=["生产管理-新"])
 def finish_process(
     prod_id: int, proc_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS)),
 ):
     """工序完工 — 必须录入加工费，上道完工下道自动流转"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
@@ -844,15 +880,9 @@ def finish_process(
     if not proc:
         raise HTTPException(404, "工序不存在")
 
-    # 委外工序必须录入加工费
-    if proc.outsourcer_id:
-        unit_price = float(data.get("unit_price", 0))
-        process_qty = float(data.get("process_qty", 0))
-        if unit_price <= 0 or process_qty <= 0:
-            raise HTTPException(400, "委外工序完工必须录入加工单价和加工数量")
-    else:
-        unit_price = float(data.get("unit_price", 0))
-        process_qty = float(data.get("process_qty", proc.process_qty or prod.quantity or 0))
+    # 工序完工（生产=纯自产，加工费为工序内部成本，默认按订单数量）
+    unit_price = float(data.get("unit_price", 0))
+    process_qty = float(data.get("process_qty", proc.process_qty or prod.quantity or 0))
 
     proc.unit_price = unit_price
     proc.process_qty = process_qty
@@ -886,7 +916,7 @@ def finish_process(
 
 
 @router.post("/productions/{prod_id}/processes/{proc_id}/revert", tags=["生产管理-新"])
-def revert_process(prod_id: int, proc_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def revert_process(prod_id: int, proc_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """反退工序到未开工状态"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -919,7 +949,7 @@ def revert_process(prod_id: int, proc_id: int, db: Session = Depends(get_db), cu
 # ==================== 完工入库 ====================
 
 @router.post("/productions/{prod_id}/receipt", tags=["生产管理-新"])
-def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """完工入库 — 末道工序完工后入库，允许损耗"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -929,10 +959,15 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     if prod.status not in ("已完成", "部分入库", "已入库"):
         raise HTTPException(400, "请先完成所有工序后再完工入库")
 
-    qty = float(data["quantity"])
-    warehouse_id = data["warehouse_id"]
+    try:
+        qty = float(data.get("quantity") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "入库数量必须为数字")
     if qty <= 0:
         raise HTTPException(400, "入库数量必须大于 0")
+    warehouse_id = data.get("warehouse_id")
+    if not warehouse_id:
+        raise HTTPException(400, "请选择入库仓库")
 
     # 仓库参照校验：必须存在于仓库档案且启用
     wh = db.query(Warehouse).filter(Warehouse.id == warehouse_id, Warehouse.is_active == 1).first()
@@ -948,8 +983,11 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
     auto_proc = remaining_proc if qty >= remaining_qty else round(remaining_proc * ratio, 2)
     mc_raw = data.get("material_cost")
     pc_raw = data.get("process_cost")
-    material_cost = auto_mat if mc_raw in (None, "") else float(mc_raw)
-    process_cost = auto_proc if pc_raw in (None, "") else float(pc_raw)
+    try:
+        material_cost = auto_mat if mc_raw in (None, "") else float(mc_raw)
+        process_cost = auto_proc if pc_raw in (None, "") else float(pc_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "转出成本必须为数字")
     if material_cost < 0 or process_cost < 0:
         raise HTTPException(400, "转出成本不能为负数")
 
@@ -1038,7 +1076,7 @@ def receipt_production(prod_id: int, data: dict, db: Session = Depends(get_db), 
 
 
 @router.post("/productions/{prod_id}/receipts/{receipt_id}/cancel", tags=["生产管理-新"])
-def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """取消完工入库 — 删除库存、冲销流水、回退累计值"""
     from app.models.inventory import WarehouseInventory, StockTransaction
 
@@ -1126,7 +1164,8 @@ def cancel_receipt(prod_id: int, receipt_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/productions/{prod_id}/receipts", tags=["生产管理-新"])
-def list_production_receipts(prod_id: int, db: Session = Depends(get_db)):
+def list_production_receipts(prod_id: int, db: Session = Depends(get_db),
+                             current_user: User = Depends(require_any_permission(*PRODUCTION_READ_PERMS))):
     """查询生产订单的所有入库单"""
     receipts = db.query(ProductionReceipt).filter(ProductionReceipt.production_id == prod_id).order_by(ProductionReceipt.id.desc()).all()
     return {"items": [{
@@ -1147,7 +1186,7 @@ def list_production_receipts(prod_id: int, db: Session = Depends(get_db)):
 # ==================== 关闭/取消关闭 ====================
 
 @router.post("/productions/{prod_id}/close", tags=["生产管理-新"])
-def close_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def close_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """关闭生产订单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -1162,7 +1201,7 @@ def close_production(prod_id: int, db: Session = Depends(get_db), current_user: 
 
 
 @router.post("/productions/{prod_id}/unclose", tags=["生产管理-新"])
-def unclose_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def unclose_production(prod_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_WRITE_PERMS))):
     """取消关闭生产订单"""
     prod = db.query(ProductionOrder).filter(ProductionOrder.id == prod_id).first()
     if not prod:
@@ -1180,7 +1219,7 @@ def unclose_production(prod_id: int, db: Session = Depends(get_db), current_user
 @router.get("/workspace", tags=["生产管理-新"])
 def production_workspace(
     status: str = Query(""), keyword: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission("menu:production:workspace", "menu:production:orders")),
 ):
     """生产工作台总览 — 查看每道工序状态"""
     query = db.query(ProductionOrder).filter(
@@ -1252,17 +1291,9 @@ def production_workspace(
             "done_processes": done_procs,
             "current_process_name": current_proc.process.name if current_proc and current_proc.process else "",
             "current_process_status": current_proc.status if current_proc else "",
-            "current_outsourcer_name": (
-                current_proc.outsourcer.name
-                if current_proc and current_proc.outsourcer
-                else ""
-            ) if current_proc else "",
             "processes": [{
                 "id": pr.id, "process_name": pr.process.name if pr.process else "",
                 "seq": pr.seq, "status": pr.status,
-                "outsourcer_name": (
-                    pr.outsourcer.name if pr.outsourcer else "自产"
-                ),
                 "unit_price": pr.unit_price or 0,
                 "process_qty": pr.process_qty or 0,
             } for pr in processes],
@@ -1276,7 +1307,7 @@ def production_workspace(
 @router.get("/processing-invoices", tags=["生产管理-加工费发票"])
 def list_processing_invoices(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_INVOICES_READ_PERMS)),
 ):
     """加工费发票列表"""
     items = db.query(ProcessingInvoice).order_by(ProcessingInvoice.id.desc()).offset(
@@ -1302,7 +1333,7 @@ def list_processing_invoices(
 
 
 @router.post("/processing-invoices", tags=["生产管理-加工费发票"])
-def create_processing_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_processing_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:production:invoices"))):
     """创建加工费发票（参照完工入库单或生产订单）"""
     receipt_id = data.get("receipt_id")
     production_id = data.get("production_id")
@@ -1323,79 +1354,26 @@ def create_processing_invoice(data: dict, db: Session = Depends(get_db), current
     if existing:
         raise HTTPException(400, f"该生产订单已开票（发票号: {existing.invoice_no}）")
 
-    # 计算加工费：该生产订单所有委外工序完工的加工费
-    processes = db.query(ProductionProcess).filter(
-        ProductionProcess.production_id == production_id,
-        ProductionProcess.status == "已完工",
-        ProductionProcess.outsourcer_id.isnot(None),
-    ).all()
-    if not processes:
-        raise HTTPException(400, "该生产订单没有已完工的委外工序")
-
-    # 取第一个委外工序的委外商（即供应商）
-    first_proc = processes[0]
-    supplier_id = first_proc.outsourcer_id or (first_proc.outsourcer.id if first_proc.outsourcer else None)
-    if not supplier_id:
-        raise HTTPException(400, "委外商未关联供应商")
-
-    total_amount = sum(p.process_amount or 0 for p in processes)
-
-    from app.utils.batch_no import generate_doc_no
-    from app.models.production import ProcessingInvoice
-    invoice_no = generate_doc_no(db, "PI", ProcessingInvoice, "invoice_no")
-
-    inv = ProcessingInvoice(
-        invoice_no=invoice_no,
-        production_id=production_id,
-        receipt_id=receipt_id or None,
-        supplier_id=supplier_id,
-        amount=total_amount,
-        invoice_date=_parse_date(data.get("invoice_date")) or date.today(),
-        remark=data.get("remark", ""),
-        supplier_name=data.get("supplier_name", ""),
-        supplier_tax_id=data.get("supplier_tax_id", ""),
-        service_type="加工费",
-        service_qty=sum(p.completed_qty or 0 for p in processes),
-        unit_price=round(total_amount / max(sum(p.completed_qty or 0 for p in processes), 1), 4),
-        tax_rate=13,
-        amount_excl_tax=round(total_amount / 1.13, 2),
-        created_by=current_user.display_name or current_user.username,
-    )
-    db.add(inv)
-    db.flush()
-
-    # 生成应付账款
-    from app.utils.batch_no import generate_doc_no
-    from app.models.purchase import AccountsPayable
-    ap_no_str = generate_doc_no(db, "AP", AccountsPayable, "ap_no")
-    ap = AccountsPayable(
-        ap_no=ap_no_str,
-        source_type="processing_invoice",
-        source_id=inv.id,
-        supplier_id=supplier_id,
-        amount=total_amount,
-        amount_fc=total_amount,
-        paid_amount=0,
-        balance=total_amount,
-        status="未付款",
-    )
-    db.add(ap)
-    db.commit()
-
-    return {"id": inv.id, "invoice_no": invoice_no, "ap_no": ap_no_str, "message": f"加工费发票已创建，金额: ¥{total_amount:,.2f}，应付账款已生成"}
+    # 生产=纯自产，无委外工序加工费，不生成委外加工费发票
+    raise HTTPException(400, "生产订单纯自产，无委外工序，无需开加工费发票")
 
 
 @router.delete("/processing-invoices/{invoice_id}", tags=["生产管理-加工费发票"])
-def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """删除加工费发票（同时删除关联的应付账款）"""
+def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:production:invoices"))):
+    """删除加工费发票（同时删除关联的应付账款；已付款禁删）"""
     inv = db.query(ProcessingInvoice).filter(ProcessingInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(404, "发票不存在")
-    # 删除关联应付
-    db.query(AccountsPayable).filter(
+    # 已付款拦截（审计 A3）：付款单已核销应付时删除会导致付款记录孤儿
+    ap = db.query(AccountsPayable).filter(
         AccountsPayable.source_type == "processing_invoice",
         AccountsPayable.source_id == invoice_id,
-    ).delete()
+    ).first()
+    if ap and (ap.paid_amount or 0) > 0:
+        raise HTTPException(400, f"加工费发票 {inv.invoice_no} 已付款 ¥{ap.paid_amount:,.2f}，不能删除（请先撤销付款）")
+    # 删除关联应付
+    if ap:
+        db.delete(ap)
     db.delete(inv)
     db.commit()
     return {"message": "加工费发票已删除"}
@@ -1403,58 +1381,7 @@ def delete_processing_invoice(invoice_id: int, db: Session = Depends(get_db), cu
 
 @router.get("/processing-invoices/receipt-candidates", tags=["生产管理-加工费发票"])
 def list_processing_invoice_candidates(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*PRODUCTION_INVOICES_READ_PERMS)),
 ):
-    """查询可开加工费发票的完工入库单（有委外工序但未开票的）"""
-    invoiced_receipts = [r[0] for r in db.query(ProcessingInvoice.receipt_id).all()]
-    invoiced_prods = [r[0] for r in db.query(ProcessingInvoice.production_id).all()]
-
-    # 找所有有已完工委外工序的生产订单
-    prods_with_done = db.query(ProductionProcess.production_id).filter(
-        ProductionProcess.status == "已完工",
-        ProductionProcess.outsourcer_id.isnot(None),
-    ).distinct().all()
-    prod_ids = [r[0] for r in prods_with_done]
-
-    result = []
-    for pid in prod_ids:
-        if pid in invoiced_prods:
-            continue
-        processes = db.query(ProductionProcess).filter(
-            ProductionProcess.production_id == pid,
-            ProductionProcess.status == "已完工",
-            ProductionProcess.outsourcer_id.isnot(None),
-        ).all()
-        if not processes:
-            continue
-        total_fee = sum(p.process_amount or 0 for p in processes)
-        prod = db.query(ProductionOrder).filter(ProductionOrder.id == pid).first()
-        if not prod:
-            continue
-        # 查找关联的入库单
-        receipt = db.query(ProductionReceipt).filter(ProductionReceipt.production_id == pid).first()
-        processes = db.query(ProductionProcess).filter(
-            ProductionProcess.production_id == pid,
-            ProductionProcess.status == "已完工",
-            ProductionProcess.outsourcer_id.isnot(None),
-        ).all()
-        first_proc = processes[0] if processes else None
-        supplier_id = first_proc.outsourcer_id if first_proc else None
-        supplier = db.query(Supplier).filter(Supplier.id == supplier_id).first() if supplier_id else None
-
-        result.append({
-            "receipt_id": receipt.id if receipt else None,
-            "receipt_no": receipt.receipt_no if receipt else f"FG-{pid:04d}(auto)",
-            "production_id": pid,
-            "order_no": prod.order_no or "",
-            "product_name": prod.product.name_cn if prod.product else "",
-            "batch_no": receipt.batch_no if receipt else "",
-            "quantity": receipt.quantity if receipt else 0,
-            "receipt_date": str(receipt.receipt_date) if receipt else "",
-            "process_fee": round(total_fee, 2),
-            "process_count": len(processes),
-            "supplier_id": supplier.id if supplier else None,
-            "supplier_name": supplier.name if supplier else "",
-            "supplier_tax_id": supplier.tax_id if hasattr(supplier, 'tax_id') else "",
-        })
-    return {"items": result}
+    """查询可开加工费发票的完工入库单（生产=纯自产，无委外工序，恒为空）"""
+    return {"items": []}

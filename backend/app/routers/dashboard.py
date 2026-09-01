@@ -106,7 +106,7 @@ def get_dashboard_data(
     from app.models.foundation import Product
     from app.models.inventory import StockTransaction
     deliveries = db.query(SalesDelivery).filter(
-        SalesDelivery.status.in_(["已发货", "部分发货", "已退货"])
+        SalesDelivery.status.in_(["已发货", "部分发货", "已出库", "部分出库", "已退货"])
     ).all()
 
     # 按发货单展开毛利
@@ -115,10 +115,13 @@ def get_dashboard_data(
         order = d.order
         if not order: continue
         product = db.query(Product).filter(Product.id == d.product_id).first()
-        revenue = (d.quantity or 0) * (d.unit_price or 0)
+        # 退货单（is_return=1）= 红字冲减：收入/成本取负（两段式出库 source_doc_type=成品出库）
+        is_return = 1 if getattr(d, "is_return", 0) else 0
+        sign = -1 if is_return else 1
+        revenue = sign * (d.quantity or 0) * (d.unit_price or 0)
         # 查该批次出库的库存成本
         txns = db.query(StockTransaction).filter(
-            StockTransaction.source_doc_type.in_(["销售发货"]),
+            StockTransaction.source_doc_type.in_(["销售发货", "成品出库"]),
             StockTransaction.product_id == d.product_id,
             StockTransaction.batch_no == d.batch_no,
         ).all() if d.batch_no else []
@@ -127,7 +130,9 @@ def get_dashboard_data(
             total_qty = sum(abs(t.quantity or 0) for t in txns)
             total_cost = sum(abs((t.unit_cost or 0) * (t.quantity or 0)) for t in txns)
             unit_cost = total_cost / max(total_qty, 1) if total_qty else 0
-            cost = (d.quantity or 0) * unit_cost
+            cost = sign * (d.quantity or 0) * unit_cost
+        else:
+            cost = 0
         gross = revenue - cost
         profit_list.append({
             "product_id": d.product_id,
@@ -163,7 +168,7 @@ def get_profit_detail(
     product = db.query(Product).filter(Product.id == product_id).first()
     deliveries = db.query(SalesDelivery).filter(
         SalesDelivery.product_id == product_id,
-        SalesDelivery.status.in_(["已发货", "部分发货", "已退货"]),
+        SalesDelivery.status.in_(["已发货", "部分发货", "已出库", "部分出库", "已退货"]),
     ).order_by(SalesDelivery.delivery_date).all()
 
     detail = []
@@ -180,7 +185,7 @@ def get_profit_detail(
         invoice_no = invoice.invoice_no if invoice else ""
         # 查该批次出库的库存成本
         txns = db.query(StockTransaction).filter(
-            StockTransaction.source_doc_type.in_(["销售发货"]),
+            StockTransaction.source_doc_type.in_(["销售发货", "成品出库"]),
             StockTransaction.product_id == product_id,
             StockTransaction.batch_no == d.batch_no,
         ).all() if d.batch_no else []
@@ -192,8 +197,10 @@ def get_profit_detail(
             total_qty = sum(abs(t.quantity or 0) for t in txns)
             total_amt = sum(abs((t.unit_cost or 0) * (t.quantity or 0)) for t in txns)
             unit_cost = total_amt / max(total_qty, 1) if total_qty else 0
-        revenue = (d.quantity or 0) * (d.unit_price or 0)
-        cost = (d.quantity or 0) * unit_cost
+        is_return = 1 if getattr(d, "is_return", 0) else 0
+        sign = -1 if is_return else 1
+        revenue = sign * (d.quantity or 0) * (d.unit_price or 0)
+        cost = sign * (d.quantity or 0) * unit_cost
         total_revenue += revenue
         total_cost += cost
         detail.append({

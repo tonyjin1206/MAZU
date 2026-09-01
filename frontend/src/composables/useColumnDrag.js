@@ -1,4 +1,4 @@
-import { ref, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onBeforeUnmount } from 'vue'
 import Sortable from 'sortablejs'
 
 /**
@@ -43,6 +43,22 @@ export function useColumnDrag(defaultColumns, storageKey, selector = '.el-table_
 
   const columns = ref(loadColumnOrder())
   const columnVersion = ref(0)
+  // 显隐状态：初始化时读取 localStorage(item + '_vis')，设定每列的 visible
+  function loadColumnVisible() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey + '_vis') || '{}')
+      for (const c of columns.value) {
+        if (saved[c.prop] !== undefined) c.visible = saved[c.prop] !== false
+      }
+    } catch (e) { /* 忽略损坏的存储 */ }
+  }
+  loadColumnVisible()
+  // 过滤出可见列（供模板 v-for 使用）
+  const visibleColumns = computed(() => columns.value.filter(c => c.visible !== false))
+  // 初始化/重载时需要再次应用 localStorage 显隐（例如 drag 重排后 columns.value 被重赋值）
+  function initColumnVisible() {
+    loadColumnVisible()
+  }
   let sortableInstance = null
   let dragRetryTimer = null
 
@@ -130,5 +146,5 @@ export function useColumnDrag(defaultColumns, storageKey, selector = '.el-table_
     settingsList.value = defaultColumns.map(c => ({ ...c, visible: true }))
   }
 
-  return { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings }
+  return { columns, columnVersion, visibleColumns, initColumnVisible, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings }
 }

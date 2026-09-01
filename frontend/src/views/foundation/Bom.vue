@@ -4,10 +4,13 @@
     <el-card style="margin-bottom: 12px">
       <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px">
         <el-input v-model="productKeyword" placeholder="按编码/名称搜索" clearable style="flex: 1" />
+        <span style="flex: 1" />
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
         <el-button @click="fetchProducts">刷新</el-button>
       </div>
       <el-table
         ref="productTableRef"
+        :key="columnVersion"
         :data="filteredProducts"
         v-loading="productLoading"
         stripe
@@ -19,13 +22,14 @@
         :row-key="row => row.id"
         @row-click="onProductSelect"
       >
-        <el-table-column prop="code" label="编码" width="120" sortable />
-        <el-table-column prop="name" label="名称" min-width="120" sortable />
-        <el-table-column prop="spec" label="规格" min-width="100" show-overflow-tooltip sortable>
-          <template #default="{ row }">{{ row.spec || '-' }}</template>
-        </el-table-column>
-        <el-table-column prop="model" label="型号" min-width="100" show-overflow-tooltip sortable>
-          <template #default="{ row }">{{ row.model || '-' }}</template>
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'spec' || col.prop === 'model'" #default="{ row }">{{ row[col.prop] || '-' }}</template>
         </el-table-column>
       </el-table>
     </el-card>
@@ -86,8 +90,8 @@
           </el-select>
         </el-form-item>
         <el-form-item label="规格"><el-input v-model="form.material_spec" disabled /></el-form-item>
-        <el-form-item label="用量" prop="quantity"><el-input type="number" v-model="form.quantity" :min="0" :precision="4" style="width: 100%" /></el-form-item>
-        <el-form-item label="损耗率(%)" prop="loss_rate"><el-input type="number" v-model="form.loss_rate" :min="0" :max="100" :precision="2" style="width: 100%" /></el-form-item>
+        <el-form-item label="用量" prop="quantity"><el-input-number v-model="form.quantity" :min="0" :precision="4" style="width: 100%" /></el-form-item>
+        <el-form-item label="损耗率(%)" prop="loss_rate"><el-input-number v-model="form.loss_rate" :min="0" :max="100" :precision="2" style="width: 100%" /></el-form-item>
         <el-form-item label="工序" prop="process_id">
           <el-select v-model="form.process_id" placeholder="请选择工序" style="width: 100%">
             <el-option v-for="p in processList" :key="p.id" :label="p.name" :value="p.id" />
@@ -122,14 +126,26 @@
         <el-button type="primary" :loading="processDialogLoading" @click="handleProcessSave">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, nextTick, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
+
+// ===== 产品列配置 =====
+const STORAGE_KEY = 'mazu_bom_product_columns'
+const defaultColumns = [
+  { prop: 'code', label: '编码', width: 120, sortable: true },
+  { prop: 'name', label: '名称', minWidth: 120, sortable: true },
+  { prop: 'spec', label: '规格', minWidth: 100, sortable: true },
+  { prop: 'model', label: '型号', minWidth: 100, sortable: true },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const productKeyword = ref('')
 const selectedProductId = ref(null)
@@ -189,7 +205,7 @@ async function fetchProducts() {
       productTableRef.value?.setCurrentRow(productList.value[0] || null)
       onProductSelect(productList.value[0])
     })
-  } catch {} finally { productLoading.value = false }
+  } catch (e) {} finally { productLoading.value = false; nextTick(initColumnDrag) }
 }
 
 async function fetchBom() {
@@ -198,7 +214,7 @@ async function fetchBom() {
   try {
     const res = await foundationApi.getBomByProduct(selectedProductId.value)
     bomData.value = res.items || res.data || []
-  } catch { ElMessage.error('加载 BOM 失败') } finally { bomLoading.value = false }
+  } catch (e) { ElMessage.error('加载 BOM 失败') } finally { bomLoading.value = false }
 }
 
 function findProcess(id) {
@@ -210,34 +226,34 @@ async function fetchProcessTemplates() {
   if (!processList.value.length) await fetchProcesses()
   processLoading.value = true
   try {
-    const res = await request.get(`/foundation/products/${selectedProductId.value}/processes`)
+    const res = await foundationApi.products.processTemplates.list(selectedProductId.value)
     const items = Array.isArray(res) ? res : (res.items || res.data || [])
     processData.value = items.map(row => {
       const p = findProcess(row.process_id)
       return { ...row, process_code: p?.code || '', process_name: p?.name || '' }
     })
-  } catch { ElMessage.error('加载工艺流程失败') } finally { processLoading.value = false }
+  } catch (e) { ElMessage.error('加载工艺流程失败') } finally { processLoading.value = false }
 }
 
 async function fetchMaterials() {
   try {
     const res = await foundationApi.materials.select('')
     materialList.value = Array.isArray(res) ? res : []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchProcesses() {
   try {
     const res = await foundationApi.processes.select('')
     processList.value = Array.isArray(res) ? res : []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchSupplierList() {
   try {
-    const res = await request.get('/foundation/suppliers-select')
+    const res = await foundationApi.suppliers.select()
     supplierList.value = Array.isArray(res) ? res : []
-  } catch {}
+  } catch (e) {}
 }
 
 function onProductSelect(row) {
@@ -302,10 +318,10 @@ async function saveProcessTemplates() {
       default_unit_price: row.default_unit_price || 0,
       default_supplier_id: row.default_supplier_id ?? null,
     }))
-    await request.put(`/foundation/products/${selectedProductId.value}/processes`, payload)
+    await foundationApi.products.processTemplates.save(selectedProductId.value, payload)
     ElMessage.success('保存成功')
     await fetchProcessTemplates()
-  } catch { ElMessage.error('保存失败') } finally { processLoading.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { processLoading.value = false }
 }
 
 function moveProcess(idx, dir) {
@@ -324,7 +340,7 @@ async function handleProcessDelete(row) {
     await ElMessageBox.confirm('确认删除该工序？', '删除确认', { type: 'warning' })
     processData.value = processData.value.filter(x => x !== row)
     saveProcessTemplates()
-  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败') }
 }
 
 function onMaterialChange(id) {
@@ -356,7 +372,7 @@ async function handleSave() {
     ElMessage.success(dialogMode.value === 'create' ? '新增成功' : '更新成功')
     dialogVisible.value = false
     fetchBom()
-  } catch (e) { ElMessage.error('保存失败') } finally { dialogLoading.value = false }
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '保存失败') } finally { dialogLoading.value = false }
 }
 
 async function handleDelete(row) {
@@ -365,7 +381,7 @@ async function handleDelete(row) {
     await foundationApi.deleteBomItem(row.id)
     ElMessage.success('删除成功')
     fetchBom()
-  } catch (e) { if (e !== 'cancel') ElMessage.error('删除失败') }
+  } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败') }
 }
 
 onMounted(() => { fetchProducts(); fetchMaterials(); fetchProcesses(); fetchSupplierList() })

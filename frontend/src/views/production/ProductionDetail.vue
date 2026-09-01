@@ -120,7 +120,7 @@
             <el-table :data="matDetailItems" border size="small" max-height="300" style="table-layout: auto">
               <el-table-column label="类型" width="100">
                 <template #default="{ row }">
-                  <el-tag :type="row.type === 'outsource_out' ? 'warning' : 'success'" size="small">{{ row.type_label }}</el-tag>
+                  <el-tag type="success" size="small">{{ row.type_label }}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column label="单号" min-width="140" prop="trans_no" sortable />
@@ -148,13 +148,6 @@
               <template #default="{ row }">
                 <el-select v-model="row.process_id" placeholder="选择" filterable size="small" style="width: 100%" :disabled="order.status !== '待排产'">
                   <el-option v-for="p in processOptions" :key="p.id" :label="`${p.code} - ${p.name}`" :value="p.id" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="委外商" min-width="140">
-              <template #default="{ row }">
-                <el-select v-model="row.outsourcer_id" placeholder="自产(留空)" clearable filterable size="small" style="width: 100%">
-                  <el-option v-for="o in outsourcerOptions" :key="o.id" :label="o.name" :value="o.id" />
                 </el-select>
               </template>
             </el-table-column>
@@ -198,7 +191,6 @@ const issueItems = ref([])
 const receiptItems = ref([])
 const materialOptions = ref([])
 const processOptions = ref([])
-const outsourcerOptions = ref([])
 
 const saveLoading = ref(false)
 const bomLoading = ref(false)
@@ -230,23 +222,22 @@ async function fetchIssues() {
   try {
     const res = await productionApi.productions.listIssues(route.params.id)
     issueItems.value = res.items || []
-  } catch { issueItems.value = [] }
+  } catch (e) { issueItems.value = [] }
 }
 
 async function fetchReceipts() {
   try {
     const res = await productionApi.productions.listReceipts(route.params.id)
     receiptItems.value = res.items || []
-  } catch { receiptItems.value = [] }
+  } catch (e) { receiptItems.value = [] }
 }
 
 async function loadOptions() {
-  try { materialOptions.value = (await foundationApi.materials.list({ page_size: 200 })).items || [] } catch {}
+  try { materialOptions.value = (await foundationApi.materials.list({ page_size: 200 })).items || [] } catch (e) {}
   try {
     const res = await foundationApi.processes.list({ page_size: 200 })
     processOptions.value = res.items || []
-  } catch {}
-  try { outsourcerOptions.value = (await foundationApi.outsourcers.select()) || [] } catch {}
+  } catch (e) {}
 }
 
 async function saveOrder() {
@@ -295,7 +286,7 @@ async function openMaterialDetail(row) {
     const res = await productionApi.productions.listMaterialIssues(order.id, row.material_id)
     matDetailItems.value = res.items || []
     matDetailSummary.value = res.summary || null
-  } catch {}
+  } catch (e) {}
 }
 
 function addMaterialRow() {
@@ -312,7 +303,7 @@ async function saveMaterials() {
 }
 
 function addProcessRow() {
-  processes.value.push({ process_id: null, seq: processes.value.length + 1, outsourcer_id: null, unit_price: 0, process_qty: order.quantity || 0, status: '待排产' })
+  processes.value.push({ process_id: null, seq: processes.value.length + 1, unit_price: 0, process_qty: order.quantity || 0, status: '待排产' })
 }
 
 async function saveProcesses() {

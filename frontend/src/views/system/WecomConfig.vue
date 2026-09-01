@@ -17,7 +17,7 @@
         stripe border size="small"
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -63,7 +63,7 @@
           <el-input v-model="form.agent_id" />
         </el-form-item>
         <el-form-item label="Secret" prop="secret">
-          <el-input v-model="form.secret" type="password" show-password />
+          <el-input v-model="form.secret" type="password" show-password :placeholder="isEdit ? '留空则不修改' : '请输入 Secret'" />
         </el-form-item>
         <el-form-item label="Token" prop="token">
           <el-input v-model="form.token" />
@@ -99,7 +99,7 @@ const defaultColumns = [
   { prop: 'is_active', label: '状态', width: 80, align: 'center' , sortable: true },
   { prop: 'callback_url', label: '回调URL', minWidth: 200 , sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const saving = ref(false)
@@ -114,12 +114,12 @@ const form = reactive({ corp_id: '', agent_id: '', secret: '', token: '', encodi
 const rules = {
   corp_id: [{ required: true, message: '必填', trigger: 'blur' }],
   agent_id: [{ required: true, message: '必填', trigger: 'blur' }],
-  secret: [{ required: true, message: '必填', trigger: 'blur' }],
+  secret: isEdit.value ? [] : [{ required: true, message: '必填', trigger: 'blur' }],
 }
 
 async function fetchData() {
   loading.value = true
-  try { list.value = await systemConfigApi.wecom.list() || [] } catch { list.value = [] }
+  try { list.value = await systemConfigApi.wecom.list() || [] } catch (e) { list.value = [] }
   loading.value = false
   nextTick(initColumnDrag)
 }
@@ -132,7 +132,7 @@ function openCreate() {
 
 function openEdit(row) {
   isEdit.value = true; editId.value = row.id
-  Object.assign(form, { corp_id: row.corp_id, agent_id: row.agent_id, secret: row.secret, token: row.token || '', encoding_aes_key: row.encoding_aes_key || '' })
+  Object.assign(form, { corp_id: row.corp_id, agent_id: row.agent_id, secret: '', token: row.token || '', encoding_aes_key: row.encoding_aes_key || '' })
   dialogVisible.value = true
 }
 
@@ -142,7 +142,9 @@ async function handleSave() {
   saving.value = true
   try {
     if (isEdit.value) {
-      await systemConfigApi.wecom.update(editId.value, { ...form })
+      const payload = { ...form }
+      if (!payload.secret) delete payload.secret   // 留空不修改
+      await systemConfigApi.wecom.update(editId.value, payload)
       ElMessage.success('已更新')
     } else {
       await systemConfigApi.wecom.create({ ...form, is_active: 1 })
@@ -150,7 +152,7 @@ async function handleSave() {
     }
     dialogVisible.value = false
     fetchData()
-  } catch {}
+  } catch (e) {}
   saving.value = false
 }
 
@@ -160,7 +162,7 @@ async function handleDelete(row) {
     await systemConfigApi.wecom.delete(row.id)
     ElMessage.success('已删除')
     fetchData()
-  } catch {}
+  } catch (e) {}
 }
 
 

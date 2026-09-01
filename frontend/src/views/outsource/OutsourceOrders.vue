@@ -123,7 +123,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { purchaseApi, outsourceApi, inventoryApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_outsource_order_columns'
@@ -177,7 +177,7 @@ async function fetchData() {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/outsource/orders', { params })
+    const res = await outsourceApi.orders.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false; nextTick(() => { initColumnDrag(); fitTable(tableRef.value, visibleColumns, dataList) }) }
@@ -185,9 +185,9 @@ async function fetchData() {
 
 async function loadSuppliers() {
   try {
-    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.suppliers.list({ page: 1, page_size: 100 })
     supplierList.value = res.items || []
-  } catch {}
+  } catch (e) {}
 }
 
 // ========== 维护 ==========
@@ -211,7 +211,7 @@ async function handleSave() {
   if (!editForm.unit_price || editForm.unit_price <= 0) { ElMessage.warning('请填写加工单价'); return }
   submitting.value = true
   try {
-    const res = await request.put(`/outsource/orders/${editForm.id}`, {
+    const res = await outsourceApi.orders.update(editForm.id, {
       outsourcer_id: editForm.outsourcer_id,
       unit_price: parseFloat(editForm.unit_price) || 0,
       due_date: editForm.due_date || null,
@@ -227,7 +227,7 @@ async function handleSave() {
 async function handleApprove(row) {
   await ElMessageBox.confirm(`审核委外订单 ${row.outsource_no}？审核后生成加工费应付账款 ${row.quantity} × ${row.unit_price}。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/outsource/orders/${row.id}/approve`)
+    const res = await outsourceApi.orders.approve(row.id)
     ElMessage.success(res.message || '已审核')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
@@ -238,7 +238,7 @@ async function handleDelete(row) {
   const matTip = matCount > 0 ? `该单已认领 ${matCount} 种材料，删除后材料将退回原批次。` : ''
   await ElMessageBox.confirm(`确定删除委外订单 ${row.outsource_no}？${matTip}删除后销售明细行回到「未生产」。`, '提示', { type: 'warning' })
   try {
-    const res = await request.delete(`/outsource/orders/${row.id}`)
+    const res = await outsourceApi.orders.remove(row.id)
     ElMessage.success(res.message || '已删除')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '删除失败') }
@@ -247,7 +247,7 @@ async function handleDelete(row) {
 async function handleUnapprove(row) {
   await ElMessageBox.confirm(`确定取消审核委外订单 ${row.outsource_no}？取消后可修改或删除。`, '提示', { type: 'warning' })
   try {
-    const res = await request.post(`/outsource/orders/${row.id}/unapprove`)
+    const res = await outsourceApi.orders.unapprove(row.id)
     ElMessage.success(res.message || '已取消审核')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '取消失败') }
@@ -258,9 +258,9 @@ const detailForm = reactive({})
 
 async function openDetail(row) {
   try {
-    const res = await request.get(`/outsource/orders/${row.id}`)
+    const res = await outsourceApi.orders.get(row.id)
     Object.assign(detailForm, res)
-  } catch {}
+  } catch (e) {}
   detailVisible.value = true
 }
 

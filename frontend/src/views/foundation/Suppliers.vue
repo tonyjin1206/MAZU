@@ -6,7 +6,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openDialog('create')">新增供应商</el-button>
+          <el-button type="primary" data-testid="btn-create-supplier" @click="openDialog('create')">新增供应商</el-button>
         </div>
       </template>
       <el-form :model="searchForm" inline>
@@ -97,7 +97,7 @@
       <el-pagination v-model:current-page="page" v-model:page-size="pageSize" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" style="margin-top: 16px" />
     </el-card>
 
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增供应商' : '编辑供应商'" width="900px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增供应商' : '编辑供应商'" width="900px" data-testid="dialog-supplier">
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -197,7 +197,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+        <el-button type="primary" data-testid="btn-save" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
@@ -212,22 +212,21 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 国家列表（来自参数设置「国家」组，可在参数设置里自行增删）
 const tableRef = ref(null)
 const countryList = ref([])
 async function loadCountries() {
   try {
-    const opts = await request.get('/foundation/params/options', { params: { group: 'country' } }) || []
+    const opts = await foundationApi.params.options({ group: 'country' }) || []
     countryList.value = opts.map(o => o.label)
-  } catch { countryList.value = [] }
+  } catch (e) { countryList.value = [] }
 }
 // 供应商类型选项（来自参数设置）
 const supplierTypeOptions = ref([])
 async function loadSupplierTypes() {
-  try { supplierTypeOptions.value = await request.get('/foundation/params/options', { params: { group: 'supplier_type' } }) || [] } catch { supplierTypeOptions.value = [] }
+  try { supplierTypeOptions.value = await foundationApi.params.options({ group: 'supplier_type' }) || [] } catch (e) { supplierTypeOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序，localStorage 记住个人偏好）=====
@@ -407,7 +406,7 @@ async function handleToggle(row) {
     ElMessage.success(`${action}成功`)
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error(`${action}失败`)
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || `${action}失败`)
   }
 }
 

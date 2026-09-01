@@ -9,7 +9,7 @@ from app.models.auth import User
 from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder, Stocktake, StocktakeItem
 from app.models.foundation import Warehouse, Material, Product
 from app.models.sales import SalesOrder, SalesOrderItem
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission
 from app.utils.batch_no import generate_doc_no
 
 router = APIRouter()
@@ -150,7 +150,7 @@ def get_inventory_balance(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """库存余额查询（支持期初/期末，含数量+金额）
     
@@ -271,7 +271,7 @@ def get_inventory_balance(
 def get_batch_receipts(
     batch_no: str = Query(..., description="批次号"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """穿透查询：某批次的所有入库记录（每次收货一条：入库单号/日期/仓库/数量）"""
     records = db.query(WarehouseInventory).filter(
@@ -298,7 +298,7 @@ def get_material_receipts(
     material_id: int | None = Query(None, description="原料ID（与 product_id 二选一）"),
     product_id: int | None = Query(None, description="产品ID（与 material_id 二选一）"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """入库明细：某原料/产品所有批次的所有入库记录（每次收货一条，按入库日期倒序）
 
@@ -339,7 +339,7 @@ def get_material_receipts(
 def get_inventory_summary(
     group_by: str = Query("material", description="group by: material/warehouse/batch"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """库存汇总（按材料/仓库/批次汇总数量和金额）"""
     query = db.query(
@@ -393,7 +393,7 @@ def get_transactions(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """库存流水查询"""
     query = db.query(StockTransaction)
@@ -474,7 +474,7 @@ def get_available_batches(
     warehouse_id: int | None = Query(None, description="仓库ID"),
     order_id: int | None = Query(None, description="当前发货订单ID，用于计算批次锁定"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """查询可用批次，返回每个批次的锁定/可发数量：
     - 成品维度：product_id 必填，按产品+仓库；批次归属订单未确认发货完成时，(订单量-已发) 锁定给该订单；当前订单自己的批次不锁定
@@ -523,7 +523,7 @@ def get_available_batches(
 
 @router.post("/material-outs", tags=["库存管理"])
 def create_material_out(
-    data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:material-outs")),
 ):
     """手动原料出库 — 一次可出多行明细 [{material_id, batch_no, quantity, remark}]。
     扣减 WarehouseInventory 对应材料+批次数量（精确批次，FIFO 跨多条库存记录）、写 StockTransaction。"""
@@ -601,7 +601,7 @@ def create_material_out(
 
 @router.post("/material-outs/{out_no}/return", tags=["库存管理"])
 def return_material_out(
-    out_no: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    out_no: str, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:material-outs")),
 ):
     """手动原料出库退回 — 按出库单号(MU-xxx)整单退回：库存回补原批次 + 红字流水(source_doc_type=原料出库退回)。
     仅手动出库可退（委外发料WO单的退回走委外单删除逻辑）；该单已退过则拒绝。"""
@@ -682,7 +682,7 @@ def return_material_out(
 def list_material_outs(
     page: int = Query(1, ge=1), page_size: int = Query(50, ge=1, le=200),
     keyword: str = "", start_date: str = "", end_date: str = "",
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:material-outs")),
 ):
     """原料出库记录列表 — 手动出库 + 委外/生产发料（source_doc_type=原料出库）的流水，按时间倒序。"""
     from sqlalchemy import or_
@@ -735,7 +735,7 @@ def list_material_outs(
 def trace_batch(
     batch_no: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_permission("menu:inventory")),
 ):
     """批次追溯"""
     items = db.query(StockTransaction).filter(
@@ -765,7 +765,7 @@ def trace_batch(
 # ==================== 盘点 ====================
 
 @router.post("/stocktakes", tags=["库存管理"])
-def create_stocktake(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_stocktake(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """创建盘点单（草稿）— 自动带出该仓库所有有库存的批次作为盘点明细"""
     warehouse_id = data["warehouse_id"]
     warehouse = db.query(Warehouse).filter(Warehouse.id == warehouse_id, Warehouse.is_active == 1).first()
@@ -805,7 +805,7 @@ def create_stocktake(data: dict, db: Session = Depends(get_db), current_user: Us
 @router.get("/stocktakes", tags=["库存管理"])
 def list_stocktakes(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """盘点单列表"""
     items = db.query(Stocktake).order_by(Stocktake.id.desc()).offset(
@@ -824,7 +824,7 @@ def list_stocktakes(
 
 
 @router.get("/stocktakes/{stocktake_id}", tags=["库存管理"])
-def get_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """盘点单详情（含明细）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
     if not s:
@@ -856,7 +856,7 @@ def get_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user
 @router.put("/stocktakes/{stocktake_id}/items/{item_id}", tags=["库存管理"])
 def update_stocktake_item(
     stocktake_id: int, item_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """录入/修改实盘数（仅草稿状态）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
@@ -878,7 +878,7 @@ def update_stocktake_item(
 @router.post("/stocktakes/{stocktake_id}/items", tags=["库存管理"])
 def add_stocktake_item(
     stocktake_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """盘点明细新增一行（仅草稿）— 支持账外批次盘盈
 
@@ -943,7 +943,7 @@ def add_stocktake_item(
 @router.delete("/stocktakes/{stocktake_id}/items/{item_id}", tags=["库存管理"])
 def delete_stocktake_item(
     stocktake_id: int, item_id: int,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake")),
 ):
     """删除盘点明细一行（仅草稿）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
@@ -960,7 +960,7 @@ def delete_stocktake_item(
 
 
 @router.post("/stocktakes/{stocktake_id}/submit", tags=["库存管理"])
-def submit_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def submit_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """提交盘点 — 按差异生成盘盈/盘亏流水并更新台账"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
     if not s:
@@ -1044,7 +1044,7 @@ def submit_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_u
 
 
 @router.delete("/stocktakes/{stocktake_id}", tags=["库存管理"])
-def delete_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_stocktake(stocktake_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:stocktake"))):
     """删除盘点单（仅草稿）"""
     s = db.query(Stocktake).filter(Stocktake.id == stocktake_id).first()
     if not s:

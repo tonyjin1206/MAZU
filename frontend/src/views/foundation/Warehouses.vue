@@ -29,18 +29,23 @@
 
     <!-- 底部卡片：边框表格 -->
     <el-card>
+      <template #header>
+        <div style="display: flex; justify-content: flex-end">
+          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+        </div>
+      </template>
       <el-table :data="filteredList" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column prop="code" label="编码" width="130" sortable />
-        <el-table-column prop="name" label="名称" min-width="160" sortable />
-        <el-table-column prop="wh_type" label="类型" width="110" sortable>
-          <template #default="{ row }">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'wh_type'" #default="{ row }">
             <el-tag size="small" :type="row.wh_type === '成品仓' ? 'primary' : (row.wh_type === '不良品仓' ? 'danger' : 'warning')">{{ row.wh_type }}</el-tag>
           </template>
-        </el-table-column>
-        <el-table-column prop="manager" label="负责人" width="110" sortable />
-        <el-table-column prop="address" label="地址" min-width="180" />
-        <el-table-column prop="is_active" label="状态" width="80" align="center">
-          <template #default="{ row }">
+          <template v-else-if="col.prop === 'is_active'" #default="{ row }">
             <el-tag size="small" :type="row.is_active === 1 ? 'success' : 'info'">{{ row.is_active === 1 ? '启用' : '停用' }}</el-tag>
           </template>
         </el-table-column>
@@ -82,13 +87,28 @@
         <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { foundationApi } from '../../api/foundation'
+
+// ===== 列配置（可拖拽排序 + 显隐）=====
+const STORAGE_KEY = 'mazu_warehouse_columns'
+const defaultColumns = [
+  { prop: 'code', label: '编码', width: 130, sortable: true },
+  { prop: 'name', label: '名称', minWidth: 160, sortable: true },
+  { prop: 'wh_type', label: '类型', width: 110, sortable: true },
+  { prop: 'manager', label: '负责人', width: 110, sortable: true },
+  { prop: 'address', label: '地址', minWidth: 180, sortable: true },
+  { prop: 'is_active', label: '状态', width: 80, align: 'center', sortable: true },
+]
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const searchForm = reactive({ code: '', name: '', wh_type: '' })
 const list = ref([])
@@ -109,7 +129,7 @@ async function fetchData() {
     })
     list.value = res.items || []
     total.value = res.total || 0
-  } finally { loading.value = false }
+  } finally { loading.value = false; nextTick(initColumnDrag) }
 }
 
 function resetSearch() {

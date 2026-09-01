@@ -23,7 +23,7 @@
     </el-card>
 
     <!-- ========== 产品发货记录（上表，高度可拖） ========== -->
-    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
+    <el-card ref="listCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>产品发货记录</span>
@@ -32,7 +32,7 @@
           <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="orderTableRef" class="drag-table-orders" :key="orderColumnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" :row-class-name="deliveryRowClassName" @current-change="onOrderSelect">
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="orderColumnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="orderTableHeight + 'px'" :row-class-name="deliveryRowClassName" @current-change="onOrderSelect">
         <el-table-column v-for="col in orderColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
@@ -67,7 +67,7 @@
     </div>
 
     <!-- ========== 发货单明细（下表，跟随选中产品行） ========== -->
-    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+    <el-card ref="itemCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>发货单明细</span>
@@ -76,7 +76,7 @@
           <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="deliveryList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方产品行查看发货单明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="deliveryList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方产品行查看发货单明细" show-summary :summary-method="itemSummary" :height="orderItemHeight + 'px'">
         <el-table-column v-for="col in itemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
@@ -163,7 +163,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 上表列配置（产品发货记录）=====
 const ORDER_STORAGE_KEY = 'mazu_sales_delivery_workbench_columns'
@@ -211,6 +211,11 @@ const { fitTable } = useColumnAutoFit()
 // ===== 上表 =====
 const orderTableRef = ref(null)
 const itemTableRef = ref(null)
+const listCardRef = ref(null)
+const itemCardRef = ref(null)
+const orderTableHeight = ref(400)
+const orderItemHeight = ref(400)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
 const dataList = ref([])
 const loading = ref(false)
 const total = ref(0)
@@ -251,7 +256,7 @@ async function fetchData() {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/sales/delivery-workbench', { params })
+    const res = await salesApi.deliveries.deliveryWorkbench(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     nextTick(() => {
@@ -272,12 +277,12 @@ async function loadDeliveries(itemId) {
   if (!itemId) { deliveryList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get('/sales/deliveries', { params: { page: 1, page_size: 100, order_item_id: itemId } })
+    const res = await salesApi.deliveries.list({ page: 1, page_size: 100, order_item_id: itemId })
     deliveryList.value = res.items || []
     const ret = (res.items || []).filter(i => i.is_return).reduce((s, i) => s + (i.quantity || 0), 0)
     returnedTotal.value = ret
     returnMax.value = Math.max(0, (selectedRow.value?.delivered_qty || 0) - ret)
-  } catch { deliveryList.value = [] } finally {
+  } catch (e) { deliveryList.value = [] } finally {
     itemLoading.value = false
     nextTick(() => { initItemDrag(); fitTable(itemTableRef.value, itemColumns.value, deliveryList.value) })
   }
@@ -295,10 +300,10 @@ async function openShipDialog(row) {
   })
   // 单价从订单详情取
   try {
-    const detail = await request.get(`/sales/orders/${row.order_id}`)
+    const detail = await salesApi.orders.get(row.order_id)
     const it = (detail.items || []).find(i => i.id === row.item_id)
     if (it) shipForm.unit_price = it.unit_price || 0
-  } catch {}
+  } catch (e) {}
   shipVisible.value = true
 }
 
@@ -308,7 +313,7 @@ async function handleShipSubmit() {
   if (!qty || qty <= 0 || qty > shipForm.max_notify) { ElMessage.warning(`请输入 1~${shipForm.max_notify} 的通知数量`); return }
   shipSubmitting.value = true
   try {
-    await request.post('/sales/deliveries/notify', {
+    await salesApi.deliveries.notify({
       order_item_id: shipForm.order_item_id,
       quantity: qty,
       notify_date: shipForm.notify_date,
@@ -324,7 +329,7 @@ async function handleShipSubmit() {
 async function openReturnDialog(row) {
   Object.assign(returnForm, { batch_no: '', quantity: 1, return_date: '', remark: '' })
   // 已出库批次（正常发货单已出库的批次，去重；待出库未出库的不可退）
-  const res = await request.get('/sales/deliveries', { params: { page: 1, page_size: 100, order_item_id: row.item_id } }).catch(() => ({ items: [] }))
+  const res = await salesApi.deliveries.list({ page: 1, page_size: 100, order_item_id: row.item_id }).catch(() => ({ items: [] }))
   const shippedBatches = [...new Set((res.items || []).filter(i => !i.is_return && i.status !== '待出库' && (i.delivered_qty || 0) > 0 && i.batch_no).map(i => i.batch_no))]
   returnBatchList.value = shippedBatches
   const ret = (res.items || []).filter(i => i.is_return).reduce((s, i) => s + (i.quantity || 0), 0)
@@ -337,14 +342,25 @@ async function handleReturnSubmit() {
   if (!selectedRow.value || !returnForm.batch_no) { ElMessage.warning('请选择批次'); return }
   returnSubmitting.value = true
   try {
-    await request.post('/sales/deliveries/return', {
+    const res = await salesApi.deliveries.returnByItem({
       order_item_id: selectedRow.value.item_id,
       batch_no: returnForm.batch_no,
       quantity: returnForm.quantity,
       delivery_date: returnForm.return_date,
       remark: returnForm.remark,
     })
-    ElMessage.success('退货成功，库存已加回')
+    let msg = res.message || '退货成功，库存已加回'
+    if (res.invoice_status) {
+      const st = res.invoice_status
+      if (st.invoiced_amount > 0) {
+        let invMsg = `已开票 ¥${st.invoiced_amount.toFixed(2)}`
+        if (st.red_reversed_amount > 0) invMsg += `（已红冲 ¥${st.red_reversed_amount.toFixed(2)}）`
+        if (st.return_amount > 0) invMsg += `，本次退货 ¥${st.return_amount.toFixed(2)}`
+        invMsg += '。若已开票请同步红冲发票'
+        msg += `\n${invMsg}`
+      }
+    }
+    ElMessage.success(msg)
     returnVisible.value = false
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退货失败') } finally { returnSubmitting.value = false }
@@ -357,9 +373,9 @@ async function confirmDone(row) {
       `确认「${row.product_name}」已发货完成？\n确认后该产品不能再发货，剩余库存将开放给其他订单。`,
       '确认发货完成', { type: 'warning', confirmButtonText: '确认完成', cancelButtonText: '取消' }
     )
-  } catch { return }
+  } catch (e) { return }
   try {
-    await request.post(`/sales/orders/${row.order_id}/items/${row.item_id}/delivery-confirm`, { confirmed: true })
+    await salesApi.orders.confirmDelivery(row.order_id, row.item_id, { confirmed: true })
     ElMessage.success('已确认发货完成')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -371,9 +387,9 @@ async function cancelDone(row) {
       `撤销「${row.product_name}」的发货完成确认？\n撤销后可继续发货，并恢复库存锁定。`,
       '撤销确认', { type: 'warning', confirmButtonText: '撤销', cancelButtonText: '取消' }
     )
-  } catch { return }
+  } catch (e) { return }
   try {
-    await request.post(`/sales/orders/${row.order_id}/items/${row.item_id}/delivery-confirm`, { confirmed: false })
+    await salesApi.orders.confirmDelivery(row.order_id, row.item_id, { confirmed: false })
     ElMessage.success('已撤销确认')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -418,6 +434,7 @@ function onSplitterDown(e) {
   const onMove = (ev) => {
     const h = startH + (ev.clientY - startY)
     topHeight.value = Math.min(Math.max(h, 220), window.innerHeight - 380)
+    nextTick(calcListHeight)
   }
   const onUp = () => {
     document.removeEventListener('mousemove', onMove)
@@ -426,6 +443,28 @@ function onSplitterDown(e) {
   }
   document.addEventListener('mousemove', onMove)
   document.addEventListener('mouseup', onUp)
+}
+
+function _calcCardTableHeight(card, pagElSelector) {
+  if (!card) return 400
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  const bodyRect = body ? body.getBoundingClientRect() : el.getBoundingClientRect()
+  const pagEl = pagElSelector ? el.querySelector(pagElSelector) : null
+  const pagH = pagEl ? pagEl.getBoundingClientRect().height : 0
+  return Math.max(140, Math.round(bodyRect.height - pagH))
+}
+
+function calcListHeight() {
+  orderTableHeight.value = _calcCardTableHeight(listCardRef.value, '.el-pagination')
+}
+
+function calcItemHeight() {
+  const card = itemCardRef.value
+  if (!card) return
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  orderItemHeight.value = Math.max(140, Math.round((body || el).getBoundingClientRect().height - 16))
 }
 
 // ===== 列设置包装（解决构命名冲突：解构保留原名 + 页面包装函数）=====
@@ -454,7 +493,11 @@ async function fetchWarehouses() {}
 watch(orderColumnVersion, () => { nextTick(() => { initOrderDrag() }) })
 watch(itemColumnVersion, () => { nextTick(() => { initItemDrag() }) })
 
-onMounted(() => { fetchData() })
+onMounted(() => {
+  fetchData()
+  nextTick(() => { calcListHeight(); calcItemHeight() })
+  window.addEventListener('resize', () => { calcListHeight(); calcItemHeight() })
+})
 
 </script>
 

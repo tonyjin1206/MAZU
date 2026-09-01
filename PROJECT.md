@@ -1,16 +1,40 @@
 # Mazu Trade System (MTS) — 项目文档
 
-> **v2.5.0** | A Lightweight Trade Management Platform
+> **v2.8.0** | A Lightweight Trade Management Platform
 
 Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
+**销售订单审核后三路分流（三分支）：转直采 / 转外发 / 转生产-自产；生产模块 = 纯自产，委外统一归口转外发。**
 
-- 后端: FastAPI (端口 8788)
-- 前端: Vue 3 + Vite (端口 5173)
-- 数据库: SQLite (`backend/data/erp.db`)
-- 认证: JWT (默认 admin / admin123)
-- AI 引擎: Function Calling Agent (OpenAI / DeepSeek 兼容)
-- API Key: Fernet 加密存储 (`backend/.encryption_key`)
+> 后端: FastAPI (端口 8788)
+> 前端: Vue 3 + Vite (端口 5173)
+> 数据库: SQLite (`backend/data/erp.db`)
+> 认证: JWT (默认 admin / admin123)
+> AI 引擎: Function Calling Agent (OpenAI / DeepSeek 兼容)
+> API Key: Fernet 加密存储 (`backend/.encryption_key`)
+
+## 运行时架构总览
+
+> v2.8.0 统一展示入口。架构图见 `docs/erp-architecture.html`（Archify 生成，可浏览器打开查看运行时架构）。
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                      前端 Vue 3 / Vite (5173)                   │
+│  Layout(侧边菜单+顶部栏) · Matsu悬浮球 · 业务页面 · 列设置/主从   │
+└───────────────────────────┬────────────────────────────────────┘
+                            │ REST API (axios / request.js)
+┌───────────────────────────▼────────────────────────────────────┐
+│                      后端 FastAPI (8788)                        │
+│  /api/auth  /api/foundation  /api/purchase  /api/sales         │
+│  /api/production(纯自产)  /api/outsource(委外)  /api/inventory  │
+│  /api/tax-refund  /api/dashboard  /api/system  /api/chat       │
+└───────────────────────────┬────────────────────────────────────┘
+                            │ SQLAlchemy ORM
+┌───────────────────────────▼────────────────────────────────────┐
+│                     SQLite (backend/data/erp.db)               │
+│  基础档案/采购/销售(三分支)/生产(纯自产)/委外/库存/退税/系统/RBAC │
+└────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -111,58 +135,110 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | 路由 | 方法 | 说明 |
 |------|------|------|
 | `/orders` | GET/POST | 列表/创建 |
-| `/orders/{id}` | GET/PUT/DELETE | 详情/修改/删除 |
-| `/orders/{id}/status` | PUT | 更新状态 |
+| `/orders/{id}` | GET/PUT/DELETE | 详情/修改/删除（仅待审核可改/删）|
+| `/orders/{id}/approve` | POST | 审核（审核后明细行置「未生产」，**不再自动生成生产订单**，v2.8.0） |
+| `/orders/{id}/items/{item_id}/stock-in` | POST | **转直采**：推送至「销售订单转采购」，明细行→已通知入库 |
+| `/orders/{id}/items/{item_id}/outsource` | POST | **转外发**：生成委外订单草稿，明细行→已通知外发 |
+| `/orders/{id}/items/{item_id}/re-produce` | POST | **转生产-自产**：生成生产订单，明细行→生产中（三分支互斥，v2.8.0） |
+| `/orders/{id}/items/{item_id}/claim-batch` / `unclaim-batch` | POST | 认领/解绑备货批次（场景2：货先进来，后期挂销售单） |
+| `/orders/{id}/items/{item_id}` | PUT | 变更明细行（改数量/单价/停售） |
+| `/order-items` | GET | 明细行列表（含生产状态筛选，独立视图） |
 
-### 销售发货 (`/shipments`)
+> **三分支（v2.8.0）**：销售订单审核后，明细行按业务实际选一条路线——转直采=`采购链`、转外发=`委外(outsource)`、转生产(自产)=`生产订单`。三者互斥（一条明细行只能走其一）。
+
+### 销售发货 (`/deliveries`)
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/shipments` | GET/POST | 列表/创建（批次出库）|
-| `/shipments/{id}` | GET/DELETE | 详情/取消出库 |
+| `/deliveries` | GET/POST | 列表/创建（批次出库）|
+| `/deliveries/notify` | POST | **通知发货**：只登记数量（待出库），不扣库存（两步化第一步）|
+| `/deliveries/{id}/issue` | POST | **库管出库**：选批次数量扣库存，delivered_qty 累计（两步化第二步）|
+| `/deliveries/outs` | GET | 成品出库列表（库管，带出库记录穿透）|
+| `/deliveries/{id}/issue-return` | POST | 成品出库退回（库管红冲）|
+| `/deliveries/return` | POST | 销售退货 |
+| `/deliveries/{id}/return` | POST | 销售退货（按发货单）|
+| `/deliveries/{id}` | GET/DELETE | 详情/取消出库 |
 
 ### 销售发票 (`/invoices`)
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/invoices` | GET/POST | 列表/创建（生成应收）|
-| `/invoices/{id}` | GET/DELETE | 详情/删除（级联删除应收）|
+| `/invoices` | GET/POST | 列表/创建（生成应收；支持红字，`red_of_invoice_id` 全额负数红冲，v2.6.0） |
+| `/invoices/{id}` | GET/DELETE | 详情/删除（级联删除应收；红字票禁改禁删、已红冲蓝字票禁删，v2.6.0） |
+| `/invoices/{id}` | PUT | 修改（**红字票禁改**，v2.6.0） |
 
 ### 收款 (`/collections`)
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/collections` | GET/POST | 列表/创建（收款并核销应收）|
-| `/collections/{id}` | GET/DELETE | 详情/删除（回滚应收核销）|
+| `/collections` | GET/POST | 列表/创建（收款并核销应收；`amount<0` = 退款登记核销红字应收，v2.6.0） |
+| `/collections/{id}` | GET/DELETE | 详情/删除（回滚应收核销） |
 
 ### 应收账款 (`/ar`)
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/ar` | GET | 列表（汇总+明细双视图）|
+| `/ar` | GET | 列表（汇总+明细双视图；含 `is_red` 红字应收，v2.6.0） |
+| `/ar/transfer` | POST | **核销转移**：红字应收(负)→同客户正余额应收，写 `ar_adjustment` 审计（v2.6.0） |
+| `/ar/transfer/{adj_id}/cancel` | POST | **撤销核销转移**：回滚两端账务并删除调整记录（v2.6.0） |
+| `/ar/{ar_id}/cancel-collection` | POST | 按应收 id 撤销收款 |
+| `/ar/collection-detail` | GET | 应收账款收付款明细（应收×收款配对） |
+
+> **v2.6.0 销售退货财务层**：发票红冲（全额负数红字票 + 自动生成红字应收 `is_red`）、退款（负数收款核销红字应收）、核销转移（红字→正余额账务清理）、退货联动（已开票提示红冲、已报税打标 `refund_declared`）、负数申报（已报税退货 → 次月申报冲减）。详见 CHANGELOG v2.6.0。
 
 ---
 
 ## 四、生产管理 (`/api/production`)
 
+> **v2.8.0 去委外化**：生产模块 = **纯自产**。生产订单（`mo_production`）不含委外商/委外工序/委外发料/委外加工费；委外业务统一归口转外发（`/api/outsource`）路线。生产订单从销售明细「转生产（re-produce）」生成，无手工创建接口。
+
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/productions` | GET/POST | 生产订单列表/创建 |
+| `/productions` | GET | 生产订单列表（可按销售订单/明细行过滤）|
 | `/productions/{id}` | GET/PUT/DELETE | 生产订单详情/修改/删除 |
-| `/productions/{id}/processes` | GET/POST | 工序列表/派产 |
-| `/productions/{id}/materials` | GET | BOM展开物料需求 |
-| `/material-issues` | GET/POST | 发料记录列表/创建 |
-| `/material-issues/{id}` | DELETE | 取消发料 |
-| `/receipts` | GET/POST | 完工入库列表/创建（成品入库）|
-| `/receipts/{id}` | GET/DELETE | 详情/取消入库 |
-| `/processing-invoices` | GET/POST | 加工费发票列表/创建 |
-| `/processing-invoices/{id}` | GET/DELETE | 详情/删除 |
-| `/productions/{id}/set-type` | POST | 确认备货方式（自产/委外/外购，v2.5.0）|
+| `/productions/{id}/set-type` | POST | 确认备货方式（自产/外购，v2.8.0 限此两者、去委外）|
 | `/productions/{id}/to-requisition` | POST | 外购型推采购需求（v2.5.0）|
+| `/productions/{id}/expand-bom` | POST | 展开 BOM 物料需求（自产）|
+| `/productions/{id}/materials` | PUT | 保存物料需求 |
+| `/productions/{id}/processes` | PUT | 保存工艺工序 |
+| `/productions/{id}/release` / `unrelease` | POST | 派产/反派产 |
+| `/productions/{id}/processes/{proc_id}/issue` | POST | 工序发料（自产领料 `material_issue_out`）|
+| `/productions/{id}/issues/{issue_id}/cancel` | POST | 取消发料 |
+| `/productions/{id}/processes/{proc_id}/finish` | POST | 工序完工 |
+| `/productions/{id}/processes/{proc_id}/revert` | POST | 工序反退 |
+| `/productions/{id}/receipt` | POST | 成品入库 |
+| `/productions/{id}/receipts/{receipt_id}/cancel` | POST | 取消入库 |
+| `/productions/{id}/close` / `unclose` | POST | 关闭/取消关闭 |
+| `/productions/{id}/transactions` / `receipts` / `issues` | GET | 成本流水/入库/发料记录 |
+| `/workspace` | GET | 生产工作台数据 |
+| `/processing-invoices` | GET/POST | 加工费发票列表/创建（恒无委外工序归属，v2.8.0）|
 
-数据表: `ProductionOrder`（含 `production_type` 备货方式）, `ProductionProcess`, `OutsourcingOrder`, `MaterialIssueItem`, `ProductionReceipt`, `ProcessingInvoice`
+数据表: `ProductionOrder`（含 `production_type` 备货方式，v2.8.0 仅自产/外购）, `ProductionProcess`（无 `outsourcer_id`，v2.8.0）, `MaterialIssueItem`, `ProductionReceipt`, `ProcessingInvoice`
 
-备货方式（v2.5.0）: MO 审核后状态=`待确认`，必须先确认备货方式 → 自产/委外=`待排产`（进工作台）｜外购=`待采购`（推采购需求 → 采购转单 → 入库联动）
+备货方式（v2.5.0，v2.8.0 去委外）: MO 生成后状态=`待确认`，必须确认备货方式 → 自产=`待排产`（进工作台）｜外购=`待采购`（推采购需求 → 采购转单 → 入库联动）
 
 ---
 
-## 五、库存管理 (`/api/inventory`)
+## 五、委外管理 (`/api/outsource`)
+
+> **v2.8.0 归口**：委外业务统一归口**转外发**（销售明细转外发）。委外订单分工序、每道工序可指定加工商（供应商类型=委外即委外商）。
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/orders` | GET | 委外订单列表 |
+| `/orders/{id}` | GET/PUT | 委外订单详情/修改 |
+| `/orders/{id}/approve` / `unapprove` | POST | 审核（生成应付+末道待入库单）/ 取消审核 |
+| `/orders/{id}` | DELETE | 删除（材料自动退回原批次）|
+| `/sales-to-outsource` | GET | 销售转外发列表 |
+| `/sales-to-outsource/{item_id}` | GET | 转外发明细行详情 |
+| `/sales-to-outsource/{item_id}/return` | POST | 转外发退回（明细行解锁）|
+| `/sales-to-outsource/{item_id}/complete` / `uncomplete` | POST | 完成委外/取消完成 |
+| `/orders/from-sales` | POST | 从销售转外发生成委外订单 |
+| `/orders/from-sales-process` | POST | 从销售转外发按工序生成委外订单 |
+| `/claims` | GET/POST | 认领原料列表/创建（订单级，按仓库总数量 FIFO 扣批次）|
+| `/claims/{claim_id}` | DELETE | 删除认领 |
+
+> **供料方式（`supply_type`）**：己方提供（需认领原料，认领量 ≥ 委外数量×BOM用量×(1+损耗%)）/ 包工包料（加工厂提供，不认领、不出库）。委外订单审核后仅末道工序生成成品待入库单（中间工序只记加工成本）。
+
+---
+
+## 七、库存管理 (`/api/inventory`)
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
@@ -207,7 +283,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ---
 
-## 六、退税管理 (`/api/tax-refund`)
+## 八、退税管理 (`/api/tax-refund`)
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
@@ -220,14 +296,16 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/declarations/{id}/cancel-submit` | PUT | 取消申报（状态→待申报）|
 | `/declarations/{id}/refund` | PUT | 完成退税（输入实际金额）|
 | `/declarations/{id}/cancel-refund` | PUT | 取消退税 |
-| `/declarations/{id}/rows` | POST | 添加明细行（自动编号+更新发票状态）|
-| `/declarations/{id}/rows/{row_id}` | PUT/DELETE | 修改/删除明细行（回滚发票状态）|
+| `/declarations/{id}/rows` | POST | 添加明细行（自动编号+更新发票状态） |
+| `/declarations/{id}/rows/{row_id}` | PUT/DELETE | 修改/删除明细行（回滚发票状态） |
+| `/declarations/{id}/return-candidates` | GET | **负数申报候选**：已报税退货单清单（`refund_declared=1` 且关联报关单，v2.6.0） |
+| `/declarations/{id}/return-adjustments` | POST | **添加退货冲减负数行**（出口货物退运，自动重算出口金额与免抵退结果，v2.6.0） |
 
 状态流程: 待申报 → 已申报 → 已退税（支持取消申报/取消退税）
 
 ---
 
-## 七、管理驾驶舱 (`/api/dashboard`)
+## 九、管理驾驶舱 (`/api/dashboard`)
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
@@ -237,7 +315,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ---
 
-## 八、系统管理 (`/api/system`)
+## 十、系统管理 (`/api/system`)
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
@@ -246,10 +324,28 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/system/bot` | GET/POST | AI模型配置列表/创建 |
 | `/system/bot/{id}` | PUT/DELETE | 修改/删除AI配置 |
 | `/system/bot/default-prompt` | GET | 默认提示词 |
+| `/system/reminder-rules` | GET/POST | 预警提醒规则列表/创建（管理端，v2.7.0） |
+| `/system/reminder-rules/{id}` | PUT/DELETE | 修改/删除提醒规则（管理端，v2.7.0） |
+
+### 预警提醒与站内通知 (`/api/notifications`，v2.7.0)
+
+> 站内为主（`sys_notification` 落库即视为已发）；规则配置化（`sys_reminder_rule`，D8）。企微通道为预留钩子（未启用）。
+
+| 路由 | 方法 | 说明 |
+|------|------|------|
+| `/notifications` | GET | 当前用户通知列表（未读优先，分页） |
+| `/notifications/unread-count` | GET | 未读数（铃铛红点） |
+| `/notifications/latest` | GET | 最近 N 条（工作台/铃铛；`only_unread`） |
+| `/notifications/{id}/read` | PUT | 标记已读（仅本人） |
+| `/notifications/read-all` | PUT | 全部已读 |
+| `/notifications/admin-query` | GET | 管理端全量查询（按 user_id/role_code/point_code/doc_type 筛选） |
+
+**事件埋点（sales.py，v2.8.0 三分支）**：SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / SO_TO_PRODUCTION（转生产=自产）/ DELIVERY_NOTIFIED / DELIVERY_CONFIRMED / AR_CREATED（双收件人）
+**定时预警（每日 09:00 + 启动补扫）**：AR_DUE_SOON / AR_OVERDUE / AP_DUE_SOON / AP_OVERDUE（红字应收不参与）
 
 ---
 
-## 九、AI 智能助手 (`/api/chat`) — v2.0.0 新增 | v2.3.0 悬浮常驻 + 权限 + 审核
+## 十一、AI 智能助手 (`/api/chat`) — v2.0.0 新增 | v2.3.0 悬浮常驻 + 权限 + 审核
 
 > 基于 Function Calling Agent 的自然语言对话式操作，无需手动操作菜单。
 > AI 助手名称: **Matsu**，入口为页面右下角全局悬浮球（任何页面可用）。
@@ -270,7 +366,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | query_entities | `_execute_query_entities` | entity_type, keyword | 按实体对应菜单 | 查询客户/供应商/物料/产品/应收/应付/发票清单 |
 | query_inventory | `_execute_query_inventory` | keyword, warehouse_name | `menu:inventory` | 查当前库存（按名称/仓库汇总）|
 | query_pending_approvals | `_execute_query_pending_approvals` | order_type | 内部按权限过滤 | 列待审核单据 |
-| approve_order | `_execute_approve_order` | order_type, order_no | 对应菜单 | 审核采购/销售订单（销售审核联动生成生产订单）|
+| approve_order | `_execute_approve_order` | order_type, order_no | 对应菜单 | 审核采购/销售订单（销售审核不自动生成生产订单，明细行走三分支，v2.8.0）|
 | unapprove_order | `_execute_unapprove_order` | order_type, order_no | `menu:purchase:orders` | 反审核采购订单 |
 | query_manual | `_execute_query_manual` | keyword | 所有登录用户 | 查操作手册章节（docs/operations-manual.md 切块检索）|
 | create_order | `_execute_create_order` | order_type, items[], … | 对应菜单 | 创建采购/销售订单（多明细行）|
@@ -308,7 +404,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ---
 
-## 十、认证权限
+## 十二、认证权限
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
@@ -329,7 +425,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ---
 
-## 十一、关键业务逻辑
+## 十三、关键业务逻辑
 
 ### 增值税计算
 - 不含税金额 = 含税金额 / (1 + 税率/100)
@@ -371,7 +467,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ---
 
-## 十二、开发规范
+## 十四、开发规范
 
 ### 字段命名
 - 后端传输: snake_case
@@ -404,7 +500,39 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 
 ---
 
-## 十三、版本变更记录
+## 十五、版本变更记录
+
+### v2.8.0 (2026-08-29)
+- **销售订单三路分流（三分支）**：订单审核后明细行独立走转直采/转外发/转生产-自产，三者互斥；审核不再自动生成生产订单
+- **生产模块去委外化**：生产订单（`mo_production`）= 纯自产，剥离委外商/委外工序/委外发料/委外加工费；`ProductionProcess` 移除 `outsourcer_id`；`production_type` 仅自产/外购
+- **委外归口转外发**：新增 `/api/outsource` 委外管理模块（销售订单转委外/委外订单/认领原料/加工费发票）；供料方式（己方提供/包工包料）订单级
+- **权限隔离**：三分支写端点按业务域授权（转直采=销售本域、转外发=销售+委外域、转生产=销售+生产自产域）；读端点「本域+业务引用域」授权（`require_any_permission`）
+- **AI 助手**：销售审核不再自动生成生产订单，改为三分支引导；`issue_materials` 去委外语义
+- **预警埋点**：新增 `SO_TO_PRODUCTION`；事件提醒点完整对齐三分支
+- **数据库迁移**：`scripts/migrate_production_deoutsourcing.py`（去遗留 `outsourcer_id` 列，幂等/保数据/空库安全）
+- **测试**：`test_three_branch.py`（10 用例）+ `test_migration_production.py`（4 用例）；`./test.sh` 259 passed / e2e 59 passed
+
+### v2.7.0 (2026-08-27)
+- **批4 预警提醒系统（按当前产品逻辑重校，销售订单下游走三分支）**：
+  - **通知内核**：`sys_notification` 表 + `routers/notification.py`（列表/未读数/最新/标记已读/全部已读/管理端全量查询）；站内为主，落库即视为已发（D7）
+  - **规则配置化**：`sys_reminder_rule` 表 + `services/reminder.py`（notify/渲染/角色收件人/去重）；`/api/system/reminder-rules` CRUD（D8）
+  - **事件埋点 6 处（sales.py）**：SO_APPROVED / SO_TO_PURCHASE / SO_TO_OUTSOURCE / DELIVERY_NOTIFIED / DELIVERY_CONFIRMED / AR_CREATED（双收件人）；**以 SO_TO_PURCHASE / SO_TO_OUTSOURCE 替代原 MO_PLANNED / MO_OUTSOURCED**
+  - **定时预警**：AR_DUE_SOON / AR_OVERDUE / AP_DUE_SOON / AP_OVERDUE，每日 09:00 扫描 + 启动补扫（D4）；红字应收不参与
+  - **前端**：顶部铃铛（未读红点+消息弹层+跳转）；`system/Notifications.vue`（通知查询+提醒规则两页签）；系统管理菜单「通知管理」
+  - **测试/基建**：`test_reminders.py` 6 场景；全量 113 passed；`test.sh` 隔离测试库（不复用陈旧 erp.db）；`reset_local_db` KEEP 补 `sys_reminder_rule`/`sys_notification`
+- **模型**：新建 `sys_reminder_rule`、`sys_notification`；迁移脚本 `scripts/migrate_batch4_reminders.py`
+
+### v2.6.0 (2026-08-27)
+- **批1（AO→SP 基底适配 + SP 健壮性审计）**：登录背景换 AO 集装箱船图；菜单图标沿用 AO；AI 直连优先+代理兜底；AI 密钥防双加密；SP 健壮性审计修复（删除保护/校验/前端错误提示/传参）；SP 环境初始化修复（mo_outsourcing 外键/init 脚本/test.sh 平台自适应）；测试基线 test_config_secret_guard.py
+- **批2（销售退货财务层补强）**：
+  - **发票红冲**：蓝字开票上限校验（≤ 未开票金额，红字全额冲后额度返还）；红字手工录入（全额负数、原票标记已红冲）；红字票禁改禁删；已红冲蓝字票禁删；自动生成等额红字应收（`is_red`/`red_of_ar_id`）
+  - **退款**：`create_collection` 支持 `amount<0` 退款登记，核销红字应收、负余额向 0 靠拢、退超拦截
+  - **核销转移**：`POST /ar/transfer`（红字→同客户正余额，双向上限）+ `POST /ar/transfer/{id}/cancel`（撤销回滚），写 `ar_adjustment` 审计
+  - **退货联动**：已开票提示红冲；关联报关单退税已申报打标 `refund_declared=1` 提示次月负数申报
+  - **负数申报**：`GET /declarations/{id}/return-candidates` + `POST /declarations/{id}/return-adjustments`（出口货物退运负数行，自动重算出口金额/免抵退）
+  - **前端 5 页**：SalesInvoices（红冲/红冲票号列/红字票删除隐藏/状态色）、AccountsReceivable（红负绿正/退款/核销转移弹窗）、Collections（负数标红+退款 tag）、SalesDeliveries（已开票提示）、TaxRefundDeclarations（退货冲减入口）+ api/business.js
+  - **测试**：`backend/tests/test_sales_return_red.py` 6 场景；全量回归绿
+- **模型**：`so_invoice`(+is_red/red_of_invoice_id)、`ar_account`(+is_red/red_of_ar_id)、`so_delivery`(+refund_declared)、新建 `ar_adjustment`；迁移脚本 `scripts/migrate_batch2_finance.py`
 
 ### v2.5.0 (2026-07-31)
 - **新功能**: 备货方式确认（生产订单 `production_type`: 自产/委外/外购）— MO 审核后先确认备货方式才能继续；外购型不进入生产工作台，仅推采购需求
@@ -459,3 +587,81 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 - **UI**: 新增 BotChat.vue 聊天界面，支持 Markdown 表格渲染
 - **UI**: 产品文档三件套（产品概述/操作手册/一页纸营销页）
 - **基础设施**: API Key Fernet 加密存储，自定义提示词支持
+
+---
+
+# 附录：开发现状速览（给接手开发者的上下文）
+
+> 原 `DEVELOPMENT_STATUS.md`，已并入本文件。看完这节就能知道项目在做什么、做到哪、下一步是什么。
+
+## 1. 业务模型（最重要，先懂这个）
+
+公司**无工厂**，但有多条业务线：
+
+1. **纯贸易**：买 A → 卖 A（采购产品直接转销售）→ **销售明细「转直采」**
+2. **委外加工**：买 ABC 材料 → 委托加工厂做成 D 产品 → 卖 D → **销售明细「转外发」**
+3. **自有生产**：车间自产 → **销售明细「转生产-自产」**
+
+**v2.8.0 三分支**：销售订单明细行审核后独立走一条路线（互斥）：
+```
+销售订单明细行
+ ├─ 点「转直采」(贸易型) → 采购管理 → 销售订单转采购页 → 生成采购订单（按 BOM 展开/按供应商拆单）→ 审核
+ │    → 明细行「转成品库」→ 成品入库模块收货
+ │    → 明细行「转原料库」→ 原料入库模块收货
+ ├─ 点「转外发」(委外型) → 两条线同时走：
+ │    ├─ 采购线: 销售订单转采购页（来源=转外发）→ 按 BOM 买原料 → 转原料库 → 原料入库收货
+ │    └─ 委外线: 销售订单转委外页（工序卡片横向展开）→ 每道工序选加工商+加工单价+认领原料
+ │         → 按工序拆多张委外订单（一工序一供应商）→ 审核 → 每张记加工费AP；只有末道工序生成成品待入库单
+ │         → 成品入库模块收货（成品数量=产品数量）
+ └─ 点「转生产」(自产型) → 生成生产订单（纯自产）→ 生产工作台 → 派产/发料/完工 → 成品入库
+```
+
+**发货（两步化）**：
+```
+业务员「通知发货」(只填数量，不扣库存) → 库管在「成品出库」页按单选批次发货(扣库存) → 业务员判断「发货完成」(人工确认, 必须先有出库记录)
+退货: 必须已有出库记录才能退（通知未出库不能退）
+```
+
+**原料出库**：库存管理→原料出库页 = 手动出库(MU单号) + 转委外认领材料自动生成的出库记录(WO单号,来源=委外发料)
+
+## 2. 核心铁律（全 ERP 强制）
+
+1. **上游禁止下游改，退下游才解锁**：下游有单据时，上游不能变更/删除/退回。想改上游 → 先把下游单据全部退回（在对应单据页退回）→ 上游解锁。
+2. **状态颜色四档**（全 ERP 统一）：本环节完成=绿 / 进行中=橙 / 未开始=灰 / 终止=红。
+3. **数量是参考，完成是人工点**：采购/委外的"完成"由业务员手动点（完成采购/完成委外），可"取消完成"再追加。
+4. **损耗默认 10% 可改**：采购/委外数量上限 = 需求 × (1+损耗%)，超量拦截，要超就得改损耗比例。
+5. **一步一步来**：销售订单只负责"推送"（转直采/转外发/转生产），单据在各自页面生成，不跳步。
+
+## 3. 主流程状态机
+
+### 销售订单明细行（production_status）
+未生产 → 已通知入库(显示"转直采") / 已通知外发(显示"转外发") / 生产中(自产) → 部分入库 → 已入库 / 已停售
+
+### 转采购页状态（人工完成）
+- 未采购（灰）→ 部分采购（橙，可追加）→ 已转采购订单（绿，达上限 需求×1.1）
+- 手动「完成采购」→ 采购完成（绿）→ 「取消完成」可回
+- 操作：采购 / 完成采购 / 取消完成 / 退回（仅无采购单时显示，有单去采购订单页退）
+
+### 转委外页状态
+同上对称：未转委外 / 部分转委外 / 已转委外订单 / 委外完成
+
+### 采购订单状态
+待审核（灰）→ 已审核（绿）→ 已关闭（红）。入库/开票/付款进度不在主表（财务模块看）。
+
+### 委外订单状态
+待确认 → 已审核（生成应付+待入库单）→ 已入库（收货完成）。已审核可「取消审核」退回待确认。
+
+## 4. 菜单结构
+
+- **采购管理**：销售订单转采购 → 采购订单 → 采购发票 → 应付账款 → 付款管理（采购需求菜单已删，路由重定向转采购）
+- **库存管理**：库存查询 → 收发存 → 成品入库 → 原料入库 → 原料出库 → 成品出库 → 盘点管理 → 批次追溯
+- **委外管理**：销售订单转委外 → 委外订单 → 加工费发票
+- **生产管理**：生产订单 → 生产工作台（v2.8.0 恢复，纯自产）
+- **销售管理**：销售订单 → 销售发货 → 销售发票 → 报关管理 → 应收账款 → 收款管理
+
+## 5. 技术栈与环境
+
+- 后端：FastAPI + SQLAlchemy + SQLite（`backend/data/erp.db`）
+- 前端：Vue3 + Vite + Element Plus
+- 登录：admin / admin123（测试）
+- 测试：`./test.sh`（隔离测试库）+ `cd e2e && python -m pytest`

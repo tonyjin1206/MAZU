@@ -1,6 +1,6 @@
 """销售模块 API 路由 — 报价→订单→生产驱动→发货(批次)→报关→发票→应收→收款"""
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func as sa_func
 from sqlalchemy.orm import Session
@@ -18,32 +18,73 @@ from app.models.auth import User
 from app.models.foundation import Customer, Product, Currency, HsCode, TradeTerm, Warehouse
 from app.models.sales import (
     SalesQuote, SalesOrder, SalesOrderItem,
-    SalesDelivery, CustomsDeclaration,
+    SalesDelivery, CustomsDeclaration, CustomsDeclarationItem,
     SalesInvoice,
-    AccountsReceivable, Collection, CollectionAllocation,
+    AccountsReceivable, Collection, CollectionAllocation, ArAdjustment,
 )
 from app.models.inventory import WarehouseInventory, StockTransaction, StockInOrder
-from app.utils.auth import get_current_user, require_permission
+from app.utils.auth import get_current_user, require_permission, require_any_permission
 from app.utils.batch_no import generate_doc_no
 
 router = APIRouter()
+
+# ==================== 读端点授权域（BUG-L4-02 读越权修复） ====================
+# 读端点采用「本域 + 业务引用域」授权（任一满足即可读）：
+# - 财务开票/报关等需读订单（无 menu:sales:orders，但有本域单据权限）；
+# - 库管出库工作台需读发货信息（持有 menu:inventory:delivery-outs）；
+# 同时挡住库管员/只读读销售订单等非授权数据。
+# ⚠ orders 授权域禁含 menu:inventory*/menu:production:batch（库管员由此读入销售订单）。
+ORDERS_READ_PERMS = (
+    "menu:sales:orders", "menu:sales:deliveries", "menu:sales:invoices",
+    "menu:sales:customs", "menu:sales:ar", "menu:sales:collections",
+    "menu:purchase:from-sales", "menu:outsource:from-sales",
+)
+# 发货为两段式：业务员通知（menu:sales:deliveries）+ 库管出库（menu:inventory:delivery-outs）
+DELIVERIES_READ_PERMS = ("menu:sales:deliveries", "menu:inventory:delivery-outs")
+QUOTES_READ_PERMS = ("menu:sales:orders",)
+CUSTOMS_READ_PERMS = ("menu:sales:customs",)
+INVOICES_READ_PERMS = ("menu:sales:invoices", "menu:sales:ar", "menu:sales:collections", "menu:sales:orders")
+AR_READ_PERMS = ("menu:sales:ar", "menu:sales:collections", "menu:sales:invoices")
+COLLECTIONS_READ_PERMS = ("menu:sales:collections", "menu:sales:ar", "menu:sales:invoices")
+
+
+def _fire_reminder(db, point_code: str, doc_type: str, doc_id, doc_no="", data=None):
+    """预警提醒埋点统一入口 — 失败仅记日志，不影响业务主流程。
+
+    埋点须在业务 db.commit() 之后调用（notify 内部会另行 commit 通知），
+    避免把通知写入与业务事务混在一起。
+    """
+    try:
+        from app.services.reminder import notify
+        notify(db, point_code, doc_type, doc_id, doc_no, data)
+    except Exception:
+        import logging
+        logging.getLogger("reminder").exception("预警埋点失败: %s (doc_type=%s doc_id=%s)", point_code, doc_type, doc_id)
 
 
 # ==================== 报价单 ====================
 
 @router.post("/quotes", tags=["销售管理"])
-def create_quote(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_quote(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """创建报价单"""
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import SalesQuote
+    # 类型兜底 + 数量校验（审计 B1）
+    try:
+        quantity = float(data.get("quantity") or 0)
+        unit_price = float(data.get("unit_price") or 0)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "数量/单价必须为数字")
+    if quantity <= 0:
+        raise HTTPException(400, "报价数量必须大于 0")
     quote_no = generate_doc_no(db, "QT", SalesQuote, "quote_no")
     quote = SalesQuote(
         quote_no=quote_no,
         customer_id=data["customer_id"],
         product_id=data["product_id"],
-        quantity=data["quantity"],
-        unit_price=data["unit_price"],
-        total_amount=data["quantity"] * data["unit_price"],
+        quantity=quantity,
+        unit_price=unit_price,
+        total_amount=round(quantity * unit_price, 2),
         currency_id=data.get("currency_id"),
         trade_term_id=data.get("trade_term_id"),
         valid_until=data.get("valid_until"),
@@ -59,7 +100,7 @@ def create_quote(data: dict, db: Session = Depends(get_db), current_user: User =
 @router.get("/quotes", tags=["销售管理"])
 def list_quotes(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*QUOTES_READ_PERMS)),
 ):
     items = db.query(SalesQuote).order_by(SalesQuote.id.desc()).offset((page-1)*page_size).limit(page_size).all()
     return {"total": db.query(SalesQuote).count(), "page": page, "page_size": page_size, "items": [
@@ -85,16 +126,28 @@ def _recalc_order_totals(order):
         sum((i.total_amount_excl_tax or 0) for i in active_items) * exchange_rate, 6)
 
 @router.post("/orders", tags=["销售管理"])
-def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """创建销售订单（定制产品触发生产）"""
     from datetime import date, timedelta    # 汇率换算
     currency_id = data.get("currency_id") or 1
+    # 币种有效性校验（防止引用不存在/已停用币种）
+    from app.models.foundation import Currency as _Currency
+    currency = db.query(_Currency).filter(
+        _Currency.id == currency_id, _Currency.is_active == 1
+    ).first()
+    if not currency:
+        raise HTTPException(400, f"币种不存在或已停用: {currency_id}")
 
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import SalesOrder
     order_no = generate_doc_no(db, "SO", SalesOrder, "order_no")
 
-    exchange_rate = data.get("exchange_rate") or 1
+    try:
+        exchange_rate = float(data.get("exchange_rate") or 1)
+    except (TypeError, ValueError):
+        raise HTTPException(400, "汇率必须为数字")
+    if exchange_rate <= 0:
+        raise HTTPException(400, "汇率必须大于 0")
     # 汇总明细行金额
     items_data = data.get("items", [])
     if not items_data:
@@ -135,12 +188,14 @@ def create_sales_order(data: dict, db: Session = Depends(get_db), current_user: 
     total_amount_local = total_amount_fc * exchange_rate
     tax_amount_local = 0
     for item in items_data:
-        item_tax_rate = float(item.get("tax_rate", 13) or 13) / 100
+        item_tax_rate_val = float(item.get("tax_rate", 13) or 13)
         item_qty_safe = float(item.get("quantity", 0) or 0)
         item_price_safe = float(item.get("unit_price", 0) or 0)
         item_total_safe = float(item.get("total_amount", 0) or 0) or (item_qty_safe * item_price_safe)
-        item_local = item_total_safe * exchange_rate
-        tax_amount_local += round(item_local * float(item.get("tax_rate", 13) or 13) / (100 + float(item.get("tax_rate", 13) or 13)), 6)
+        # 与明细行同一铁律公式：不含税 = 含税 / (1 + 税率/100)；税额 = 含税 - 不含税
+        item_excl = item_total_safe / (1 + item_tax_rate_val / 100)
+        item_tax = item_total_safe - item_excl
+        tax_amount_local += round(item_tax * exchange_rate, 6)
     total_excl_tax_fc = round(total_amount_fc - tax_amount_local / exchange_rate, 6)
     total_excl_tax_local = round(total_amount_local - tax_amount_local, 6)
 
@@ -204,7 +259,7 @@ def list_sales_orders(
     status: str = Query(""), keyword: str = Query(""),
     date_from: str = Query(""), date_to: str = Query(""),
     amount_min: float = Query(None), amount_max: float = Query(None),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*ORDERS_READ_PERMS)),
 ):
     query = db.query(SalesOrder)
     if status:
@@ -232,6 +287,32 @@ def list_sales_orders(
         ).group_by(SalesInvoice.order_id).all()
         invoice_agg = {r[0]: float(r[1]) for r in rows}
 
+    # 批量聚合应收（collected/balance）—— 消除逐订单查发票再查应收的 N+1
+    ar_by_order = {}
+    if order_ids:
+        inv_of_order = {}
+        for oid, iid in db.query(SalesInvoice.order_id, SalesInvoice.id).filter(
+                SalesInvoice.order_id.in_(order_ids)).all():
+            inv_of_order.setdefault(oid, []).append(iid)
+        all_inv_ids = [iid for ids in inv_of_order.values() for iid in ids]
+        ar_agg = {}
+        if all_inv_ids:
+            for src_id, collected, balance in db.query(
+                AccountsReceivable.source_id,
+                sa_func.coalesce(AccountsReceivable.collected_amount, 0),
+                sa_func.coalesce(AccountsReceivable.balance, 0),
+            ).filter(
+                AccountsReceivable.source_type == "sales_invoice",
+                AccountsReceivable.source_id.in_(all_inv_ids),
+            ).all():
+                prev_c, prev_b = ar_agg.get(src_id, (0.0, 0.0))
+                ar_agg[src_id] = (prev_c + float(collected), prev_b + float(balance))
+        for oid, iids in inv_of_order.items():
+            ar_by_order[oid] = (
+                round(sum(ar_agg.get(iid, (0.0, 0.0))[0] for iid in iids), 2),
+                round(sum(ar_agg.get(iid, (0.0, 0.0))[1] for iid in iids), 2),
+            )
+
     return {"total": total, "page": page, "page_size": page_size, "items": [
         {"id": o.id, "order_no": o.order_no,
          "order_date": str(o.order_date),
@@ -247,8 +328,8 @@ def list_sales_orders(
          "uninvoiced_amount": (o.total_amount or 0) - invoice_agg.get(o.id, 0),
          "delivered_amount": sum((item.unit_price or 0) * (item.delivered_qty or 0) for item in o.items),
          "undelivered_amount": sum((item.unit_price or 0) * ((item.quantity or 0) - (item.delivered_qty or 0)) for item in o.items),
-         "collected_amount": sum(ar.collected_amount or 0 for ar in db.query(AccountsReceivable).filter(AccountsReceivable.source_type == "sales_invoice", AccountsReceivable.source_id.in_([inv.id for inv in db.query(SalesInvoice).filter(SalesInvoice.order_id == o.id)]))),
-         "uncollected_amount": sum(ar.balance or 0 for ar in db.query(AccountsReceivable).filter(AccountsReceivable.source_type == "sales_invoice", AccountsReceivable.source_id.in_([inv.id for inv in db.query(SalesInvoice).filter(SalesInvoice.order_id == o.id)]))),
+         "collected_amount": ar_by_order.get(o.id, (0.0, 0.0))[0],
+         "uncollected_amount": ar_by_order.get(o.id, (0.0, 0.0))[1],
          "currency_code": o.currency.code if o.currency else "CNY",
          "trade_term": o.trade_term.code if o.trade_term else "",
          "order_date": str(o.order_date),
@@ -260,12 +341,22 @@ def list_sales_orders(
 
 
 @router.get("/orders/{order_id}", tags=["销售管理"])
-def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*ORDERS_READ_PERMS))):
     from app.models.inventory import StockInOrder
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
     from app.models.sales import SalesOrderItem
+    # 每个明细行是否有活跃生产订单（外购/自产均算，用于前端隐藏转单按钮）
+    from app.models.production import ProductionOrder as _ProductionOrder
+    _item_ids = [item.id for item in order.items]
+    active_mo_items = set()
+    if _item_ids:
+        rows = db.query(_ProductionOrder.sales_order_item_id).filter(
+            _ProductionOrder.sales_order_item_id.in_(_item_ids),
+            _ProductionOrder.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
+        ).all()
+        active_mo_items = {r[0] for r in rows}
     result = {
         "id": order.id, "order_no": order.order_no,
         "customer_id": order.customer_id,
@@ -299,6 +390,7 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
                      StockInOrder.status != "已退回",
                  ).all()),
              "production_status": item.production_status or "未生产",
+             "has_active_mo": item.id in active_mo_items,
              "claimed_from_batch": item.claimed_from_batch or ""}
             for item in order.items
         ],
@@ -307,19 +399,35 @@ def get_sales_order(order_id: int, db: Session = Depends(get_db), current_user: 
 
 
 @router.delete("/orders/{order_id}", tags=["销售管理"])
-def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_sales_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
     if order.status != "待审核":
         raise HTTPException(400, "仅待审核状态的订单允许删除")
+    # 下游保护（审计 A4）：有发货/报关/发票/应收/收款的生产外记录禁删
+    for model, col, label in [
+        (SalesDelivery, "order_id", "发货单"),
+        (CustomsDeclaration, "order_id", "报关单"),
+        (SalesInvoice, "order_id", "销售发票"),
+    ]:
+        if db.query(model).filter(getattr(model, col) == order_id).first():
+            raise HTTPException(400, f"订单 {order.order_no} 已生成{label}，不能删除（请先处理下游单据）")
+    # 应收账款通过 source_type/source_id 关联（非 order_id）
+    if db.query(AccountsReceivable).filter(
+        AccountsReceivable.source_type == "sales_invoice",
+        AccountsReceivable.source_id.in_(
+            db.query(SalesInvoice.id).filter(SalesInvoice.order_id == order_id)
+        )
+    ).first():
+        raise HTTPException(400, f"订单 {order.order_no} 已生成应收账款，不能删除（请先处理下游单据）")
     db.delete(order)
     db.commit()
     return {"message": "销售订单已删除"}
 
 
 @router.put("/orders/{order_id}", tags=["销售管理"])
-def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """修改销售订单（仅待审核状态允许）"""
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
@@ -359,9 +467,17 @@ def update_sales_order(order_id: int, data: dict, db: Session = Depends(get_db),
             )
             db.add(item)
         if "quantity" in item_data:
-            item.quantity = float(item_data["quantity"])
+            try:
+                item.quantity = float(item_data["quantity"])
+            except (TypeError, ValueError):
+                raise HTTPException(400, "明细数量必须为数字")
+            if item.quantity <= 0:
+                raise HTTPException(400, "明细数量必须大于 0")
         if "unit_price" in item_data:
-            item.unit_price = float(item_data["unit_price"])
+            try:
+                item.unit_price = float(item_data["unit_price"])
+            except (TypeError, ValueError):
+                raise HTTPException(400, "明细单价必须为数字")
         if "tax_rate" in item_data:
             item.tax_rate = float(item_data["tax_rate"])
         if "product_id" in item_data and item_data["product_id"]:
@@ -408,12 +524,20 @@ def approve_sales_order(order_id: int, db: Session = Depends(get_db),
         if item.production_status in (None, "", "未生产"):
             item.production_status = "未生产"
     db.commit()
+    _fire_reminder(db, "SO_APPROVED", "so_order", order.id, order.order_no or "",
+                   {"order_no": order.order_no or "", "amount": round(order.total_amount or 0, 2)})
     return {"message": "订单已审核"}
 
 
 @router.post("/orders/{order_id}/items/{item_id}/re-produce", tags=["销售管理"])
-def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """重发生产 — 为指定明细行重新生成生产订单（仅已删除生产订单的明细行）"""
+def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_db),
+                          current_user: User = Depends(require_any_permission(
+                              "menu:sales:orders", "menu:production:orders"))):
+    """重发生产 — 为指定明细行重新生成生产订单（纯自产，仅已删除生产订单的明细行）
+
+    授权域：销售订单（本域）+ 生产域（转生产=自产，生产角色亦可操作），
+    任一满足即可；库管员/只读等低权限角色被拒（403）。
+    """
     from app.models.production import ProductionOrder
     from app.utils.batch_no import generate_doc_no
     # 实时查最新状态
@@ -435,6 +559,8 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "销售订单不存在")
+    if order.status != "已审":
+        raise HTTPException(400, "订单审核通过后才能转生产")
     prod = ProductionOrder(
         order_no=generate_doc_no(db, "MO", ProductionOrder, "order_no"),
         sales_order_id=order.id,
@@ -446,15 +572,20 @@ def reproduce_order_item(order_id: int, item_id: int, db: Session = Depends(get_
         created_by=current_user.display_name or current_user.username,
     )
     db.add(prod)
+    # 三分支互斥：转生产（自产）后明细行占位「生产中」，防止再转直采/转外发漏过。
+    # （与派产 release 置「生产中」、完工置「已生产」、删除 MO 回「未生产」的流转一致）
+    item.production_status = "生产中"
     db.commit()
     db.refresh(prod)
+    _fire_reminder(db, "SO_TO_PRODUCTION", "so_order", order.id, order.order_no or "",
+                   {"order_no": str(order.order_no or ""), "mo_no": str(prod.order_no or "")})
     return {"id": prod.id, "order_no": prod.order_no, "message": f"已重新生成生产订单 {prod.order_no}"}
 
 
 # ==================== 销售明细行：转入库 / 转外发 / 变更 ====================
 
 @router.post("/orders/{order_id}/items/{item_id}/stock-in", tags=["销售管理"])
-def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """销售明细「转直采」— 仅推送单据到「销售订单转采购」页（不生成采购单，采购在转采购页进行）"""
     from app.models.inventory import StockInOrder
     item = db.query(SalesOrderItem).filter(
@@ -469,14 +600,30 @@ def notify_stock_in(order_id: int, item_id: int, db: Session = Depends(get_db), 
         raise HTTPException(400, "订单审核通过后才能转直采")
     if item.production_status not in (None, "", "未生产"):
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转直采")
+    # 已有活跃生产订单（外购/自产）时禁止重复转单（与 re-produce 一致）
+    from app.models.production import ProductionOrder as _PO
+    existing_mo = db.query(_PO).filter(
+        _PO.sales_order_item_id == item.id,
+        _PO.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
+    ).first()
+    if existing_mo:
+        raise HTTPException(400, f"该明细行已有活跃生产订单（{existing_mo.order_no}），不能转直采")
     item.production_status = "已通知入库"
     db.commit()
+    _fire_reminder(db, "SO_TO_PURCHASE", "so_order", order.id, order.order_no or "",
+                   {"order_no": order.order_no or ""})
     return {"message": "已转直采，请到「采购管理 → 销售订单转采购」办理采购"}
 
 
 @router.post("/orders/{order_id}/items/{item_id}/outsource", tags=["销售管理"])
-def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """销售明细「转外发」— 生成委外订单（草稿），明细状态→已通知外发"""
+def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
+                      current_user: User = Depends(require_any_permission(
+                          "menu:sales:orders", "menu:outsource:from-sales", "menu:outsource:orders"))):
+    """销售明细「转外发」— 生成委外订单（草稿），明细状态→已通知外发
+
+    授权域：销售订单（本域）+ 委外域（转外发后进入委外管理，委外角色亦可操作），
+    任一满足即可；库管员/只读等低权限角色被拒（403）。
+    """
     from app.models.production import OutsourceOrder
     from app.utils.batch_no import generate_doc_no
     item = db.query(SalesOrderItem).filter(
@@ -491,8 +638,18 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
         raise HTTPException(400, "订单审核通过后才能转外发")
     if item.production_status not in (None, "", "未生产"):
         raise HTTPException(400, f"该明细行状态为「{item.production_status}」，不能转外发")
+    # 已有活跃生产订单时禁止重复转单（与 re-produce 一致）
+    from app.models.production import ProductionOrder as _PO
+    existing_mo = db.query(_PO).filter(
+        _PO.sales_order_item_id == item.id,
+        _PO.status.in_(["待确认", "待排产", "已排产", "生产中", "已完成", "部分入库", "已入库", "待采购", "采购中"]),
+    ).first()
+    if existing_mo:
+        raise HTTPException(400, f"该明细行已有活跃生产订单（{existing_mo.order_no}），不能转外发")
     item.production_status = "已通知外发"
     db.commit()
+    _fire_reminder(db, "SO_TO_OUTSOURCE", "so_order", order.id, order.order_no or "",
+                   {"order_no": order.order_no or ""})
     return {"message": "已转外发，请到「委外管理 → 销售订单转委外」办理委外"}
 
 
@@ -500,7 +657,7 @@ def notify_outsource(order_id: int, item_id: int, db: Session = Depends(get_db),
 
 @router.post("/orders/{order_id}/items/{item_id}/claim-batch", tags=["销售管理"])
 def claim_batch(order_id: int, item_id: int, data: dict,
-                db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """销售明细「认领库存」— 把库里的备货批次（FG-xxx 无归属）改名挂到本销售行，成本随之归集
 
     data: {batch_no: str, quantity: float}
@@ -549,6 +706,13 @@ def claim_batch(order_id: int, item_id: int, data: dict,
     # 逐行拆分/改名（FIFO 按 id 顺序）
     remaining = quantity
     total_cost_move = 0.0
+    # 历史已认领量（本销售批次下所有认领来的库存行数量）—— 须在本次认领前统计，
+    # 认领循环会把本次库存行 batch_no 改成销售批次，若放循环后会误把本次计入
+    claimed_before = sum((i.quantity or 0) for i in db.query(WarehouseInventory).filter(
+        WarehouseInventory.batch_no == item.batch_no,
+        WarehouseInventory.claimed_from_batch.isnot(None),
+        WarehouseInventory.claimed_from_batch != "",
+    ).all())
     for inv in invs:
         if remaining <= 0:
             break
@@ -607,8 +771,8 @@ def claim_batch(order_id: int, item_id: int, data: dict,
         operator=current_user.display_name or current_user.username,
     ))
 
-    # 明细状态：认领数量 >= 订单数量 → 已入库；不足 → 部分入库（可继续认领/转入库）
-    claimed_total = quantity
+    # 明细状态：认领数量（含历史累计）>= 订单数量 → 已入库；不足 → 部分入库（可继续认领/转入库）
+    claimed_total = round(claimed_before + quantity, 2)
     item.claimed_from_batch = batch_no
     if claimed_total >= (item.quantity or 0):
         item.production_status = "已入库"
@@ -620,7 +784,7 @@ def claim_batch(order_id: int, item_id: int, data: dict,
 
 @router.post("/orders/{order_id}/items/{item_id}/unclaim-batch", tags=["销售管理"])
 def unclaim_batch(order_id: int, item_id: int,
-                  db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+                  db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders"))):
     """销售明细「解绑认领」— 未发货的认领库存退回原备货批次"""
     from app.utils.batch_no import generate_doc_no
     item = db.query(SalesOrderItem).filter(
@@ -698,7 +862,7 @@ def unclaim_batch(order_id: int, item_id: int,
 # ==================== 销售发货（批次出库） ====================
 
 @router.post("/deliveries", tags=["销售管理"])
-def create_delivery(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_delivery(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries"))):
     """销售发货 — 指定批次出库、扣库存、更新订单明细已发数量。
     可发量规则（峰子拍板）：
     - 发货数量不按订单量限制，只看批次可发量（物理库存 - 其他订单锁定）
@@ -829,7 +993,7 @@ def _auto_finished_warehouse(db, product_id):
 
 
 @router.post("/deliveries/notify", tags=["销售管理"])
-def create_delivery_notify(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_delivery_notify(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries"))):
     """通知发货（业务员，第一段）：只登记发货意向，不选批次、不扣库存。
     生成 status=待出库 的 SD 单，批次/仓库留空，由库管在【成品出库】完成出库。"""
     item = db.query(SalesOrderItem).filter(SalesOrderItem.id == data.get("order_item_id")).first()
@@ -870,13 +1034,15 @@ def create_delivery_notify(data: dict, db: Session = Depends(get_db), current_us
     )
     db.add(sd)
     db.commit()
+    _fire_reminder(db, "DELIVERY_NOTIFIED", "so_delivery", sd.id, delivery_no,
+                   {"delivery_no": delivery_no})
     return {"id": sd.id, "delivery_no": delivery_no, "message": "已通知发货，等待库管出库"}
 
 
 @router.post("/deliveries/{delivery_id}/issue", tags=["销售管理"])
 def issue_delivery(
     delivery_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:delivery-outs")),
 ):
     """库管出库（第二段）：对已通知的 SD 单按 批次+实际数量 出库并扣减库存。"""
     sd = db.query(SalesDelivery).filter(SalesDelivery.id == delivery_id).first()
@@ -995,7 +1161,7 @@ def _update_order_delivery_status(order):
 @router.post("/orders/{order_id}/items/{item_id}/delivery-confirm", tags=["销售管理"])
 def confirm_order_item_delivery(
     order_id: int, item_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries")),
 ):
     """确认/撤销 明细行发货完成（按产品行）。
     确认后：该行不能再发货，批次锁定解除（剩余库存开放给其他订单）。
@@ -1022,6 +1188,9 @@ def confirm_order_item_delivery(
     order = item.order
     _update_order_delivery_status(order)
     db.commit()
+    if confirmed:
+        _fire_reminder(db, "DELIVERY_CONFIRMED", "so_order", order.id, order.order_no or "",
+                       {"order_no": order.order_no or ""})
     return {
         "message": "已确认发货完成" if confirmed else "已撤销确认",
         "delivery_confirmed": item.delivery_confirmed,
@@ -1033,7 +1202,7 @@ def confirm_order_item_delivery(
 def list_deliveries(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     order_item_id: int | None = Query(None, description="按订单明细行过滤（发货记录下表用）"),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*DELIVERIES_READ_PERMS)),
 ):
     q = db.query(SalesDelivery)
     if order_item_id:
@@ -1063,7 +1232,7 @@ def list_delivery_outs(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     status: str | None = Query(None, description="待出库/部分出库/已出库"),
     keyword: str | None = Query(None, description="SD单号/订单号/产品/客户/批次/备注"),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*DELIVERIES_READ_PERMS)),
 ):
     """成品出库列表（库管用，两段式第二段）：列待出库/部分出库/已出库的 SD 单。
     status=已出库 时附带该单的出库记录（穿透 StockTransaction source_doc_no=SD单号）。"""
@@ -1132,7 +1301,7 @@ def list_delivery_outs(
 def delivery_workbench(
     page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
     keyword: str = "", status: str = "",
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*DELIVERIES_READ_PERMS)),
 ):
     """发货工作台上表：所有已审核销售订单的明细行（一行一产品）。
     字段：订单量/已入库/已发货/未发货/实物库存(该产品全部库存)/可用库存(实物-所有未完成订单锁定)/确认状态"""
@@ -1197,7 +1366,7 @@ def delivery_workbench(
 
 
 @router.post("/deliveries/return", tags=["销售管理"])
-def create_delivery_return(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_delivery_return(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries"))):
     """销售退货（峰子 2026-08-03 拍板）：
     - 退到原批次，生成退货发货单（is_return=1）
     - 退货数量≤已发数量，多次退货合计≤已发数量
@@ -1209,6 +1378,17 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
     # 退货必须先已出库（通知了还没出的不能退）
     if not (item.delivered_qty or 0) > 0:
         raise HTTPException(400, "该产品尚未出库，无法退货（需先通知发货并由库管出库）")
+
+    # 已退税拦截（审计 A6）：发货已报关且退税已申报/已退税，退货会导致退税数据失真
+    shipped_deliveries = db.query(SalesDelivery).filter(
+        SalesDelivery.order_item_id == item.id,
+        SalesDelivery.is_return == 0,
+    ).all()
+    from app.models.sales import CustomsDeclaration
+    for sd in shipped_deliveries:
+        customs = db.query(CustomsDeclaration).filter(CustomsDeclaration.delivery_id == sd.id).first()
+        if customs and customs.refund_status in ("已申报", "已退税", "已退库"):
+            raise HTTPException(400, f"该发货（{sd.delivery_no}）已关联报关单 {customs.customs_no} 且退税{('已' + customs.refund_status[1:] if customs.refund_status.startswith('已') else '已申报')}，不能退货（请先处理报关/退税）")
 
     qty = float(data["quantity"])
     if qty <= 0:
@@ -1235,6 +1415,18 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
     # 生成退货发货单（红字单：is_return=1）
     delivery_no = generate_doc_no(db, "SD", SalesDelivery, "delivery_no")
     src = shipped[0]
+    # 报关退税状态 → 标记已报税（负数申报用）。已申报/已退税在上方已拦截，此处为待申报/未报关。
+    from app.models.sales import CustomsDeclaration
+    _rd_customs = db.query(CustomsDeclaration).filter(CustomsDeclaration.delivery_id == src.id).first()
+    _refund_declared = 0
+    _refund_warning = ""
+    if _rd_customs:
+        if _rd_customs.refund_status in ("已申报", "审核中", "审核通过", "已退税", "已退库"):
+            _refund_declared = 1
+            _refund_warning = ("该发货单关联报关单退税已申报：退税数据冻结不动，本次退货将在次月申报时自动带出做负数申报（发票红冲不受影响）")
+        elif _rd_customs.refund_status == "待申报":
+            _refund_warning = "该发货单关联报关单退税待申报，退货后请同步更新申报明细"
+
     ret = SalesDelivery(
         delivery_no=delivery_no,
         order_id=item.order_id,
@@ -1251,6 +1443,7 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
         status="已退货",
         is_return=1,
         return_of_delivery_id=src.id,
+        refund_declared=_refund_declared,
     )
     db.add(ret)
     db.flush()
@@ -1315,13 +1508,33 @@ def create_delivery_return(data: dict, db: Session = Depends(get_db), current_us
         item.delivery_confirmed = 0
     _update_order_delivery_status(item.order)
     db.commit()
-    return {"id": ret.id, "delivery_no": delivery_no, "message": "退货成功，库存已加回"}
+
+    # 订单发票状态提示（操作员判断是否需要全额红冲发票 / 补开新票）
+    msg = "退货成功，库存已加回"
+    if _refund_warning:
+        msg += f"。{_refund_warning}"
+    invoiced = db.query(sa_func.coalesce(sa_func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.order_id == item.order_id,
+        SalesInvoice.is_red == 0,
+    ).scalar() or 0
+    red_invoiced = db.query(sa_func.coalesce(sa_func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.order_id == item.order_id,
+        SalesInvoice.is_red == 1,
+    ).scalar() or 0
+    return {
+        "id": ret.id, "delivery_no": delivery_no, "message": msg,
+        "invoice_status": {
+            "invoiced_amount": round(float(invoiced), 2),
+            "red_reversed_amount": round(abs(float(red_invoiced)), 2),
+            "return_amount": round(qty * (item.unit_price or 0), 2),
+        },
+    }
 
 
 @router.post("/deliveries/{delivery_id}/issue-return", tags=["销售管理"])
 def return_delivery_issue(
     delivery_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:inventory:delivery-outs")),
 ):
     """库管出库退回（红冲）— 撤销出库：库存回补原批次 + 红字流水(delivery_out_return/成品出库退回) + delivered_qty 回减 + 单/明细/订单状态回退。
     用于库管出库出错撤销；客户退货请走「销售发货→退货」(生成红字退货单)。"""
@@ -1421,7 +1634,7 @@ def return_delivery_issue(
 @router.post("/deliveries/{delivery_id}/return", tags=["销售管理"])
 def return_delivery(
     delivery_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:deliveries")),
 ):
     """销售退货 — 退回原批次、原发货成本，生成负向退货单+回库流水
 
@@ -1564,24 +1777,92 @@ def return_delivery(
 # ==================== 报关单 ====================
 
 @router.post("/customs", tags=["销售管理"])
-def create_customs(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """创建报关单"""
+def create_customs(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:customs"))):
+    """创建报关单（商品行：一票报关单报多个商品/多个HS编码）
+
+    items: [{product_id, hs_code_id(默认产品档案), quantity, unit_price, declare_amount}]
+    不传 items → 自动按订单明细带出商品行。
+    """
     order = db.query(SalesOrder).filter(SalesOrder.id == data["order_id"]).first()
     if not order:
         raise HTTPException(404, "订单不存在")
 
+    # 校验：报关单号全局唯一（海关编号不可重复使用）
+    customs_no = data.get("customs_no", "")
+    dup_no = db.query(CustomsDeclaration).filter(CustomsDeclaration.customs_no == customs_no).first()
+    if dup_no:
+        raise HTTPException(400, f"报关单号 {customs_no} 已存在（报关单 {dup_no.id}），不能重复使用")
+
+    # 校验：同一发货单只能报一次关（按发货单粒度）
+    delivery_id = data.get("delivery_id")
+    if delivery_id:
+        dup_dv = db.query(CustomsDeclaration).filter(CustomsDeclaration.delivery_id == delivery_id).first()
+        if dup_dv:
+            raise HTTPException(400, f"发货单已关联报关单 {dup_dv.customs_no}，不能重复报关")
+
+    # 校验：不挂发货单时，同一订单也只能有一张报关单（防整单重复报关）
+    if not delivery_id:
+        dup_so = db.query(CustomsDeclaration).filter(
+            CustomsDeclaration.order_id == order.id,
+            CustomsDeclaration.delivery_id.is_(None),
+        ).first()
+        if dup_so:
+            raise HTTPException(400, f"订单 {order.order_no} 已有关联报关单 {dup_so.customs_no}，不能重复报关")
+
+    # ===== 商品行：items[] 或按订单明细自动带出 =====
+    order_items = db.query(SalesOrderItem).filter(SalesOrderItem.order_id == order.id).all()
+    order_item_by_product = {oi.product_id: oi for oi in order_items if oi.product_id}
+    raw_items = data.get("items") or []
+    if not raw_items:
+        raw_items = [{"product_id": oi.product_id, "quantity": oi.quantity or 0,
+                      "unit_price": oi.unit_price or 0} for oi in order_items]
+    if not raw_items:
+        raise HTTPException(400, "订单无明细行，无法创建报关单")
+
     customs = CustomsDeclaration(
-        customs_no=data["customs_no"],
+        customs_no=customs_no,
         order_id=order.id,
-        delivery_id=data.get("delivery_id"),
-        hs_code_id=data["hs_code_id"] or order.hs_code_id,
-        declare_amount=data["declare_amount"] or order.total_amount,
+        delivery_id=delivery_id,
         declare_currency=data.get("declare_currency") or order.currency_id,
         declare_date=_parse_date(data.get("declare_date")) or date.today(),
         customs_broker=data.get("customs_broker", ""),
+        status=data.get("status", "已报关"),
         remark=data.get("remark", ""),
     )
     db.add(customs)
+    db.flush()
+
+    total_declare = 0.0
+    first_hs_id = None
+    for it in raw_items:
+        product_id = it.get("product_id")
+        if not product_id:
+            raise HTTPException(400, "商品行缺少 product_id")
+        oi = order_item_by_product.get(product_id)
+        if not oi:
+            raise HTTPException(400, f"商品 {product_id} 不属于订单 {order.order_no} 的明细")
+        prod = db.query(Product).filter(Product.id == product_id).first()
+        prod_name = prod.name_cn if prod else f"商品#{product_id}"
+        hs_id = it.get("hs_code_id") or (prod.hs_code_id if prod else None)
+        if not hs_id:
+            raise HTTPException(400, f"{prod_name} 未配置 HS 编码，请选择")
+        qty = float(it.get("quantity") or 0)
+        if qty <= 0:
+            raise HTTPException(400, f"{prod_name} 报关数量必须大于 0")
+        unit_price = float(it.get("unit_price") or 0) or (oi.unit_price or 0)
+        amt = float(it.get("declare_amount") or 0)
+        if not amt and unit_price:
+            amt = round(qty * unit_price, 2)
+        total_declare += amt
+        if first_hs_id is None:
+            first_hs_id = hs_id
+        db.add(CustomsDeclarationItem(
+            customs_id=customs.id, product_id=product_id, hs_code_id=hs_id,
+            quantity=qty, declare_amount=amt, unit_price=unit_price,
+        ))
+
+    customs.declare_amount = round(total_declare, 2)
+    customs.hs_code_id = first_hs_id  # 冗余兼容（表头不再强制）
     db.commit()
     db.refresh(customs)
 
@@ -1590,14 +1871,33 @@ def create_customs(data: dict, db: Session = Depends(get_db), current_user: User
         delivery = db.query(SalesDelivery).filter(SalesDelivery.id == customs.delivery_id).first()
         if delivery:
             delivery.status = "已报关"
-    return {"id": customs.id, "customs_no": data["customs_no"], "message": "报关单创建成功"}
+    return {"id": customs.id, "customs_no": customs_no,
+            "message": f"报关单创建成功（{len(raw_items)} 个商品行）"}
+
+
+def _customs_item_out(it):
+    """报关单商品行输出序列化"""
+    return {
+        "id": it.id,
+        "product_id": it.product_id,
+        "product_code": it.product.code if it.product else "",
+        "product_name": it.product.name_cn if it.product else "",
+        "unit": it.product.unit if it.product else "",
+        "hs_code_id": it.hs_code_id,
+        "hs_code": it.hs_code.hs_code if it.hs_code else "",
+        "hs_name": it.hs_code.name if it.hs_code else "",
+        "refund_rate": it.hs_code.refund_rate if it.hs_code else 0,
+        "quantity": it.quantity,
+        "unit_price": it.unit_price,
+        "declare_amount": it.declare_amount,
+    }
 
 
 @router.get("/customs", tags=["销售管理"])
 def list_customs(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     refund_status: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*CUSTOMS_READ_PERMS)),
 ):
     query = db.query(CustomsDeclaration)
     if refund_status:
@@ -1614,6 +1914,9 @@ def list_customs(
          "currency_code": c.currency.code if c.currency else "",
          "hs_code_id": c.hs_code_id,
          "hs_code": c.hs_code.hs_code if c.hs_code else "",
+         # 商品行摘要（多 HS 合并展示）
+         "hs_codes": ",".join(sorted({i.hs_code.hs_code for i in c.items if i.hs_code})),
+         "items_count": len(c.items),
          "customs_broker": c.customs_broker or "",
          "declare_date": str(c.declare_date),
          "status": c.status,
@@ -1626,7 +1929,7 @@ def list_customs(
 
 
 @router.get("/customs/{customs_id}", tags=["销售管理"])
-def get_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*CUSTOMS_READ_PERMS))):
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
@@ -1647,29 +1950,76 @@ def get_customs(customs_id: int, db: Session = Depends(get_db), current_user: Us
         "remark": c.remark or "",
         "delivery_id": c.delivery_id,
         "created_at": str(c.created_at) if c.created_at else "",
+        "items": [_customs_item_out(i) for i in c.items],
     }
 
 
 @router.put("/customs/{customs_id}", tags=["销售管理"])
-def update_customs(customs_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_customs(customs_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:customs"))):
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
     for k, v in data.items():
-        if k in ("customs_no", "order_id", "delivery_id", "hs_code_id", "declare_amount",
+        if k in ("customs_no", "order_id", "delivery_id", "declare_amount",
                  "declare_currency", "declare_date", "customs_broker", "status", "refund_status", "remark"):
             if k == "declare_date":
                 v = _parse_date(v)
             setattr(c, k, v)
+    # 商品行更新：传 items 则重建
+    if "items" in data and data["items"]:
+        order_items = db.query(SalesOrderItem).filter(SalesOrderItem.order_id == c.order_id).all()
+        order_item_by_product = {oi.product_id: oi for oi in order_items if oi.product_id}
+        for old in list(c.items):
+            db.delete(old)
+        db.flush()
+        total_declare = 0.0
+        first_hs_id = None
+        for it in data["items"]:
+            product_id = it.get("product_id")
+            if not product_id or product_id not in order_item_by_product:
+                raise HTTPException(400, f"商品 {product_id} 不属于订单明细")
+            prod = db.query(Product).filter(Product.id == product_id).first()
+            hs_id = it.get("hs_code_id") or (prod.hs_code_id if prod else None)
+            if not hs_id:
+                raise HTTPException(400, f"{(prod.name_cn if prod else product_id)} 未配置 HS 编码")
+            qty = float(it.get("quantity") or 0)
+            unit_price = float(it.get("unit_price") or 0) or (order_item_by_product[product_id].unit_price or 0)
+            amt = float(it.get("declare_amount") or 0)
+            if not amt and unit_price:
+                amt = round(qty * unit_price, 2)
+            total_declare += amt
+            if first_hs_id is None:
+                first_hs_id = hs_id
+            db.add(CustomsDeclarationItem(
+                customs_id=c.id, product_id=product_id, hs_code_id=hs_id,
+                quantity=qty, declare_amount=amt, unit_price=unit_price))
+        c.declare_amount = round(total_declare, 2)
+        c.hs_code_id = first_hs_id
     db.commit()
     return {"message": "报关单已更新"}
 
 
 @router.delete("/customs/{customs_id}", tags=["销售管理"])
-def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:customs"))):
     c = db.query(CustomsDeclaration).filter(CustomsDeclaration.id == customs_id).first()
     if not c:
         raise HTTPException(404, "报关单不存在")
+    # 已申报退税的报关单禁止删除（保护退税数据）
+    if c.refund_status in ("已申报", "审核中", "已退税", "已退库"):
+        raise HTTPException(400, f"报关单 {c.customs_no} 已进入退税流程（{c.refund_status}），禁止删除")
+    # 下游保护：已进退税申报的报关单禁删（审计 A1）
+    from app.models.tax_refund import TaxRefundDetail, TaxRefundDeclarationRow
+    ref_detail = db.query(TaxRefundDetail).filter(
+        (TaxRefundDetail.customs_id == customs_id)).first()
+    ref_row = db.query(TaxRefundDeclarationRow).filter(
+        TaxRefundDeclarationRow.voucher_no == c.customs_no).first()
+    if ref_detail or ref_row:
+        raise HTTPException(400, f"报关单 {c.customs_no} 已关联退税申报，不能删除（请先在退税管理处理）")
+    # 回退发货单已报关状态
+    if c.delivery_id:
+        delivery = db.query(SalesDelivery).filter(SalesDelivery.id == c.delivery_id).first()
+        if delivery and delivery.status == "已报关":
+            delivery.status = "已发货"
     db.delete(c)
     db.commit()
     return {"message": "报关单已删除"}
@@ -1678,16 +2028,100 @@ def delete_customs(customs_id: int, db: Session = Depends(get_db), current_user:
 # ==================== 销售发票 → 应收 → 收款 ====================
 
 @router.post("/invoices", tags=["销售管理"])
-def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """开票 → 自动生成应收"""
+def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:invoices"))):
+    """开票 → 自动生成应收；支持红字发票手工录入（red_of_invoice_id）
+
+    红字录入：发票号手填（客户开票系统生成），金额强制 = 原票全额负数，
+    原票标记已红冲，自动生成等额红字应收。蓝字开票有未开票金额上限校验。
+    """
     order_id = data.get("order_id") or data.get("sales_order_id")
     # 确保金额字段为 float
     for k in ["amount", "amount_fc", "tax_amount", "total_amount"]:
         if k in data and data[k] is not None:
-            data[k] = float(data[k])
+            try:
+                data[k] = float(data[k])
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{k} 必须为数字")
     order = db.query(SalesOrder).filter(SalesOrder.id == order_id).first()
     if not order:
         raise HTTPException(404, "订单不存在")
+
+    red_of_id = data.get("red_of_invoice_id")
+    if red_of_id:
+        # ===== 红字发票（手工录入，全额红冲） =====
+        src = db.query(SalesInvoice).filter(SalesInvoice.id == red_of_id).first()
+        if not src:
+            raise HTTPException(404, "被红冲的原发票不存在")
+        if src.is_red:
+            raise HTTPException(400, "红字发票不能再次红冲")
+        if src.status == "已红冲":
+            raise HTTPException(400, f"原发票 {src.invoice_no} 已红冲，不能重复红冲")
+        # 金额必须 = 原票全额负数（不允许手工干预金额）
+        for k, label in [("total_amount", "价税合计"), ("amount", "不含税金额"), ("tax_amount", "税额")]:
+            diff = abs((data.get(k) or 0) + (getattr(src, k) or 0))
+            if diff > 0.01:
+                raise HTTPException(400, f"红字发票{label}必须等于原发票全额负数（{label}应为 {-(getattr(src, k) or 0):.2f}）")
+
+        invoice = SalesInvoice(
+            invoice_no=data["invoice_no"],
+            order_id=order.id,
+            customer_id=order.customer_id,
+            invoice_date=_parse_date(data.get("invoice_date")) or date.today(),
+            invoice_type=data.get("invoice_type", src.invoice_type or "出口发票"),
+            amount=data.get("amount", 0),
+            amount_fc=data.get("amount_fc", data.get("amount", 0)),
+            tax_rate=data.get("tax_rate", 13),
+            tax_amount=data.get("tax_amount", 0),
+            total_amount=data.get("total_amount", 0),
+            currency_id=order.currency_id,
+            remark=data.get("remark", ""),
+            is_red=1,
+            red_of_invoice_id=src.id,
+        )
+        db.add(invoice)
+        db.flush()
+        # 原发票标记已红冲
+        src.status = "已红冲"
+
+        # 生成红字应收（等额负数，关联原应收）
+        src_ar = db.query(AccountsReceivable).filter(
+            AccountsReceivable.source_type == "sales_invoice",
+            AccountsReceivable.source_id == src.id,
+        ).first()
+        customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
+        due_days = customer.account_period if customer else 30
+        due_date = (invoice.invoice_date or date.today()) + timedelta(days=due_days)
+        ar_no_str = generate_doc_no(db, "AR", AccountsReceivable, "ar_no")
+        ar = AccountsReceivable(
+            ar_no=ar_no_str,
+            source_type="sales_invoice",
+            source_id=invoice.id,
+            customer_id=order.customer_id,
+            amount=data.get("total_amount") or data["amount"],
+            amount_fc=data.get("amount_fc", data.get("total_amount", data["amount"])),
+            currency_id=order.currency_id,
+            collected_amount=0,
+            balance=data.get("total_amount") or data["amount"],
+            due_date=due_date,
+            status="未收款",
+            is_red=1,
+            red_of_ar_id=src_ar.id if src_ar else None,
+        )
+        db.add(ar)
+        db.commit()
+        return {"id": invoice.id, "invoice_no": data["invoice_no"], "ar_no": ar_no_str,
+                "message": "红字发票已登记，原发票已红冲，红字应收已生成"}
+
+    # ===== 蓝字发票 =====
+    if float(data.get("amount") or 0) <= 0:
+        raise HTTPException(400, "开票金额必须大于 0")
+    # 校验：开票金额 ≤ 未开票金额（SUM 含红字发票负数，全额红冲后额度自动返还）
+    invoiced = db.query(sa_func.coalesce(sa_func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.order_id == order.id).scalar() or 0
+    uninvoiced = max(0, (order.total_amount or 0) - float(invoiced))
+    new_total = data.get("total_amount") or data["amount"] or 0
+    if new_total > uninvoiced + 0.01:
+        raise HTTPException(400, f"开票金额 {new_total:.2f} 超过未开票金额 {uninvoiced:.2f}，请先红冲或调整开票金额")
 
     invoice = SalesInvoice(
         invoice_no=data["invoice_no"],
@@ -1710,8 +2144,6 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     customer = db.query(Customer).filter(Customer.id == order.customer_id).first()
     due_days = customer.account_period if customer else 30
     due_date = (invoice.invoice_date or date.today()) + timedelta(days=due_days)
-    from app.utils.batch_no import generate_doc_no
-    from app.models.sales import AccountsReceivable
     ar_no_str = generate_doc_no(db, "AR", AccountsReceivable, "ar_no")
     ar = AccountsReceivable(
         ar_no=ar_no_str,
@@ -1729,30 +2161,40 @@ def create_sales_invoice(data: dict, db: Session = Depends(get_db), current_user
     db.add(ar)
 
     db.commit()
+    _fire_reminder(db, "AR_CREATED", "ar_account", ar.id, ar_no_str,
+                   {"ar_no": ar_no_str, "amount": round(ar.amount or 0, 2)})
     return {"id": invoice.id, "invoice_no": data["invoice_no"], "ar_no": ar_no_str, "message": "开票成功，应收已生成"}
 
 
 @router.post("/ar/{ar_id}/cancel-collection", tags=["销售管理"])
-def cancel_collection(ar_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def cancel_collection(ar_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
     """取消收款 — 按应收记录ID取消"""
     ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == ar_id).first()
     if not ar:
         raise HTTPException(404, "应收记录不存在")
-    
-    coll = db.query(Collection).filter(Collection.id == ar.source_id).first()
-    if coll:
-        # 先删关联的核销记录
-        allocations = db.query(CollectionAllocation).filter(CollectionAllocation.collection_id == coll.id).all()
-        for alloc in allocations:
-            db.delete(alloc)
-        db.flush()
-        db.delete(coll)
-    
+
+    # 通过核销记录反查该应收关联的收款单（原实现误用 ar.source_id 当收款单 ID——
+    # 发票来源的 AR source_id 是发票 ID，导致收款单永远删不掉）
+    allocations = db.query(CollectionAllocation).filter(
+        CollectionAllocation.ar_account_id == ar.id).all()
+    coll_ids = {a.collection_id for a in allocations}
+    for alloc in allocations:
+        db.delete(alloc)
+    db.flush()
+    # 仅当收款单不再核销其他应收时才删除（避免破坏共享收款单的其他应收）
+    for cid in coll_ids:
+        remaining = db.query(CollectionAllocation).filter(
+            CollectionAllocation.collection_id == cid).count()
+        if remaining == 0:
+            coll = db.query(Collection).filter(Collection.id == cid).first()
+            if coll:
+                db.delete(coll)
+
     # 回滚应收
     ar.collected_amount = 0
     ar.balance = ar.amount
     ar.status = "未收款"
-    
+
     db.commit()
     return {"message": "收款已取消"}
 
@@ -1762,7 +2204,7 @@ def list_sales_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*INVOICES_READ_PERMS)),
 ):
     query = db.query(SalesInvoice)
     total = query.count()
@@ -1771,6 +2213,11 @@ def list_sales_invoices(
     for inv in items:
         order = db.query(SalesOrder).filter(SalesOrder.id == inv.order_id).first() if inv.order_id else None
         customer = db.query(Customer).filter(Customer.id == inv.customer_id).first() if inv.customer_id else None
+        # 红字原票号
+        red_of_no = ""
+        if getattr(inv, "red_of_invoice_id", None):
+            src = db.query(SalesInvoice).filter(SalesInvoice.id == inv.red_of_invoice_id).first()
+            red_of_no = src.invoice_no if src else ""
         result.append({
             "id": inv.id, "invoice_no": inv.invoice_no,
             "customer_id": inv.customer_id,
@@ -1782,12 +2229,15 @@ def list_sales_invoices(
             "total_amount": (inv.amount or 0) + (inv.tax_amount or 0),
             "invoice_date": str(inv.invoice_date) if inv.invoice_date else "",
             "status": inv.status, "remark": inv.remark or "",
+            "is_red": getattr(inv, "is_red", 0) or 0,
+            "red_of_invoice_id": getattr(inv, "red_of_invoice_id", None),
+            "red_of_invoice_no": red_of_no,
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 
 @router.put("/invoices/{invoice_id}", tags=["销售管理"])
-def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:invoices"))):
     """修改销售发票（同步更新应收单、订单已开票金额）"""
     for k in ["amount", "tax_amount", "total_amount"]:
         if k in data and data[k] is not None:
@@ -1795,6 +2245,8 @@ def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_
     inv = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(404, "发票不存在")
+    if getattr(inv, "is_red", 0):
+        raise HTTPException(400, "红字发票不可修改")
     
     # 已收款的发票禁止改金额（先退收款单，保证应收一致）
     ar0 = db.query(AccountsReceivable).filter(
@@ -1828,12 +2280,17 @@ def update_sales_invoice(invoice_id: int, data: dict, db: Session = Depends(get_
 
 
 @router.delete("/invoices/{invoice_id}", tags=["销售管理"])
-def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """删除销售发票（同步删除应收单、回滚订单已开票金额）"""
+def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:invoices"))):
+    """删除销售发票（同步删除应收单、回滚订单已开票金额）
+    红字票禁删；已红冲的蓝字票禁删（需先删红字票）。"""
     inv = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id).first()
     if not inv:
         raise HTTPException(404, "发票不存在")
-    
+    if getattr(inv, "is_red", 0):
+        raise HTTPException(400, "红字发票不可删除（红冲审计轨迹需保留）")
+    if inv.status == "已红冲":
+        raise HTTPException(400, f"原发票 {inv.invoice_no} 已红冲，需先删除对应红字发票")
+
     # 删除对应的应收单
     ar = db.query(AccountsReceivable).filter(
         AccountsReceivable.source_type == "sales_invoice",
@@ -1853,7 +2310,7 @@ def delete_sales_invoice(invoice_id: int, db: Session = Depends(get_db), current
 def list_ar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     status: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*AR_READ_PERMS)),
 ):
     """应收账款列表"""
     query = db.query(AccountsReceivable)
@@ -1873,6 +2330,11 @@ def list_ar(
             inv = db.query(SalesInvoice).filter(SalesInvoice.id == ar.source_id).first()
             if inv:
                 invoice_date = str(inv.invoice_date) if inv.invoice_date else ""
+        # 红字原应收号
+        red_of_no = ""
+        if getattr(ar, "red_of_ar_id", None):
+            src_ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == ar.red_of_ar_id).first()
+            red_of_no = src_ar.ar_no if src_ar else ""
         result.append({
             "id": ar.id, "ar_no": ar.ar_no or "",
             "source_type": ar.source_type,
@@ -1885,12 +2347,95 @@ def list_ar(
             "payment_terms": payment_terms,
             "account_period": account_period,
             "collection_id": ar.source_id if ar.source_type == "sales_collection" else None,
+            "is_red": getattr(ar, "is_red", 0) or 0,
+            "red_of_ar_id": getattr(ar, "red_of_ar_id", None),
+            "red_of_ar_no": red_of_no,
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 
+@router.post("/ar/transfer", tags=["销售管理"])
+def transfer_ar(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:ar"))):
+    """核销转移：红字应收负余额 → 同客户正余额应收（账务清理，无收款单参与）
+
+    body: {"source_ar_id": 1, "target_ar_id": 2, "amount": 4000, "remark": "..."}
+    账务：source 已退增加（collected 向负）；target 视同已收（collected 增加），
+          balance = amount - collected 公式两端保持成立。
+    """
+    source_ar_id = data.get("source_ar_id")
+    target_ar_id = data.get("target_ar_id")
+    amount = float(data.get("amount") or 0)
+    if not source_ar_id or not target_ar_id:
+        raise HTTPException(400, "source_ar_id / target_ar_id 必填")
+    if source_ar_id == target_ar_id:
+        raise HTTPException(400, "源与目标不能是同一张应收")
+    if amount <= 0:
+        raise HTTPException(400, "转移金额必须大于 0")
+
+    source = db.query(AccountsReceivable).filter(AccountsReceivable.id == source_ar_id).first()
+    target = db.query(AccountsReceivable).filter(AccountsReceivable.id == target_ar_id).first()
+    if not source:
+        raise HTTPException(404, "源应收不存在")
+    if not target:
+        raise HTTPException(404, "目标应收不存在")
+    if not source.is_red:
+        raise HTTPException(400, "源应收必须是红字应收（负数余额）")
+    if (source.balance or 0) >= 0:
+        raise HTTPException(400, "源应收无负余额可转移")
+    if source.customer_id != target.customer_id:
+        raise HTTPException(400, "跨客户核销转移禁止（三角债需线下处理）")
+    if (target.balance or 0) <= 0:
+        raise HTTPException(400, "目标应收余额必须为正")
+    max_amt = min(abs(source.balance), target.balance)
+    if amount > max_amt + 0.01:
+        raise HTTPException(400, f"转移金额 {amount:.2f} 超过可转移上限 {max_amt:.2f}")
+
+    # 账务：source 已退增加（collected 向负）；target 视同已收（collected 增加）
+    source.collected_amount = (source.collected_amount or 0) - amount
+    target.collected_amount = (target.collected_amount or 0) + amount
+    source.balance = source.amount - source.collected_amount
+    target.balance = target.amount - target.collected_amount
+    source.status = "已收款" if abs(source.balance or 0) < 0.01 else ("部分收款" if (source.collected_amount or 0) != 0 else "未收款")
+    target.status = "已收款" if abs(target.balance or 0) < 0.01 else ("部分收款" if (target.collected_amount or 0) != 0 else "未收款")
+
+    adj = ArAdjustment(
+        source_ar_id=source.id, target_ar_id=target.id, amount=amount,
+        remark=data.get("remark", ""),
+        operator=current_user.display_name or current_user.username,
+    )
+    db.add(adj)
+    db.commit()
+    return {"id": adj.id, "source_ar_no": source.ar_no or "", "target_ar_no": target.ar_no or "",
+            "amount": amount, "message": f"核销转移成功：{source.ar_no} → {target.ar_no}（{amount:.2f}）"}
+
+
+@router.post("/ar/transfer/{adj_id}/cancel", tags=["销售管理"])
+def cancel_transfer_ar(adj_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:ar"))):
+    """撤销核销转移 — 回滚转移账务（source 已退回加、target 已收回减）并删除调整记录"""
+    adj = db.query(ArAdjustment).filter(ArAdjustment.id == adj_id).first()
+    if not adj:
+        raise HTTPException(404, "核销转移记录不存在")
+    source = db.query(AccountsReceivable).filter(AccountsReceivable.id == adj.source_ar_id).first()
+    target = db.query(AccountsReceivable).filter(AccountsReceivable.id == adj.target_ar_id).first()
+    if not source or not target:
+        raise HTTPException(400, "关联应收记录不存在，无法撤销")
+    amt = adj.amount or 0
+    if (target.collected_amount or 0) < amt - 0.01:
+        raise HTTPException(400, f"目标应收已收 {target.collected_amount:.2f} 不足回退 {amt:.2f}，无法撤销（先撤销后续收款）")
+    # 回滚账务：balance = amount - collected 两端公式恢复
+    source.collected_amount = (source.collected_amount or 0) + amt
+    target.collected_amount = (target.collected_amount or 0) - amt
+    source.balance = source.amount - source.collected_amount
+    target.balance = target.amount - target.collected_amount
+    source.status = "已收款" if abs(source.balance or 0) < 0.01 else ("部分收款" if (source.collected_amount or 0) != 0 else "未收款")
+    target.status = "已收款" if abs(target.balance or 0) < 0.01 else ("部分收款" if (target.collected_amount or 0) != 0 else "未收款")
+    db.delete(adj)
+    db.commit()
+    return {"message": f"已撤销核销转移：{source.ar_no} → {target.ar_no}（{amt:.2f}）"}
+
+
 @router.get("/ar/collection-detail", tags=["销售管理"])
-def list_ar_collection_detail(db: Session = Depends(get_db)):
+def list_ar_collection_detail(db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*AR_READ_PERMS))):
     """应收账款收付款明细 — 应收与收款配对，按应收日期排序"""
     from app.models.sales import Collection, CollectionAllocation
     rows = db.query(AccountsReceivable, Collection, CollectionAllocation).outerjoin(
@@ -1911,17 +2456,24 @@ def list_ar_collection_detail(db: Session = Depends(get_db)):
             "collection_no": coll.collection_no if coll else "",
             "collection_id": coll.id if coll else None,
             "collected_amount": ca.allocated_amount if ca else 0,
+            "is_red": getattr(ar, "is_red", 0) or 0,
         })
     result.sort(key=lambda r: r["ar_date"])
     return {"items": result}
 
 
 @router.post("/collections", tags=["销售管理"])
-def create_collection(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """收款登记 → 核销应收"""
+def create_collection(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
+    """收款登记 → 核销应收；amount<0 = 退款登记（核销红字应收，负余额向 0 靠拢）"""
+    amount = float(data.get("amount") or 0)
     for k in ["amount", "amount_fc"]:
         if k in data and data[k] is not None:
-            data[k] = float(data[k])
+            try:
+                data[k] = float(data[k])
+            except (TypeError, ValueError):
+                raise HTTPException(400, f"{k} 必须为数字")
+    if amount == 0:
+        raise HTTPException(400, "收款金额不能为 0")
     from app.utils.batch_no import generate_doc_no
     from app.models.sales import Collection
     coll_no = generate_doc_no(db, "CR", Collection, "collection_no")
@@ -1930,8 +2482,8 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
         collection_no=coll_no,
         customer_id=data["customer_id"],
         collection_date=_parse_date(data.get("collection_date")) or date.today(),
-        amount=data["amount"],
-        amount_fc=data.get("amount_fc", data["amount"]),
+        amount=amount,
+        amount_fc=data.get("amount_fc", amount),
         currency_id=data.get("currency_id"),
         exchange_rate=data.get("exchange_rate", 1),
         payment_method=data.get("payment_method", "银行转账"),
@@ -1945,17 +2497,43 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
     ar_id = data.get("ar_account_id")
     if ar_id:
         ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == ar_id).first()
-        if ar:
-            alloc_amount = min(data["amount"], ar.balance)
+        if not ar:
+            raise HTTPException(404, "应收记录不存在")
+        if amount < 0:
+            # ===== 退款：核销红字应收（负余额向 0 靠拢） =====
+            if not ar.is_red:
+                raise HTTPException(400, "退款必须核销红字应收（负数应收）")
+            if (ar.balance or 0) >= 0:
+                raise HTTPException(400, "该红字应收无负余额可退")
+            refund_amt = abs(amount)
+            max_refund = abs(ar.balance)
+            if refund_amt > max_refund + 0.01:
+                raise HTTPException(400, f"退款金额 {refund_amt:.2f} 超过可退余额 {max_refund:.2f}")
             alloc = CollectionAllocation(
                 collection_id=collection.id,
                 ar_account_id=ar.id,
-                allocated_amount=alloc_amount,
+                allocated_amount=refund_amt,
             )
             db.add(alloc)
-            ar.collected_amount = (ar.collected_amount or 0) + alloc_amount
+            ar.collected_amount = (ar.collected_amount or 0) - refund_amt
             ar.balance = ar.amount - ar.collected_amount
-            ar.status = "已收款" if ar.balance <= 0 else "部分收款"
+            ar.status = "已收款" if abs(ar.balance or 0) < 0.01 else ("部分收款" if (ar.collected_amount or 0) != 0 else "未收款")
+            db.commit()
+            return {"id": collection.id, "collection_no": coll_no, "message": f"退款登记成功（退款 {refund_amt:.2f}，红字应收已核销）"}
+
+        # ===== 正常收款 =====
+        if (ar.balance or 0) <= 0:
+            raise HTTPException(400, "该应收余额已为 0，无需收款")
+        alloc_amount = min(amount, ar.balance)
+        alloc = CollectionAllocation(
+            collection_id=collection.id,
+            ar_account_id=ar.id,
+            allocated_amount=alloc_amount,
+        )
+        db.add(alloc)
+        ar.collected_amount = (ar.collected_amount or 0) + alloc_amount
+        ar.balance = ar.amount - ar.collected_amount
+        ar.status = "已收款" if ar.balance <= 0 else "部分收款"
 
     db.commit()
     return {"id": collection.id, "collection_no": coll_no, "message": "收款登记成功"}
@@ -1967,7 +2545,7 @@ def create_collection(data: dict, db: Session = Depends(get_db), current_user: U
 def list_collections(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     keyword: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*COLLECTIONS_READ_PERMS)),
 ):
     query = db.query(Collection)
     if keyword:
@@ -1992,13 +2570,16 @@ def list_collections(
             "remark": c.remark or "",
             "operator": c.operator or "",
             "allocated_amount": sum(a.allocated_amount or 0 for a in allocs),
+            "reviewed": getattr(c, "reviewed", 0) or 0,
+            "reviewed_by": getattr(c, "reviewed_by", "") or "",
+            "reviewed_at": str(c.reviewed_at)[:19] if getattr(c, "reviewed_at", None) else "",
             "created_at": str(c.created_at) if c.created_at else "",
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
 
 
 @router.get("/collections/{collection_id}", tags=["销售管理"])
-def get_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*COLLECTIONS_READ_PERMS))):
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
@@ -2019,6 +2600,9 @@ def get_collection(collection_id: int, db: Session = Depends(get_db), current_us
         "currency_id": c.currency_id, "exchange_rate": c.exchange_rate,
         "payment_method": c.payment_method, "remark": c.remark or "",
         "operator": c.operator or "",
+        "reviewed": getattr(c, "reviewed", 0) or 0,
+        "reviewed_by": getattr(c, "reviewed_by", "") or "",
+        "reviewed_at": str(c.reviewed_at)[:19] if getattr(c, "reviewed_at", None) else "",
         "created_at": str(c.created_at) if c.created_at else "",
         "allocations": [{
             "id": a.id, "ar_account_id": a.ar_account_id,
@@ -2029,10 +2613,12 @@ def get_collection(collection_id: int, db: Session = Depends(get_db), current_us
 
 
 @router.put("/collections/{collection_id}", tags=["销售管理"])
-def update_collection(collection_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_collection(collection_id: int, data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
+    if getattr(c, "reviewed", 0):
+        raise HTTPException(400, "该收款单已审核（财务确认，业务锁定），不能修改；请先取消审核")
     for field in ["payment_method", "remark", "collection_date"]:
         if field in data:
             val = data[field]
@@ -2044,19 +2630,27 @@ def update_collection(collection_id: int, data: dict, db: Session = Depends(get_
 
 
 @router.delete("/collections/{collection_id}", tags=["销售管理"])
-def delete_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
     c = db.query(Collection).filter(Collection.id == collection_id).first()
     if not c:
         raise HTTPException(404, "收款单不存在")
+    if getattr(c, "reviewed", 0):
+        raise HTTPException(400, "该收款单已审核（财务确认，业务锁定），不能删除；请先取消审核")
 
-    # 获取核销记录并回滚应收
+    # 获取核销记录并回滚应收（按收款单金额方向适配：正数收款减回、负数退款加回向0靠拢）
     allocs = db.query(CollectionAllocation).filter(CollectionAllocation.collection_id == c.id).all()
     for alloc in allocs:
         ar = db.query(AccountsReceivable).filter(AccountsReceivable.id == alloc.ar_account_id).first()
         if ar:
-            ar.collected_amount = max(0, (ar.collected_amount or 0) - (alloc.allocated_amount or 0))
+            amt = alloc.allocated_amount or 0
+            if (c.amount or 0) < 0:
+                # 负数退款删除：已退减少 → collected 向 0 回滚（加回）
+                ar.collected_amount = (ar.collected_amount or 0) + amt
+            else:
+                # 正数收款删除：已收减少 → collected 减回（实际不超原值，勿夹0）
+                ar.collected_amount = (ar.collected_amount or 0) - amt
             ar.balance = ar.amount - ar.collected_amount
-            ar.status = "已收款" if ar.balance <= 0 else ("部分收款" if ar.collected_amount > 0 else "未收款")
+            ar.status = "已收款" if abs(ar.balance or 0) < 0.01 else ("部分收款" if (ar.collected_amount or 0) != 0 else "未收款")
         db.delete(alloc)
 
     db.flush()
@@ -2065,13 +2659,43 @@ def delete_collection(collection_id: int, db: Session = Depends(get_db), current
     return {"message": "收款单已删除，应收已回滚"}
 
 
+@router.post("/collections/{collection_id}/review", tags=["销售管理"])
+def review_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
+    """收款单审核 — 财务确认标记，审核后业务全部锁定（改/删禁止）"""
+    c = db.query(Collection).filter(Collection.id == collection_id).first()
+    if not c:
+        raise HTTPException(404, "收款单不存在")
+    if getattr(c, "reviewed", 0):
+        raise HTTPException(400, "该收款单已审核")
+    c.reviewed = 1
+    c.reviewed_by = current_user.display_name or current_user.username
+    c.reviewed_at = datetime.now()
+    db.commit()
+    return {"message": f"收款单已审核（{c.reviewed_by}，财务确认，业务锁定）"}
+
+
+@router.post("/collections/{collection_id}/unreview", tags=["销售管理"])
+def unreview_collection(collection_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:collections"))):
+    """取消收款单审核 — 解除业务锁定"""
+    c = db.query(Collection).filter(Collection.id == collection_id).first()
+    if not c:
+        raise HTTPException(404, "收款单不存在")
+    if not getattr(c, "reviewed", 0):
+        raise HTTPException(400, "该收款单未审核")
+    c.reviewed = 0
+    c.reviewed_by = None
+    c.reviewed_at = None
+    db.commit()
+    return {"message": "已取消审核，业务解锁"}
+
+
 # ==================== 销售订单明细行 ====================
 
 @router.get("/order-items", tags=["销售管理"])
 def list_order_items(
     page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
     production_status: str = Query(""), keyword: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*ORDERS_READ_PERMS)),
 ):
     """按销售明细行查询（含生产状态）"""
     q = db.query(SalesOrderItem).join(SalesOrder).join(Customer)
@@ -2119,7 +2743,7 @@ def list_order_items(
 @router.put("/orders/{order_id}/items/{item_id}", tags=["销售管理"])
 def update_order_item(
     order_id: int, item_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_permission("menu:sales:orders")),
 ):
     """变更销售订单明细行 — 改数量 / 改单价 / 停售
 

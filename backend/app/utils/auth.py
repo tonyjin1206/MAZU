@@ -80,3 +80,22 @@ def require_permission(permission_code: str):
             )
         return current_user
     return _checker
+
+
+def require_any_permission(*permission_codes: str):
+    """FastAPI 依赖工厂：要求用户拥有给定权限码中的任意一个（读端点多域授权）
+
+    用于读端点：数据隶属 A 域，但被 B/C 域的业务流程引用（如销售开票需读订单、
+    采购/委外需读供应商、销售下单需读产品/客户），任一域有权限即可读取。
+    管理员永远全权限；库管员/只读等低权限角色不在授权域内则被拒。
+
+    用法: Depends(require_any_permission("menu:sales:orders", "menu:sales:invoices"))
+    """
+    def _checker(current_user: User = Depends(get_current_user)):
+        if not any(current_user.has_permission(code) for code in permission_codes):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"缺少权限: {' 或 '.join(permission_codes)}",
+            )
+        return current_user
+    return _checker

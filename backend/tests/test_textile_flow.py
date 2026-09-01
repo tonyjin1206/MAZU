@@ -41,8 +41,13 @@ class TestTextileFullFlow:
         print(f"① 销售订单 {so_no}")
 
         api(client, "POST", f"/api/sales/orders/{so_id}/approve", {}, h)
-        mo = api(client, "GET", "/api/production/productions?page=1&page_size=10", None, h)["items"][0]
-        mo_id, mo_no = mo["id"], mo["order_no"]
+        # SP 流程：审核后需调用 re-produce 生成 MO
+        so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
+        item_id = so_detail["items"][0]["id"]
+        mo_resp = api(client, "POST", f"/api/sales/orders/{so_id}/items/{item_id}/re-produce", {}, h)
+        mo_id = mo_resp["id"]
+        mo = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
+        mo_no = mo["order_no"]
         print(f"② 生产订单 {mo_no}")
 
         api(client, "POST", f"/api/production/productions/{mo_id}/set-type",
@@ -130,30 +135,18 @@ class TestTextileFullFlow:
                     {"material_id": mid, "quantity": qty, "batch_no": batch_no,
                      "warehouse_id": wh_rm}, h)
                 issue_total += 1
-        # 委外工序发料（染色 → 委外商）→ outsource_out
-        os_proc = next((p for p in md["processes"] if p.get("outsourcer_id")), None)
-        if os_proc:
-            for mid, need in list(proc_issues.items())[:1]:
-                for batch_no, qty, price in consume(mid, 1):
-                    api(client, "POST",
-                        f"/api/production/productions/{mo_id}/processes/{os_proc['id']}/issue",
-                        {"material_id": mid, "quantity": qty, "batch_no": batch_no,
-                         "warehouse_id": wh_rm}, h)
-                    print(f"⑤·⑤ 委外发料（outsource_out）→ 工序 {os_proc['process_name']}")
         print(f"⑤ 生产领料 {issue_total} 次（material_issue_out）")
 
-        # 流水类型验证：material_issue_out / outsource_out 都已产生
+        # 流水类型验证：生产=纯自产，发料类型只有 material_issue_out
         txns = api(client, "GET", "/api/inventory/transactions?type=material&page_size=50", None, h)
         types = {t["trans_type"] for t in txns["items"]}
-        assert "material_issue_out" in types and "outsource_out" in types, f"发料类型缺失: {types}"
-        print(f"⑤·⑥ 发料拆类型验证: material_issue_out + outsource_out ✅")
+        assert "material_issue_out" in types, f"自产发料类型缺失: {types}"
+        print(f"⑤·⑥ 自产发料验证: material_issue_out ✅")
 
         # ======================== 4. 完工 → 入库（成本自动结转） ========================
         for proc in sorted(md["processes"], key=lambda p: p["seq"]):
             finish_body = {"unit_price": proc.get("unit_price") or 0.5,
                            "process_qty": 100}
-            if proc.get("outsourcer_id"):
-                finish_body = {"unit_price": 2.0, "process_qty": 100}  # 委外必须录加工费
             api(client, "POST", f"/api/production/productions/{mo_id}/processes/{proc['id']}/finish",
                 finish_body, h)
         # 成本留空 → 自动结转（剩余投入 × 本次占比）
@@ -181,14 +174,22 @@ class TestTextileFullFlow:
         # ======================== 5. 销售出库 → 退货（逆向） ========================
         so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
         oi_id = so_detail["items"][0]["id"]
-        delivery = api(client, "POST", "/api/sales/deliveries", {
+        # 两段式发货：通知发货 → 库管出库
+        dlv_notify = api(client, "POST", "/api/sales/deliveries/notify", {
             "order_id": so_id, "order_item_id": oi_id,
-            "batch_no": batch_fg, "quantity": 100, "warehouse_id": wh_fg}, h)
-        delivery_no = delivery.get("delivery_no", "")
+            "quantity": 100,
+        }, h)
+        assert dlv_notify, "发货通知失败"
+        dlv_id = dlv_notify["id"]
+        dlv = api(client, "POST", f"/api/sales/deliveries/{dlv_id}/issue", {
+            "batch_no": batch_fg, "quantity": 100, "warehouse_id": wh_fg,
+        }, h)
+        assert dlv, "销售发货失败"
+        delivery_no = dlv.get("delivery_no", "")
         print(f"⑦ 销售出库 {delivery_no}")
 
         # 退货 10 件 → 回库
-        ret = api(client, "POST", f"/api/sales/deliveries/{delivery['id']}/return",
+        ret = api(client, "POST", f"/api/sales/deliveries/{dlv['id']}/return",
                   {"quantity": 10}, h)
         assert ret, "销售退货失败"
         print(f"⑦·⑤ 销售退货 10 → 回库（原批次/原成本）✅")
@@ -205,7 +206,10 @@ class TestTextileFullFlow:
         st = api(client, "POST", "/api/inventory/stocktakes", {"warehouse_id": wh_fg}, h)
         st_detail = api(client, "GET", f"/api/inventory/stocktakes/{st['id']}", None, h)
         assert st_detail["items"], "盘点应自动带出成品批次"
-        it = st_detail["items"][0]
+        # 按本测试的成品批次定位盘点行（盘点单自动带出仓内全部批次，
+        # 全量跑时可能混入其他测试留下的批次，不能取 items[0]）
+        it = next((i for i in st_detail["items"] if i["batch_no"] == batch_fg), None)
+        assert it, f"盘点应带出本测试批次 {batch_fg}，实际: {[i['batch_no'] for i in st_detail['items']]}"
         book_qty = it["book_qty"]
         # 退货 10 后账面 = 90（100 出 - 10 退）；盘亏 5 → 85
         api(client, "PUT", f"/api/inventory/stocktakes/{st['id']}/items/{it['id']}",

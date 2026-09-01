@@ -68,13 +68,21 @@ function crudApi(prefix, methods = ['list', 'get', 'create', 'update', 'delete',
 export const foundationApi = {
   procurementItemsSelect: () => request.get('/foundation/procurement-items-select'),
   materials: crudApi('materials', ['list', 'create', 'update', 'delete', 'select']),
-  products: crudApi('products'),
+  products: Object.assign(crudApi('products'), {
+    processTemplates: {
+      list: (productId) => request.get(`/foundation/products/${productId}/processes`),
+      save: (productId, items) => request.put(`/foundation/products/${productId}/processes`, { items }),
+      delete: (productId, id) => request.delete(`/foundation/products/${productId}/processes/${id}`),
+    },
+  }),
+  productCustomers: {
+    update: (productId, data) => request.put(`/foundation/products/${productId}/customers`, data),
+  },
   processes: crudApi('processes'),
   departments: crudApi('departments'),
   employees: crudApi('employees'),
   customers: { ...crudApi('customers'), nextCode: () => request.get('/foundation/customers/next-code') },
   suppliers: { ...crudApi('suppliers'), nextCode: () => request.get('/foundation/suppliers/next-code') },
-  outsourcers: crudApi('outsourcers', ['list', 'select']),
   warehouses: crudApi('warehouses'),
   currencies: crudApi('currencies', ['list', 'get', 'create', 'update', 'delete']),
   exchangeRates: crudApi('exchange-rates', ['list', 'create', 'update', 'delete']),
@@ -90,4 +98,15 @@ export const foundationApi = {
 
   // 汇率
   latestRates: () => request.get('/foundation/exchange-rates/latest'),
+
+  // 参数设置（SystemParams.vue）
+  params: {
+    list: (params) => request.get('/foundation/params', { params }),
+    getGroup: (group) => request.get(`/foundation/params/group/${group}`),
+    groups: () => request.get('/foundation/params/groups'),
+    options: (params) => request.get('/foundation/params/options', { params }),
+    create: (data) => request.post('/foundation/params', data),
+    update: (id, data) => request.put(`/foundation/params/${id}`, data),
+    remove: (id) => request.delete(`/foundation/params/${id}/hard`),
+  },
 }

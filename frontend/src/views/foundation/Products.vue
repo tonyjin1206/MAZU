@@ -5,7 +5,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">搜索</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openDialog('create')">新增</el-button>
+          <el-button type="primary" data-testid="btn-create-product" @click="openDialog('create')">新增</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm">
@@ -83,7 +83,7 @@
       </el-table>
       <el-pagination style="margin-top: 16px" v-model:current-page="pagination.page" v-model:page-size="pagination.pageSize" :total="pagination.total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @size-change="fetchData" @current-change="fetchData" />
     </el-card>
-    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="700px">
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'create' ? '新增产品' : '编辑产品'" width="700px" data-testid="dialog-product">
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="110px">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -155,7 +155,7 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="dialogLoading" @click="handleSave">保存</el-button>
+        <el-button type="primary" data-testid="btn-save" :loading="dialogLoading" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
     <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
@@ -170,14 +170,13 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 单位选项（来自参数设置）
 const tableRef = ref(null)
 const unitOptions = ref([])
 async function loadUnitOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
+  try { unitOptions.value = await foundationApi.params.options({ group: 'unit' }) || [] } catch (e) { unitOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -226,9 +225,9 @@ onMounted(() => {
 
 async function loadCustomers() {
   try {
-    const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 200 } })
+    const res = await foundationApi.customers.list({ page: 1, page_size: 200 })
     customerOptions.value = res.items || []
-  } catch { customerOptions.value = [] }
+  } catch (e) { customerOptions.value = [] }
 }
 
 async function loadHsCodes() {
@@ -297,9 +296,9 @@ async function openDialog(mode, row = {}) {
     // 回显关联客户
     form.customers = []
     try {
-      const detail = await request.get(`/foundation/products/${row.id}`)
+      const detail = await foundationApi.products.get(row.id)
       form.customers = (detail.customers || []).map(c => ({ customer_id: c.id }))
-    } catch { /* ignore */ }
+    } catch (e) { /* ignore */ }
   } else {
     form.id = null
     form.name_cn = ''
@@ -336,7 +335,7 @@ async function handleSave() {
     }
     // 保存关联客户（全量替换）
     if (productId) {
-      await request.put(`/foundation/products/${productId}/customers`, { customer_ids: customerIds })
+      await foundationApi.productCustomers.update(productId, { customer_ids: customerIds })
     }
     dialogVisible.value = false
     fetchData()

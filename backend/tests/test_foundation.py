@@ -10,7 +10,6 @@ class TestMaterial:
         assert resp.status_code == 200
         data = resp.json()
         assert "id" in data
-        return data["id"]
 
     def test_list_materials(self, client, auth_headers):
         resp = client.get("/api/foundation/materials", headers=auth_headers)
@@ -38,7 +37,6 @@ class TestSupplier:
             "tax_id": "91330100TEST", "address": "杭州", "supplier_type": "供应商",
         }, headers=auth_headers)
         assert resp.status_code == 200
-        return resp.json()["id"]
 
     def test_list_suppliers(self, client, auth_headers):
         resp = client.get("/api/foundation/suppliers", headers=auth_headers)
@@ -54,7 +52,6 @@ class TestCustomer:
             "tax_id": "91330000TEST", "address": "上海",
         }, headers=auth_headers)
         assert resp.status_code == 200
-        return resp.json()["id"]
 
 
 class TestProduct:
@@ -63,4 +60,3 @@ class TestProduct:
             "name_cn": "测试产品", "spec": "X1", "unit": "件", "sale_price": 10,
         }, headers=auth_headers)
         assert resp.status_code == 200
-        return resp.json()["id"]

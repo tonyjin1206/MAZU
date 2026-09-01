@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "委派循环工作流 Delegation Loop",
+    "subtitle": "定目标 → 拆任务 → 执行 → 审目标偏离 → 纠偏 → 验收汇报；可接续、可循环、随时启停、过程可视化",
+    "output": "docs/delegation-loop.html",
+    "viewBox": [
+      960,
+      980
+    ],
+    "animation": "trace",
+    "quality_profile": "showcase",
+    "locale": "zh-CN",
+    "views": [
+      {
+        "id": "main-loop",
+        "label": "主循环",
+        "focus": [
+          "goal",
+          "breakdown",
+          "execute",
+          "review",
+          "report",
+          "done"
+        ],
+        "note": "从定目标到验收汇报的主循环，全程走看板持久化。"
+      },
+      {
+        "id": "deviation",
+        "label": "偏离纠偏回路",
+        "focus": [
+          "review",
+          "rebreak",
+          "execute"
+        ],
+        "note": "审目标偏离→重拆任务→再派，直到达标。"
+      },
+      {
+        "id": "gates",
+        "label": "审批门与终态",
+        "focus": [
+          "review",
+          "report",
+          "done"
+        ],
+        "note": "目标偏离上报你拍板；验收通过才终态。"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "L1",
+      "label": "定义"
+    },
+    {
+      "id": "L2",
+      "label": "拆解"
+    },
+    {
+      "id": "L3",
+      "label": "执行"
+    },
+    {
+      "id": "L4",
+      "label": "审验"
+    },
+    {
+      "id": "L5",
+      "label": "交付"
+    },
+    {
+      "id": "L6",
+      "label": "终态"
+    },
+    {
+      "id": "L7",
+      "label": "纠偏回路"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p0",
+      "label": "委派主循环",
+      "fromCol": 0,
+      "toCol": 0
+    }
+  ],
+  "mainPath": [
+    "goal",
+    "breakdown",
+    "execute",
+    "review",
+    "report",
+    "done"
+  ],
+  "nodes": [
+    {
+      "id": "goal",
+      "lane": "L1",
+      "col": 0,
+      "type": "external",
+      "label": "定目标",
+      "sublabel": "对齐要什么结果",
+      "tag": "你+我"
+    },
+    {
+      "id": "breakdown",
+      "lane": "L2",
+      "col": 0,
+      "type": "backend",
+      "label": "拆任务",
+      "sublabel": "原子卡+验收+禁碰"
+    },
+    {
+      "id": "execute",
+      "lane": "L3",
+      "col": 0,
+      "type": "cloud",
+      "label": "执行",
+      "sublabel": "建卡+隔离+codex/子代理"
+    },
+    {
+      "id": "review",
+      "lane": "L4",
+      "col": 0,
+      "type": "security",
+      "label": "审目标偏离",
+      "sublabel": "双重审核",
+      "tag": "核心"
+    },
+    {
+      "id": "report",
+      "lane": "L5",
+      "col": 0,
+      "type": "messagebus",
+      "label": "验收汇报",
+      "sublabel": "独立复跑验证"
+    },
+    {
+      "id": "done",
+      "lane": "L6",
+      "col": 0,
+      "type": "database",
+      "label": "验收通过",
+      "sublabel": "kanban complete"
+    },
+    {
+      "id": "rebreak",
+      "lane": "L7",
+      "col": 0,
+      "type": "backend",
+      "label": "重拆卡·再派",
+      "sublabel": "审偏离后重拆"
+    }
+  ],
+  "edges": [
+    {
+      "from": "goal",
+      "to": "breakdown",
+      "variant": "default",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "breakdown",
+      "to": "execute",
+      "variant": "default",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "execute",
+      "to": "review",
+      "variant": "emphasis",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "review",
+      "to": "report",
+      "variant": "default",
+      "label": "达标",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "from": "report",
+      "to": "done",
+      "variant": "default",
+      "label": "完成",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "from": "review",
+      "to": "rebreak",
+      "variant": "security",
+      "label": "偏离",
+      "route": "drop",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelSegment": 1
+    },
+    {
+      "from": "rebreak",
+      "to": "execute",
+      "variant": "emphasis",
+      "label": "再派",
+      "route": "return-left",
+      "fromSide": "left",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "可接续 · 过程可视化",
+      "items": [
+        "目标/验收基线/文件范围/禁碰项写死进卡 body",
+        "简报持久化到 /tmp/<task_id>-brief.md，中断可恢复",
+        "看板 SQLite 持久化，随时查执行历史/OUTCOME/Comments"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "可循环 · 可启停",
+      "items": [
+        "审偏离→重拆卡→再派是内建回路，非线性一次",
+        "每次迭代结论写回卡 comments，可回溯",
+        "随时 kanban_block；心跳超时 stale 卡自动回收"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "所有权边界",
+      "items": [
+        "执行车道只产出产物，不拥有 Kanban/最终验收",
+        "协调者(Hermes)拥全部生命周期与验收",
+        "目标偏离允许，但必上报——不闷头"
+      ]
+    }
+  ]
+}

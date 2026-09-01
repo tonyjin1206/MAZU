@@ -13,7 +13,6 @@ from app.models.foundation import (
 from app.models.inventory import (
     WarehouseInventory, StockTransaction,
     Stocktake, StocktakeItem,
-    StockCheck, StockCheckItem,
     StockInOrder,
 )
 from app.models.purchase import (
@@ -33,9 +32,9 @@ from app.models.production import (
 )
 from app.models.sales import (
     SalesQuote, SalesOrder,
-    SalesDelivery, CustomsDeclaration,
+    SalesDelivery, CustomsDeclaration, CustomsDeclarationItem,
     SalesInvoice,
-    AccountsReceivable, Collection, CollectionAllocation,
+    AccountsReceivable, Collection, CollectionAllocation, ArAdjustment,
 )
 from app.models.tax_refund import (
     TaxRefundInputInvoice, TaxRefundDeclaration,
@@ -43,7 +42,7 @@ from app.models.tax_refund import (
 )
 from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
-    ReminderConfig, ReminderLog, OperationLog,
+    ReminderConfig, ReminderLog, ReminderRule, Notification, OperationLog,
 )
 
 __all__ = [
@@ -57,7 +56,6 @@ __all__ = [
     "SystemParam",
     "WarehouseInventory", "StockTransaction",
     "Stocktake", "StocktakeItem",
-    "StockCheck", "StockCheckItem",
     "StockInOrder",
     "PurchaseOrder", "PurchaseOrderItem",
     "PurchaseReceipt", "PurchaseReceiptItem",
@@ -70,11 +68,11 @@ __all__ = [
     "OsClaimMaterial",
     "MaterialIssueItem",
     "SalesQuote", "SalesOrder",
-    "SalesDelivery", "CustomsDeclaration",
+    "SalesDelivery", "CustomsDeclaration", "CustomsDeclarationItem",
     "SalesInvoice",
-    "AccountsReceivable", "Collection", "CollectionAllocation",
+    "AccountsReceivable", "Collection", "CollectionAllocation", "ArAdjustment",
     "TaxRefundInputInvoice", "TaxRefundDeclaration",
     "TaxRefundDetail", "TaxRefundProgress",
     "WecomConfig", "BotConfig", "BotConversation",
-    "ReminderConfig", "ReminderLog", "OperationLog",
+    "ReminderConfig", "ReminderLog", "ReminderRule", "Notification", "OperationLog",
 ]

@@ -1,5 +1,6 @@
 <template>
-  <div>
+  <TablePageLayout>
+    <template #search>
     <el-card style="margin-bottom: 12px">
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
@@ -22,10 +23,16 @@
         </el-form-item>
       </el-form>
     </el-card>
+    </template>
 
-    <el-card>
-<el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'remark'">
+    <template #header>
+      <div style="display: flex; justify-content: flex-end">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+    </template>
+    <template #default="{ height }">
+      <el-table ref="tableRef" :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%" :height="height">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align" :show-overflow-tooltip="col.prop === 'remark'">
           <template #header>
             <span class="col-header-wrap">
               <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
@@ -46,9 +53,10 @@
           </template>
         </el-table-column>
       </el-table>
-
+    </template>
+    <template #footer>
       <el-pagination
-        style="margin-top: 12px"
+        style="margin-top: 12px; flex: none"
         v-model:current-page="page"
         v-model:page-size="pageSize"
         :total="total"
@@ -57,9 +65,10 @@
         @current-change="fetchList"
         @size-change="fetchList"
       />
-    </el-card>
+    </template>
 
     <!-- 新建/编辑弹窗 -->
+    <template #dialog>
     <el-dialog v-model="dialogVisible" :title="editMode ? '编辑发票' : '新建发票'" width="600px" destroy-on-close>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
         <el-form-item label="供应商" prop="supplier_id">
@@ -104,14 +113,18 @@
         <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
       </template>
     </el-dialog>
-  </div>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
+    </template>
+  </TablePageLayout>
 </template>
 
 <script setup>
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
-import request from '../../api/request'
+import TablePageLayout from '../../components/TablePageLayout.vue'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
+import request from '../../api/request'; import { purchaseApi, outsourceApi, inventoryApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 // ===== 列配置（可拖拽排序）=====
 const STORAGE_KEY = 'mazu_purchase_invoice_columns'
@@ -126,10 +139,11 @@ const defaultColumns = [
   { prop: 'status', label: '状态', width: 100, sortable: true },
   { prop: 'remark', label: '备注', minWidth: 150, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const list = ref([])
 const loading = ref(false)
+const tableRef = ref(null)
 const dialogVisible = ref(false)
 const editMode = ref(false)
 const submitting = ref(false)
@@ -194,10 +208,10 @@ async function fetchList() {
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/purchase/invoices', { params })
+    const res = await purchaseApi.invoices.list(params)
     list.value = res.items || res.list || []
     total.value = res.total || 0
-  } catch {
+  } catch (e) {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
@@ -207,16 +221,16 @@ async function fetchList() {
 
 async function fetchSuppliers() {
   try {
-    const res = await request.get('/foundation/suppliers', { params: { page: 1, page_size: 100 } })
+    const res = await foundationApi.suppliers.list({ page: 1, page_size: 100 })
     supplierList.value = res.items || res.list || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchOrders() {
   try {
-    const res = await request.get('/purchase/orders', { params: { page: 1, page_size: 100 } })
+    const res = await purchaseApi.orders.list({ page: 1, page_size: 100 })
     orderList.value = (res.items || []).filter(o => ['已审核', '部分入库', '待开票', '已开票', '部分付款'].includes(o.status) && (o.uninvoiced_amount || 0) > 0)
-  } catch {}
+  } catch (e) {}
 }
 
 function onSupplierChange() {
@@ -272,7 +286,7 @@ function openEdit(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除发票 ${row.invoice_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/purchase/invoices/${row.id}`)
+    await purchaseApi.invoices.delete(row.id)
     ElMessage.success('删除成功')
     fetchList()
   } catch (e) {}
@@ -284,10 +298,10 @@ async function submitForm() {
   submitting.value = true
   try {
     if (editMode.value) {
-      await request.put(`/purchase/invoices/${form.id}`, { ...form })
+      await purchaseApi.invoices.update(form.id, { ...form })
       ElMessage.success('修改成功')
     } else {
-      await request.post('/purchase/invoices', {
+      await purchaseApi.invoices.create({
         order_id: form.purchase_order_id,
         supplier_id: form.supplier_id,
         invoice_no: form.invoice_no,
@@ -301,7 +315,7 @@ async function submitForm() {
     dialogVisible.value = false
     fetchList()
     fetchOrders()
-  } catch {
+  } catch (e) {
     ElMessage.error(e.response?.data?.detail || '保存失败')
   } finally {
     submitting.value = false

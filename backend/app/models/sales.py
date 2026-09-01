@@ -115,6 +115,7 @@ class SalesDelivery(Base):
     status = Column(String(16), default="待出库", comment="状态: 待出库/部分出库/已出库/已退货")
     is_return = Column(Integer, default=0, comment="是否退货单: 0正常发货/1退货")
     return_of_delivery_id = Column(Integer, ForeignKey("so_delivery.id"), comment="原发货单ID(退货时)")
+    refund_declared = Column(Integer, default=0, comment="已报税退货标记(负数申报用)")
     remark = Column(Text)
     operator = Column(String(32))
     created_at = Column(DateTime, default=func.now())
@@ -126,15 +127,16 @@ class SalesDelivery(Base):
 
 
 class CustomsDeclaration(Base):
-    """报关单"""
+    """报关单（表头：一票报关单可含多个商品行 → so_customs_item）"""
     __tablename__ = "so_customs"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     customs_no = Column(String(64), unique=True, nullable=False, comment="报关单号")
     order_id = Column(Integer, ForeignKey("so_order.id"), nullable=False)
     delivery_id = Column(Integer, ForeignKey("so_delivery.id"))
-    hs_code_id = Column(Integer, ForeignKey("fd_hs_code.id"), nullable=False)
-    declare_amount = Column(Float, default=0, comment="报关金额(FOB)")
+    # 历史兼容字段（旧数据）：新逻辑按商品行 so_customs_item 报 HS，表头不再强制
+    hs_code_id = Column(Integer, ForeignKey("fd_hs_code.id"))
+    declare_amount = Column(Float, default=0, comment="报关金额合计(FOB)")
     declare_currency = Column(Integer, ForeignKey("fd_currency.id"))
     declare_date = Column(Date, nullable=False, comment="报关日期")
     customs_broker = Column(String(128), comment="报关行")
@@ -148,6 +150,26 @@ class CustomsDeclaration(Base):
     delivery = relationship("SalesDelivery")
     hs_code = relationship("HsCode")
     currency = relationship("Currency")
+    items = relationship("CustomsDeclarationItem", back_populates="customs",
+                         cascade="all, delete-orphan", order_by="CustomsDeclarationItem.id")
+
+
+class CustomsDeclarationItem(Base):
+    """报关单商品行（一票报关单报多个商品/多个 HS 编码）"""
+    __tablename__ = "so_customs_item"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    customs_id = Column(Integer, ForeignKey("so_customs.id"), nullable=False, index=True)
+    product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False)
+    hs_code_id = Column(Integer, ForeignKey("fd_hs_code.id"), nullable=False)
+    quantity = Column(Float, default=0, comment="出口数量")
+    declare_amount = Column(Float, default=0, comment="该商品报关金额(FOB)")
+    unit_price = Column(Float, default=0, comment="报关单价")
+    created_at = Column(DateTime, default=func.now())
+
+    customs = relationship("CustomsDeclaration", back_populates="items")
+    product = relationship("Product")
+    hs_code = relationship("HsCode")
 
 
 class SalesInvoice(Base):
@@ -167,6 +189,8 @@ class SalesInvoice(Base):
     tax_amount = Column(Float, default=0, comment="税额")
     total_amount = Column(Float, default=0, comment="价税合计")
     status = Column(String(16), default="已开票", comment="状态: 已开票/已作废")
+    is_red = Column(Integer, default=0, comment="红字标记: 0蓝字/1红字")
+    red_of_invoice_id = Column(Integer, ForeignKey("so_invoice.id"), comment="原发票ID(红字时)")
     remark = Column(Text)
     created_at = Column(DateTime, default=func.now())
 
@@ -190,6 +214,8 @@ class AccountsReceivable(Base):
     balance = Column(Float, default=0, comment="余额")
     due_date = Column(Date, comment="到期日")
     status = Column(String(16), default="未收款", comment="状态: 未收款/部分收款/已收款")
+    is_red = Column(Integer, default=0, comment="红字标记: 0正常/1红字")
+    red_of_ar_id = Column(Integer, ForeignKey("ar_account.id"), comment="原应收ID(红字时)")
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
 
@@ -209,6 +235,9 @@ class Collection(Base):
     payment_method = Column(String(32), default="银行转账")
     remark = Column(Text)
     operator = Column(String(32))
+    reviewed = Column(Integer, default=0, comment="审核锁定: 1=已审核(财务确认,业务全部锁定)")
+    reviewed_by = Column(String(32), comment="审核人")
+    reviewed_at = Column(DateTime, comment="审核时间")
     created_at = Column(DateTime, default=func.now())
 
 
@@ -220,4 +249,18 @@ class CollectionAllocation(Base):
     collection_id = Column(Integer, ForeignKey("ar_collection.id"), nullable=False)
     ar_account_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False)
     allocated_amount = Column(Float, default=0, comment="核销金额")
+    created_at = Column(DateTime, default=func.now())
+
+
+class ArAdjustment(Base):
+    """核销转移审计（红字应收→同客户正余额应收，无收款单参与）
+    2026-08-27 定案：改用 AO 双字段语义（source_ar_id 源红字应收 / target_ar_id 目标正余额应收）"""
+    __tablename__ = "ar_adjustment"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    source_ar_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False, comment="源应收(红字应收,负余额)")
+    target_ar_id = Column(Integer, ForeignKey("ar_account.id"), nullable=False, comment="目标应收(同客户,正余额)")
+    amount = Column(Float, default=0, comment="转移金额")
+    remark = Column(Text)
+    operator = Column(String(32))
     created_at = Column(DateTime, default=func.now())

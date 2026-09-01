@@ -1,5 +1,5 @@
 <template>
-  <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #0c2d7a 0%, #123d8a 100%)">
+  <div style="min-height: 100vh; display: flex; align-items: center; justify-content: center; background: url('/login-bg.jpg') center / cover no-repeat">
     <el-card style="width: 400px; padding: 20px">
       <template #header>
         <div style="text-align: center">
@@ -59,11 +59,11 @@ async function login() {
     try {
       const permRes = await authApi.getMyPermissions()
       localStorage.setItem('permissions', JSON.stringify(permRes.permissions || []))
-    } catch {
+    } catch (e) {
       localStorage.setItem('permissions', '[]')
     }
     ElMessage.success('登录成功')
-    router.push('/sales/orders')
+    router.push('/dashboard')
   } catch (e) {
     // 错误已在拦截器中处理
   } finally {

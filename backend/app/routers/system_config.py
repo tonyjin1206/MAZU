@@ -9,15 +9,16 @@ from app.models.auth import User
 from app.utils.auth import get_current_user, get_current_admin
 from app.models.system_config import (
     WecomConfig, BotConfig, BotConversation,
-    ReminderConfig, ReminderLog,
+    ReminderConfig, ReminderLog, ReminderRule,
 )
-from app.utils.crypto import encrypt, decrypt
+from app.utils.crypto import encrypt, decrypt, is_ciphertext
 from app.schemas.system_config import (
     WecomConfigCreate, WecomConfigUpdate, WecomConfigOut,
     BotConfigCreate, BotConfigUpdate, BotConfigOut,
     DEFAULT_SYSTEM_PROMPT,
     ReminderConfigCreate, ReminderConfigUpdate, ReminderConfigOut,
     ReminderLogOut, REMINDER_TYPES,
+    ReminderRuleCreate, ReminderRuleUpdate, ReminderRuleOut,
 )
 
 router = APIRouter(prefix="/system", tags=["系统配置"])
@@ -59,9 +60,14 @@ def update_wecom(
     if not config:
         raise HTTPException(404, "配置不存在")
     update_data = data.model_dump(exclude_unset=True)
+    # secret 守卫：空值 / 脱敏回传 / 原密文回传 → 保留原值，避免双重加密
+    secret_raw = update_data.get("secret")
+    if secret_raw is None or not secret_raw or "****" in secret_raw \
+            or is_ciphertext(secret_raw) or secret_raw == config.secret:
+        update_data.pop("secret", None)
     for k, v in update_data.items():
         setattr(config, k, v)
-    if "secret" in update_data and update_data["secret"]:
+    if "secret" in update_data:
         config.secret = encrypt(update_data["secret"])
     db.commit()
     db.refresh(config)
@@ -139,9 +145,14 @@ def update_bot(
     if not config:
         raise HTTPException(404, "配置不存在")
     update_data = data.model_dump(exclude_unset=True)
+    # api_key 守卫：空值 / 脱敏回传 / 原密文回传 → 保留原值，避免双重加密
+    api_key_raw = update_data.get("api_key")
+    if api_key_raw is None or not api_key_raw or "****" in api_key_raw \
+            or is_ciphertext(api_key_raw) or api_key_raw == config.api_key:
+        update_data.pop("api_key", None)
     for k, v in update_data.items():
         setattr(config, k, v)
-    if "api_key" in update_data and update_data["api_key"]:
+    if "api_key" in update_data:
         config.api_key = encrypt(update_data["api_key"])
     db.commit()
     db.refresh(config)
@@ -265,3 +276,68 @@ def list_reminder_logs(
         ReminderLog.pushed_at.desc()
     ).offset((page - 1) * page_size).limit(page_size).all()
     return [ReminderLogOut.model_validate(r) for r in items]
+
+
+# ==================== 预警提醒规则（sys_reminder_rule，规则配置化 D8） ====================
+
+@router.get("/reminder-rules", response_model=list[ReminderRuleOut])
+def list_reminder_rules(
+    trigger_type: str | None = Query(None, description="event/schedule"),
+    enabled: int | None = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    """预警提醒规则列表（管理端）— 控制已有提醒点的所有参数（D8：界面不可凭空造提醒点）"""
+    query = db.query(ReminderRule)
+    if trigger_type:
+        query = query.filter(ReminderRule.trigger_type == trigger_type)
+    if enabled is not None:
+        query = query.filter(ReminderRule.enabled == enabled)
+    items = query.order_by(ReminderRule.id).all()
+    return [ReminderRuleOut.model_validate(r) for r in items]
+
+
+@router.post("/reminder-rules", response_model=ReminderRuleOut)
+def create_reminder_rule(
+    data: ReminderRuleCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    if db.query(ReminderRule).filter(ReminderRule.code == data.code).first():
+        raise HTTPException(400, f"提醒点编码 {data.code} 已存在")
+    rule = ReminderRule(**data.model_dump())
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    return ReminderRuleOut.model_validate(rule)
+
+
+@router.put("/reminder-rules/{rule_id}", response_model=ReminderRuleOut)
+def update_reminder_rule(
+    rule_id: int,
+    data: ReminderRuleUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    rule = db.query(ReminderRule).filter(ReminderRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(404, "提醒规则不存在")
+    for k, v in data.model_dump(exclude_unset=True).items():
+        setattr(rule, k, v)
+    db.commit()
+    db.refresh(rule)
+    return ReminderRuleOut.model_validate(rule)
+
+
+@router.delete("/reminder-rules/{rule_id}")
+def delete_reminder_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_current_admin),
+):
+    rule = db.query(ReminderRule).filter(ReminderRule.id == rule_id).first()
+    if not rule:
+        raise HTTPException(404, "提醒规则不存在")
+    db.delete(rule)
+    db.commit()
+    return {"message": f"提醒规则 {rule.name} 已删除"}

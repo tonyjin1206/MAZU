@@ -6,7 +6,7 @@
         <div style="display: flex; justify-content: flex-end; gap: 8px">
           <el-button type="primary" @click="fetchData">查询</el-button>
           <el-button @click="resetSearch">重置</el-button>
-          <el-button type="primary" @click="openCreate">新建订单</el-button>
+          <el-button type="primary" data-testid="btn-create-order" @click="openCreate">新建订单</el-button>
         </div>
       </template>
       <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
@@ -25,7 +25,7 @@
     </el-card>
 
     <!-- ========== 销售订单列表（高度可拖） ========== -->
-    <el-card :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column' }">
+    <el-card ref="listCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>销售订单</span>
@@ -34,7 +34,8 @@
           <el-button size="small" @click="openOrderSettings">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="topHeight - 92 + 'px'" @current-change="onOrderSelect">
+      <div style="flex: 1; min-height: 0; display: flex; flex-direction: column">
+      <el-table ref="orderTableRef" class="drag-table-orders" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row show-summary :summary-method="orderSummary" :height="orderTableHeight + 'px'" @current-change="onOrderSelect">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -66,12 +67,13 @@
         </el-table-column>
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="row.status === '待审核'" link type="primary" @click="handleApprove(row)">审核</el-button>
+            <el-button v-if="row.status === '待审核'" link type="primary" data-testid="btn-approve" @click="handleApprove(row)">审核</el-button>
             <el-button v-if="row.status === '待审核'" link type="primary" @click="openEdit(row)">修改</el-button>
-            <el-button v-if="row.status === '待审核'" link type="danger" @click="handleDelete(row)">删除</el-button>
+            <el-button v-if="row.status === '待审核'" link type="danger" data-testid="btn-delete" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
+      </div>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 6px; flex: none" />
     </el-card>
 
@@ -85,7 +87,7 @@
     </div>
 
     <!-- ========== 订单明细（跟随选中订单，占剩余高度） ========== -->
-    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+    <el-card ref="itemCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>订单明细</span>
@@ -93,7 +95,7 @@
           <el-button size="small" @click="openItemSettings">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+      <el-table ref="itemTableRef" class="drag-table-items" :key="itemColumnVersion" :data="orderDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方订单行查看明细" show-summary :summary-method="itemSummary" :height="orderItemHeight + 'px'">
         <el-table-column v-for="col in visibleItemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -116,8 +118,9 @@
         </el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转直采</el-button>
-            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="success" size="small" @click="handleProduce(row)">转生产</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转直采</el-button>
+            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
             <el-button v-if="!row.production_status || row.production_status === '未生产'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
           </template>
         </el-table-column>
@@ -125,7 +128,7 @@
     </el-card>
 
     <!-- 新建/编辑/详情弹窗 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="1120px" destroy-on-close data-testid="dialog-order">
       <el-form :model="orderForm" label-width="90px" :disabled="viewMode">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -251,7 +254,7 @@
       <template #footer>
         <el-button @click="dialogVisible = false">{{ viewMode ? '关闭' : '取消' }}</el-button>
         <el-button v-if="editMode" type="primary" :loading="submitting" @click="handleUpdate">保存修改</el-button>
-        <el-button v-if="!viewMode && !editMode" type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
+        <el-button v-if="!viewMode && !editMode" type="primary" data-testid="btn-save" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -329,7 +332,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import request from '../../api/request'
+import request from '../../api/request'; import { salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const { fitTable } = useColumnAutoFit()
 
@@ -410,6 +413,11 @@ function resetSearch() {
 // ========== 订单明细（跟随选中订单） ==========
 const orderTableRef = ref(null)
 const itemTableRef = ref(null)
+const listCardRef = ref(null)
+const itemCardRef = ref(null)
+const orderTableHeight = ref(400)
+const orderItemHeight = ref(400)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
 const itemLoading = ref(false)
 const selectedOrder = ref(null)
 const orderDetailList = ref([])
@@ -424,6 +432,7 @@ function onSplitterDown(e) {
   const onMove = (ev) => {
     const h = startH + (ev.clientY - startY)
     topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    nextTick(calcListHeight)
     localStorage.setItem(SPLIT_KEY, String(topHeight.value))
   }
   const onUp = () => {
@@ -437,6 +446,28 @@ function onSplitterDown(e) {
   document.body.style.cursor = 'row-resize'
   document.body.style.userSelect = 'none'
   e.preventDefault()
+}
+
+function _calcCardTableHeight(card, pagElSelector) {
+  if (!card) return 400
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  const bodyRect = body ? body.getBoundingClientRect() : el.getBoundingClientRect()
+  const pagEl = pagElSelector ? el.querySelector(pagElSelector) : null
+  const pagH = pagEl ? pagEl.getBoundingClientRect().height : 0
+  return Math.max(140, Math.round(bodyRect.height - pagH))
+}
+
+function calcListHeight() {
+  orderTableHeight.value = _calcCardTableHeight(listCardRef.value, '.el-pagination')
+}
+
+function calcItemHeight() {
+  const card = itemCardRef.value
+  if (!card) return
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  orderItemHeight.value = Math.max(140, Math.round((body || el).getBoundingClientRect().height - 16))
 }
 
 // ========== 合计栏 ==========
@@ -478,9 +509,9 @@ async function loadOrderDetail(orderId) {
   if (!orderId) { orderDetailList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get(`/sales/orders/${orderId}`)
+    const res = await salesApi.orders.get(orderId)
     orderDetailList.value = res.items || []
-  } catch {} finally {
+  } catch (e) {} finally {
     itemLoading.value = false
     nextTick(() => {
       initItemColumnDrag()
@@ -509,7 +540,7 @@ function productionStatusLabel(status) {
 async function handleStockIn(row) {
   await ElMessageBox.confirm(`将「${row.product_name}」转直采？单据将进入「采购管理 → 销售订单转采购」，在那里办理采购。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/stock-in`)
+    const res = await salesApi.orders.stockIn(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转直采')
     loadOrderDetail(selectedOrder.value.id)
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
@@ -518,8 +549,17 @@ async function handleStockIn(row) {
 async function handleOutsource(row) {
   await ElMessageBox.confirm(`将「${row.product_name}」转外发？单据将进入「委外管理 → 销售订单转委外」，在那里办理委外。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${selectedOrder.value.id}/items/${row.id}/outsource`)
+    const res = await salesApi.orders.outsource(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转外发')
+    loadOrderDetail(selectedOrder.value.id)
+  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
+}
+
+async function handleProduce(row) {
+  await ElMessageBox.confirm(`将「${row.product_name}」转生产（自产）？单据将进入「生产管理 → 生产订单」，在那里排产/完工。`, '提示', { type: 'info' })
+  try {
+    const res = await salesApi.orders.reProduce(selectedOrder.value.id, row.id)
+    ElMessage.success(res.message || '已转生产')
     loadOrderDetail(selectedOrder.value.id)
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
 }
@@ -548,7 +588,7 @@ async function handleChange() {
     payload.unit_price = parseFloat(changeForm.unit_price) || 0
   }
   try {
-    const res = await request.put(`/sales/orders/${selectedOrder.value.id}/items/${changeForm.id}`, payload)
+    const res = await salesApi.orders.updateItem(selectedOrder.value.id, changeForm.id, payload)
     ElMessage.success(res.message || '变更成功')
     changeVisible.value = false
     loadOrderDetail(selectedOrder.value.id)
@@ -590,7 +630,7 @@ async function fetchData() {
     }
     if (searchForm.amountMin) params.amount_min = parseFloat(searchForm.amountMin)
     if (searchForm.amountMax) params.amount_max = parseFloat(searchForm.amountMax)
-    const res = await request.get('/sales/orders', { params })
+    const res = await salesApi.orders.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
     // 自动选中第一行，联动加载明细
@@ -602,7 +642,7 @@ async function fetchData() {
       selectedOrder.value = null
       orderDetailList.value = []
     }
-  } catch {} finally {
+  } catch (e) {} finally {
     loading.value = false
     nextTick(() => {
       initColumnDrag()
@@ -612,16 +652,19 @@ async function fetchData() {
 }
 
 async function loadCustomers() {
-  try { const res = await request.get('/foundation/customers', { params: { page: 1, page_size: 100 } }); customerList.value = res.items || [] } catch {}
+  try { const res = await foundationApi.customers.list({ page: 1, page_size: 100 }); customerList.value = res.items || [] } catch (e) {}
 }
 async function loadCurrencies() {
-  try { const res = await request.get('/foundation/currencies', { params: { page: 1, page_size: 100 } }); currencyList.value = res.items || [] } catch {}
+  try {
+    const res = await foundationApi.currencies.list({ page: 1, page_size: 100 })
+    currencyList.value = (res.items || []).filter(c => c.is_active !== 0)
+  } catch (e) {}
 }
 async function loadTradeTerms() {
-  try { const res = await request.get('/foundation/trade-terms', { params: { page: 1, page_size: 100 } }); tradeTermList.value = res.items || [] } catch {}
+  try { const res = await foundationApi.tradeTerms.list({ page: 1, page_size: 100 }); tradeTermList.value = res.items || [] } catch (e) {}
 }
 async function loadProducts() {
-  try { const res = await request.get('/foundation/products', { params: { page: 1, page_size: 100 } }); productList.value = res.items || [] } catch {}
+  try { const res = await foundationApi.products.list({ page: 1, page_size: 100 }); productList.value = res.items || [] } catch (e) {}
 }
 
 // ========== 客户选择弹窗 ==========
@@ -636,10 +679,10 @@ async function searchCustomers() {
   try {
     const params = { page: customerPage.value, page_size: customerPageSize.value }
     if (customerSearch.value) params.keyword = customerSearch.value
-    const res = await request.get('/foundation/customers', { params })
+    const res = await foundationApi.customers.list(params)
     pickerCustomerList.value = res.items || []
     customerTotal.value = res.total || 0
-  } catch {}
+  } catch (e) {}
 }
 
 function openCustomerPicker() {
@@ -678,10 +721,10 @@ async function searchProducts() {
     // 按订单客户过滤：新建订单弹窗取表单客户；编辑已有订单取订单客户（未选客户显示全部）
     const filterCustomer = !editMode.value ? orderForm.customer_id : (selectedOrder.value?.customer_id || orderForm.customer_id)
     if (filterCustomer) params.customer_id = filterCustomer
-    const res = await request.get('/foundation/products', { params })
+    const res = await foundationApi.products.list(params)
     pickerProductList.value = res.items || []
     productTotal.value = res.total || 0
-  } catch {}
+  } catch (e) {}
 }
 
 function openProductPicker(target) {
@@ -733,10 +776,10 @@ async function openDialog(row) {
   viewMode.value = true
   editMode.value = false
   try {
-    const res = await request.get(`/sales/orders/${row.id}`)
+    const res = await salesApi.orders.get(row.id)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 
@@ -787,7 +830,7 @@ async function handleSubmit() {
       total_amount_excl_tax: parseFloat(item.total_amount_excl_tax) || 0,
       tax_rate: parseFloat(item.tax_rate) || 13,
     }))
-    await request.post('/sales/orders', {
+    await salesApi.orders.create({
       customer_id: orderForm.customer_id, currency_id: orderForm.currency_id,
       trade_term_id: orderForm.trade_term_id, payment_terms: orderForm.payment_terms,
       order_date: orderForm.order_date, delivery_date: orderForm.delivery_date,
@@ -800,9 +843,9 @@ async function handleSubmit() {
 }
 
 async function handleApprove(row) {
-  await ElMessageBox.confirm(`审核订单 ${row.order_no}？审核后将生成生产订单。`, '提示', { type: 'info' })
+  await ElMessageBox.confirm(`审核订单 ${row.order_no}？审核后明细行可转入库（转直采）/转外发（转委外）。`, '提示', { type: 'info' })
   try {
-    const res = await request.post(`/sales/orders/${row.id}/approve`)
+    const res = await salesApi.orders.approve(row.id)
     ElMessage.success(res.message || '审核成功')
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '审核失败') }
@@ -811,20 +854,20 @@ async function handleApprove(row) {
 async function handleDelete(row) {
   await ElMessageBox.confirm(`确定删除订单 ${row.order_no}？`, '提示', { type: 'warning' })
   try {
-    await request.delete(`/sales/orders/${row.id}`)
+    await salesApi.orders.delete(row.id)
     ElMessage.success('删除成功')
     fetchData()
-  } catch {}
+  } catch (e) {}
 }
 
 async function openEdit(row) {
   editMode.value = true
   viewMode.value = false
   try {
-    const res = await request.get(`/sales/orders/${row.id}`)
+    const res = await salesApi.orders.get(row.id)
     Object.assign(orderForm, { ...res, items: res.items || [] })
     calcTotals()
-  } catch {}
+  } catch (e) {}
   dialogVisible.value = true
 }
 
@@ -844,7 +887,7 @@ async function handleUpdate() {
       total_amount_excl_tax: parseFloat(item.total_amount_excl_tax) || 0,
       tax_rate: parseFloat(item.tax_rate) || 13,
     }))
-    await request.put(`/sales/orders/${orderForm.id}`, {
+    await salesApi.orders.update(orderForm.id, {
       customer_id: orderForm.customer_id, currency_id: orderForm.currency_id,
       trade_term_id: orderForm.trade_term_id, payment_terms: orderForm.payment_terms,
       order_date: orderForm.order_date, delivery_date: orderForm.delivery_date,
@@ -884,7 +927,7 @@ async function handleItemUpdate() {
     const price = parseFloat(itemEditForm.unit_price) || 0
     const rate = parseFloat(itemEditForm.tax_rate) || 13
     const total = qty * price
-    await request.put(`/sales/orders/${itemEditForm.order_id}/items/${itemEditForm.id}`, {
+    await salesApi.orders.updateItem(itemEditForm.order_id, itemEditForm.id, {
       product_id: itemEditForm.product_id,
       quantity: qty,
       unit_price: price,
@@ -917,7 +960,12 @@ watch(itemColumnVersion, () => {
   })
 })
 
-onMounted(() => { initColumnVisible(); initItemVisible(); fetchData(); loadCustomers(); loadCurrencies(); loadTradeTerms(); loadProducts() })</script>
+onMounted(() => {
+  initColumnVisible(); initItemVisible(); fetchData()
+  loadCustomers(); loadCurrencies(); loadTradeTerms(); loadProducts()
+  nextTick(() => { calcListHeight(); calcItemHeight() })
+  window.addEventListener('resize', () => { calcListHeight(); calcItemHeight() })
+})</script>
 
 <style scoped>
 /* 单元格左右内边距收紧，列更紧凑 */

@@ -176,3 +176,47 @@ class ReminderLogOut(BaseModel):
     pushed_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReminderRuleCreate(BaseModel):
+    code: str
+    name: str
+    trigger_type: str = "event"
+    enabled: int = 1
+    title_template: str | None = None
+    content_template: str | None = None
+    target_roles: list[str] = []
+    channel: list[str] = ["inapp"]
+    schedule_cron: str | None = None
+    advance_days: int = 7
+    dedup_hours: int = 1
+
+
+class ReminderRuleUpdate(BaseModel):
+    name: str | None = None
+    enabled: int | None = None
+    title_template: str | None = None
+    content_template: str | None = None
+    target_roles: list[str] | None = None
+    channel: list[str] | None = None
+    schedule_cron: str | None = None
+    advance_days: int | None = None
+    dedup_hours: int | None = None
+
+
+class ReminderRuleOut(BaseModel):
+    id: int
+    code: str
+    name: str
+    trigger_type: str
+    enabled: int
+    title_template: str | None
+    content_template: str | None
+    target_roles: list[str] | None
+    channel: list[str] | None
+    schedule_cron: str | None
+    advance_days: int | None
+    dedup_hours: int | None
+    created_at: datetime | None
+
+    model_config = ConfigDict(from_attributes=True)

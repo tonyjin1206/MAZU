@@ -27,7 +27,7 @@
         style="width: 100%"
       >
         <el-table-column
-          v-for="col in columns"
+          v-for="col in visibleColumns"
           :key="col.prop"
           :prop="col.prop"
           :label="col.label"
@@ -124,14 +124,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { foundationApi } from '../../api/foundation'
 
 // 单位选项（来自参数设置）
 const tableRef = ref(null)
 const unitOptions = ref([])
 async function loadUnitOptions() {
-  try { unitOptions.value = await request.get('/foundation/params/options', { params: { group: 'unit' } }) || [] } catch { unitOptions.value = [] }
+  try { unitOptions.value = await foundationApi.params.options({ group: 'unit' }) || [] } catch (e) { unitOptions.value = [] }
 }
 
 // ===== 列配置（可拖拽排序）=====
@@ -144,7 +143,7 @@ const defaultColumns = [
   { prop: 'tax_rate', label: '增值税率%', width: 100, sortable: true },
   { prop: 'effective_date', label: '生效日期', width: 120, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const tableData = ref([])
@@ -249,7 +248,7 @@ async function handleDelete(row) {
     ElMessage.success('删除成功')
     fetchData()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '删除失败')
   }
 }
 

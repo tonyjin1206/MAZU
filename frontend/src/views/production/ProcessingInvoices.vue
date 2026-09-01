@@ -19,8 +19,13 @@
     </el-card>
 
     <el-card>
-<el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
-        <el-table-column v-for="col in columns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
+      <template #header>
+        <div style="display: flex; justify-content: flex-end">
+          <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+        </div>
+      </template>
+      <el-table :key="columnVersion" :data="list" v-loading="loading" stripe border size="small" style="width: 100%">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <span class="col-header-wrap">
               <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
@@ -68,6 +73,7 @@
         <el-button type="primary" :loading="createLoading" @click="confirmCreate">确认开票</el-button>
       </template>
     </el-dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
   </div>
 </template>
 
@@ -75,6 +81,7 @@
 import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useColumnDrag } from '../../composables/useColumnDrag'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 import { productionApi } from '../../api/business'
 
 // ===== 列配置（可拖拽排序）=====
@@ -88,7 +95,7 @@ const defaultColumns = [
   { prop: 'amount_excl_tax', label: '不含税金额', width: 100, align: 'right', sortable: true },
   { prop: 'invoice_date', label: '开票日期', width: 110, sortable: true },
 ]
-const { columns, columnVersion, initColumnDrag } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
 
 const loading = ref(false)
 const list = ref([])
@@ -129,7 +136,7 @@ async function openCreate() {
   try {
     const res = await productionApi.productions.processingInvoices.candidates()
     candidates.value = res.items || []
-  } catch {} finally { candLoading.value = false }
+  } catch (e) {} finally { candLoading.value = false }
 }
 
 function openInvoiceForm(row) {

@@ -1,52 +1,52 @@
 <template>
-  <div>
+  <TablePageLayout>
+    <template #search>
     <el-card style="margin-bottom: 12px">
       <template #header>
-        <div style="display: flex; justify-content: space-between; align-items: center">
-          <el-form :inline="true" :model="searchForm">
-            <el-form-item label="关键字">
-              <el-input v-model="searchForm.keyword" placeholder="物料编码/名称/批次" clearable style="width: 170px" @keyup.enter="fetchData" />
-            </el-form-item>
-            <el-form-item label="日期">
-              <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width: 240px" @change="fetchData" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="fetchData">查询</el-button>
-              <el-button @click="resetSearch">重置</el-button>
-            </el-form-item>
-          </el-form>
+        <div style="display: flex; justify-content: flex-end; gap: 8px">
+          <el-button type="primary" @click="fetchData">查询</el-button>
+          <el-button @click="resetSearch">重置</el-button>
           <el-button type="primary" @click="openOutDialog">原料出库</el-button>
         </div>
       </template>
+      <el-form :inline="true" :model="searchForm" style="flex-wrap: nowrap">
+        <el-form-item label="关键字">
+          <el-input v-model="searchForm.keyword" placeholder="物料编码/名称/批次" clearable style="width: 170px" @keyup.enter="fetchData" />
+        </el-form-item>
+        <el-form-item label="日期">
+          <el-date-picker v-model="dateRange" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width: 240px" @change="fetchData" />
+        </el-form-item>
+      </el-form>
     </el-card>
+    </template>
 
-    <el-card>
-      <el-table :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="getSummary" style="width: 100%">
-        <el-table-column prop="out_date" label="日期" width="160" sortable />
-        <el-table-column prop="out_no" label="出库单号" width="150" sortable />
-        <el-table-column prop="material_code" label="物料编码" width="120" sortable />
-        <el-table-column prop="material_name" label="物料名称" min-width="140" show-overflow-tooltip sortable />
-        <el-table-column prop="batch_no" label="批次号" min-width="130" sortable />
-        <el-table-column prop="quantity" label="数量" width="100" align="right" sortable>
-          <template #default="{ row }">{{ row.quantity || 0 }}</template>
-        </el-table-column>
-        <el-table-column prop="warehouse" label="仓库" min-width="120" sortable />
-        <el-table-column prop="source" label="来源" width="100" align="center" sortable>
-          <template #default="{ row }">
+    <template #header>
+      <div style="display: flex; justify-content: flex-end">
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+    </template>
+    <template #default="{ height }">
+      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" show-summary :summary-method="getSummary" style="width: 100%" :height="height">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align" :sortable="col.sortable" :show-overflow-tooltip="col.prop === 'remark'">
+          <template v-if="col.prop === 'quantity'" #default="{ row }">{{ row.quantity || 0 }}</template>
+          <template v-else-if="col.prop === 'source'" #default="{ row }">
             <el-tag :type="row.source === '手动出库' ? 'success' : 'warning'" size="small">{{ row.source }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="remark" label="备注" min-width="130" show-overflow-tooltip sortable />
         <el-table-column label="操作" width="90" fixed="right">
           <template #default="{ row }">
             <el-button v-if="row.source === '手动出库'" link type="warning" size="small" @click="handleReturn(row)">退回</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 16px" />
-    </el-card>
+    </template>
+    <template #footer>
+      <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[50, 100, 200]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 16px; flex: none" />
+    </template>
 
     <!-- 原料出库弹窗 -->
+    <template #dialog>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
     <el-dialog v-model="outVisible" title="原料出库" width="900px" destroy-on-close>
       <div style="display: flex; justify-content: flex-end; margin-bottom: 10px">
         <el-button type="primary" size="small" @click="addRow">添加明细</el-button>
@@ -100,15 +100,38 @@
         <el-table-column prop="purchase_price" label="采购价" width="100" align="right" sortable />
       </el-table>
     </el-dialog>
-  </div>
+    </template>
+  </TablePageLayout>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
+import TablePageLayout from '../../components/TablePageLayout.vue'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
 
 const loading = ref(false)
+const tableRef = ref(null)
+const STORAGE_KEY = 'mazu_material_outs_columns'
+const defaultColumns = [
+  { prop: 'out_date', label: '日期', width: 160, sortable: true },
+  { prop: 'out_no', label: '出库单号', width: 150, sortable: true },
+  { prop: 'material_code', label: '物料编码', width: 120, sortable: true },
+  { prop: 'material_name', label: '物料名称', minWidth: 140, sortable: true },
+  { prop: 'batch_no', label: '批次号', minWidth: 130, sortable: true },
+  { prop: 'quantity', label: '数量', width: 100, align: 'right', sortable: true },
+  { prop: 'warehouse', label: '仓库', minWidth: 120, sortable: true },
+  { prop: 'source', label: '来源', width: 100, align: 'center', sortable: true },
+  { prop: 'remark', label: '备注', minWidth: 130, sortable: true },
+]
+const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
+
+
+
 const dataList = ref([])
 const total = ref(0)
 const queryParams = reactive({ page: 1, page_size: 100 })
@@ -131,7 +154,7 @@ async function fetchData() {
       params.start_date = dateRange.value[0]
       params.end_date = dateRange.value[1]
     }
-    const res = await request.get('/inventory/material-outs', { params })
+    const res = await inventoryApi.materialOuts.list(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error('加载数据失败') } finally { loading.value = false }
@@ -173,9 +196,9 @@ function openMaterialPicker(row) {
 
 async function searchMaterial() {
   try {
-    const res = await request.get('/foundation/materials-select', { params: { keyword: materialSearch.value, page: 1, page_size: 100 } })
+    const res = await foundationApi.materials.select({ keyword: materialSearch.value, page: 1, page_size: 100 })
     materialList.value = res || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function pickMaterial(m) {
@@ -191,9 +214,9 @@ async function loadBatches(row) {
   row.batchLoading = true
   row.batches = []
   try {
-    const res = await request.get('/inventory/available-batches', { params: { material_id: row.material_id } })
+    const res = await inventoryApi.availableBatches({ material_id: row.material_id })
     row.batches = (res.items || []).filter(b => b.available > 0)
-  } catch {} finally { row.batchLoading = false }
+  } catch (e) {} finally { row.batchLoading = false }
 }
 
 async function handleSubmit() {
@@ -209,19 +232,21 @@ async function handleSubmit() {
   }
   submitting.value = true
   try {
-    const res = await request.post('/inventory/material-outs', { items })
+    const res = await inventoryApi.materialOuts.create({ items })
     ElMessage.success(res.message || '原料出库成功')
     outVisible.value = false
     fetchData()
   } catch (e) { ElMessage.error(e.response?.data?.detail || '出库失败') } finally { submitting.value = false }
 }
 
-onMounted(fetchData)
+onMounted(() => {
+  initColumnVisible(); initColumnDrag(); fetchData()
+})
 
 async function handleReturn(row) {
   try {
     await ElMessageBox.confirm(`确认退回出库单「${row.out_no}」？库存将回补原批次，并生成红字流水。`, '退回确认', { type: 'warning' })
-    const res = await request.post(`/inventory/material-outs/${row.out_no}/return`)
+    const res = await inventoryApi.materialOuts.return(row.out_no)
     ElMessage.success(res.message || '已退回')
     fetchData()
   } catch (e) { if (e !== 'cancel') ElMessage.error(e.response?.data?.detail || '操作失败') }

@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTS 妈祖外贸管理系统 — 接单到退税，一条线索管到底</title>
+<meta name="description" content="MTS（Mazu Trade System）是为 10～200 人外贸工厂与贸易公司打造的轻量级管理平台：销售三路分流、批次级成本核算、财务业务一体化、AI 助手 Matsu、免抵退申报引擎。单文件部署，一周内上线。">
+<meta name="robots" content="index,follow">
+<meta property="og:title" content="MTS 妈祖外贸管理系统 — 接单到退税，一条线索管到底">
+<meta property="og:description" content="为中小外贸工厂打造的一体化管理平台：接单 → 备货 → 出货 → 收款 → 退税，一个系统跑通。">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "MTS 妈祖外贸管理系统",
+  "alternateName": "Mazu Trade System",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "macOS, Windows, Linux",
+  "softwareVersion": "2.8.0",
+  "description": "轻量级外贸企业管理平台，覆盖销售、采购、生产、委外、库存、财务、退税全链条。"
+}
+</script>
+<script>
+/* 渐进增强开关：只有确认动效库可用后才会加 .fx，否则页面保持静态完整 */
+(function(){document.documentElement.classList.add('js');})();
+</script>
+<style>
+:root{
+  --paper:#f6f3ec;
+  --paper-2:#eee8db;
+  --ink:#15222c;
+  --ink-2:#4a5a64;
+  --sea:#0d3b53;
+  --sea-deep:#0a2537;
+  --hero-bg:#0b2839;
+  --hero-card:#103349;
+  --hero-line:rgba(238,232,219,.18);
+  --cinnabar:#c9431d;
+  --cinnabar-dk:#a83516;
+  --line:rgba(21,34,44,.14);
+  --serif:"Noto Serif SC","Source Han Serif SC","Songti SC","STSong",serif;
+  --sans:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{
+  font-family:var(--sans);
+  background:var(--paper);
+  color:var(--ink);
+  line-height:1.75;
+  font-size:16px;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--cinnabar);color:#fff}
+a{color:inherit}
+img,svg{display:block;max-width:100%}
+.skip-link{
+  position:absolute;left:-999px;top:8px;z-index:200;
+  background:var(--cinnabar);color:#fff;padding:10px 18px;border-radius:8px;
+  font-weight:700;text-decoration:none;
+}
+.skip-link:focus{left:8px}
+:focus-visible{outline:3px solid var(--cinnabar);outline-offset:3px;border-radius:4px}
+
+.container{max-width:1180px;margin-inline:auto;padding-inline:clamp(20px,4vw,40px)}
+.section{padding-block:clamp(72px,9vw,120px)}
+.kicker{
+  font-size:.78rem;font-weight:700;letter-spacing:.32em;text-transform:uppercase;
+  color:var(--cinnabar);margin-bottom:18px;
+}
+.h2{
+  font-family:var(--serif);font-weight:600;
+  font-size:clamp(1.7rem,3.4vw,2.5rem);
+  line-height:1.3;letter-spacing:.01em;
+  max-width:22em;
+}
+.lede{color:var(--ink-2);max-width:44em;margin-top:16px;font-size:1.02rem}
+
+/* ---------- 导航 ---------- */
+.nav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(246,243,236,.92);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.nav-inner{display:flex;align-items:center;gap:28px;height:64px}
+.brand{display:flex;align-items:baseline;gap:10px;text-decoration:none}
+.brand-mark{
+  font-family:var(--serif);font-weight:700;font-size:1.25rem;color:var(--sea-deep);
+}
+.brand-mark em{font-style:normal;color:var(--cinnabar)}
+.brand-sub{font-size:.72rem;color:var(--ink-2);letter-spacing:.14em}
+.nav-links{display:flex;gap:26px;margin-left:auto}
+.nav-links a{
+  text-decoration:none;font-size:.9rem;font-weight:500;color:var(--ink-2);
+  padding:4px 2px;border-bottom:2px solid transparent;transition:color .2s,border-color .2s;
+}
+.nav-links a:hover{color:var(--ink);border-color:var(--cinnabar)}
+.nav-cta{
+  margin-left:6px;text-decoration:none;font-size:.9rem;font-weight:700;
+  background:var(--sea-deep);color:var(--paper);
+  padding:9px 20px;border-radius:999px;transition:background .2s;
+}
+.nav-cta:hover{background:var(--cinnabar)}
+@media (max-width:760px){.nav-links{display:none}}
+
+/* ---------- Hero ---------- */
+.hero{
+  background:var(--hero-bg);color:var(--paper);
+  position:relative;overflow:hidden;
+}
+.hero-inner{
+  display:grid;grid-template-columns:1.05fr .95fr;gap:clamp(36px,5vw,72px);
+  align-items:center;
+  padding-block:clamp(64px,8vw,110px) clamp(64px,8vw,110px);
+}
+.hero-kicker{
+  font-size:.75rem;font-weight:700;letter-spacing:.34em;text-transform:uppercase;
+  color:rgba(238,232,219,.66);margin-bottom:22px;display:flex;align-items:center;gap:14px;
+}
+.hero-kicker::before{content:"";width:34px;height:1px;background:var(--cinnabar)}
+.h1{
+  font-family:var(--serif);font-weight:700;
+  font-size:clamp(2.2rem,5vw,3.9rem);
+  line-height:1.22;letter-spacing:.01em;
+}
+.h1 .accent{color:#e8b64c}
+.chain{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  margin-top:20px;font-size:.92rem;color:rgba(238,232,219,.85);font-weight:500;
+}
+.chain i{
+  font-style:normal;color:var(--cinnabar);font-family:var(--mono);font-size:.85rem;
+  transform:translateY(-1px);
+}
+.hero-sub{
+  margin-top:20px;color:rgba(238,232,219,.78);max-width:32em;font-size:1.02rem;
+}
+.hero-actions{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:34px}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  text-decoration:none;font-weight:700;font-size:.98rem;
+  padding:14px 30px;border-radius:999px;transition:background .2s,transform .2s;
+}
+.btn-primary{background:var(--cinnabar);color:#fff}
+.btn-primary:hover{background:var(--cinnabar-dk);transform:translateY(-2px)}
+.btn-ghost{
+  color:var(--paper);border:1px solid var(--hero-line);
+  padding:13px 26px;font-weight:500;
+}
+.btn-ghost:hover{border-color:rgba(238,232,219,.5)}
+.hero-proof{
+  display:flex;flex-wrap:wrap;gap:10px 26px;margin-top:36px;
+  font-size:.84rem;color:rgba(238,232,219,.66);
+}
+.hero-proof span{display:inline-flex;align-items:center;gap:8px}
+.hero-proof b{color:#e8b64c;font-weight:700;font-family:var(--mono)}
+
+/* Hero 三路分流图 */
+.hero-visual{position:relative}
+.flow-card{
+  background:var(--hero-card);border:1px solid var(--hero-line);
+  border-radius:16px;
+}
+.flow-order{padding:20px 22px;position:relative;z-index:2}
+.flow-order .tag{
+  font-size:.68rem;letter-spacing:.22em;color:rgba(238,232,219,.55);
+  text-transform:uppercase;display:block;margin-bottom:8px;
+}
+.flow-order .so-no{
+  font-family:var(--mono);font-size:.8rem;color:#e8b64c;display:block;margin-bottom:4px;
+}
+.flow-order .so-name{font-weight:700;font-size:1.02rem}
+.flow-order .so-meta{
+  display:flex;gap:18px;margin-top:8px;font-size:.8rem;color:rgba(238,232,219,.6);
+  font-family:var(--mono);
+}
+.flow-branches{position:relative;margin-top:44px;display:grid;gap:14px}
+.flow-svg{
+  position:absolute;inset:-46px 0 auto 0;height:46px;width:100%;z-index:1;
+  overflow:visible;
+}
+.flow-svg path{fill:none;stroke:rgba(238,232,219,.4);stroke-width:1.5}
+.route{
+  display:flex;align-items:center;gap:14px;padding:15px 18px;
+  position:relative;z-index:2;
+  transition:border-color .25s,background .25s;
+}
+.route .route-ico{
+  width:38px;height:38px;border-radius:10px;flex:none;
+  display:grid;place-items:center;font-size:20px;
+  background:rgba(238,232,219,.08);color:rgba(238,232,219,.85);
+  transition:background .25s,color .25s;
+}
+.route .route-name{font-weight:700;font-size:.94rem}
+.route .route-desc{font-size:.78rem;color:rgba(238,232,219,.6)}
+.route .route-doc{
+  margin-left:auto;font-family:var(--mono);font-size:.74rem;
+  color:rgba(238,232,219,.55);white-space:nowrap;
+}
+.route[data-active="true"]{border-color:var(--cinnabar);background:rgba(201,67,29,.12)}
+.route[data-active="true"] .route-ico{background:var(--cinnabar);color:#fff}
+.route[data-active="true"] .route-doc{color:#e8b64c}
+.route .mutex{
+  font-size:.66rem;color:rgba(238,232,219,.5);border:1px solid var(--hero-line);
+  padding:2px 8px;border-radius:999px;white-space:nowrap;
+}
+.flow-note{
+  margin-top:16px;text-align:right;font-size:.72rem;
+  color:rgba(238,232,219,.45);letter-spacing:.2em;
+}
+@media (max-width:900px){
+  .hero-inner{grid-template-columns:1fr}
+  .hero-visual{max-width:520px}
+}
+
+/* ---------- 痛点 ---------- */
+.pain-quote{
+  font-family:var(--serif);font-weight:600;
+  font-size:clamp(1.35rem,2.8vw,2rem);line-height:1.6;
+  max-width:26em;
+}
+.pain-quote .pn{
+  color:var(--cinnabar);position:relative;white-space:nowrap;
+}
+.pain-chips{display:flex;flex-wrap:wrap;gap:12px;margin-top:38px}
+.pain-chip{
+  border:1px solid var(--line);border-radius:999px;
+  padding:9px 20px;font-size:.9rem;color:var(--ink-2);background:#fff8;
+}
+.pain-turn{
+  margin-top:44px;font-size:1.12rem;font-weight:700;color:var(--sea);
+}
+.pain-turn em{font-style:normal;color:var(--cinnabar)}
+
+/* ---------- 卖点 ---------- */
+.points{border-top:1px solid var(--line)}
+.point{
+  display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);
+  gap:clamp(30px,5vw,80px);
+  padding-block:clamp(56px,7vw,96px);
+  border-bottom:1px solid var(--line);
+  align-items:center;
+}
+.point:nth-child(even){grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}
+.point:nth-child(even) .point-copy{order:2}
+.point-no{
+  font-family:var(--serif);font-size:clamp(2.6rem,4.5vw,3.6rem);font-weight:700;
+  color:var(--paper-2);-webkit-text-stroke:1px var(--line);line-height:1;
+  display:block;margin-bottom:14px;
+}
+.point-title{
+  font-family:var(--serif);font-weight:600;
+  font-size:clamp(1.4rem,2.6vw,1.9rem);line-height:1.4;
+}
+.point-desc{color:var(--ink-2);margin-top:16px;font-size:.98rem}
+.point-value{
+  display:inline-flex;align-items:center;gap:8px;margin-top:22px;
+  font-weight:700;color:var(--sea);font-size:.92rem;
+}
+.point-value::before{content:"";width:22px;height:2px;background:var(--cinnabar)}
+.point-visual{
+  background:#fff;border:1px solid var(--line);border-radius:16px;
+  padding:clamp(20px,3vw,32px);
+  box-shadow:0 20px 50px -30px rgba(10,37,55,.25);
+}
+.pv-label{
+  font-size:.68rem;letter-spacing:.24em;color:var(--ink-2);
+  text-transform:uppercase;margin-bottom:16px;display:block;
+}
+@media (max-width:860px){
+  .point,.point:nth-child(even){grid-template-columns:1fr}
+  .point:nth-child(even) .point-copy{order:0}
+}
+
+/* 卖点 1：三路分流 */
+.tri{display:grid;gap:10px}
+.tri-line{
+  display:flex;align-items:center;gap:10px;padding:12px 16px;
+  border:1px solid var(--line);border-radius:12px;font-size:.88rem;
+}
+.tri-line b{font-weight:700}
+.tri-line .doc{
+  margin-left:auto;font-family:var(--mono);font-size:.74rem;color:var(--ink-2);
+}
+.tri-line.hot{border-color:var(--cinnabar);background:rgba(201,67,29,.06)}
+.tri-line.hot .doc{color:var(--cinnabar-dk);font-weight:700}
+.tri-mutex{
+  text-align:center;font-size:.72rem;color:var(--ink-2);
+  display:flex;align-items:center;gap:10px;
+}
+.tri-mutex::before,.tri-mutex::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* 卖点 2：批次时间线 */
+.batch{display:grid;gap:0}
+.batch-step{
+  display:flex;gap:14px;position:relative;padding-bottom:20px;
+}
+.batch-step:last-child{padding-bottom:0}
+.batch-step::before{
+  content:"";position:absolute;left:7px;top:22px;bottom:0;width:1px;background:var(--line);
+}
+.batch-step:last-child::before{display:none}
+.batch-dot{
+  width:15px;height:15px;border-radius:50%;flex:none;margin-top:4px;
+  border:2px solid var(--sea);background:var(--paper);
+}
+.batch-step.lock .batch-dot{background:var(--cinnabar);border-color:var(--cinnabar)}
+.batch-name{font-weight:700;font-size:.9rem}
+.batch-meta{font-size:.78rem;color:var(--ink-2);font-family:var(--mono)}
+.batch-step.lock .batch-meta{color:var(--cinnabar-dk);font-weight:700}
+
+/* 卖点 3：财务链 */
+.fin{display:grid;gap:10px}
+.fin-row{
+  display:flex;align-items:center;gap:12px;padding:11px 16px;
+  border:1px solid var(--line);border-radius:12px;font-size:.86rem;
+}
+.fin-row b{font-weight:700;white-space:nowrap}
+.fin-row span{color:var(--ink-2);font-size:.8rem}
+.fin-row.warn{border-color:#d9a13c;background:rgba(217,161,60,.07)}
+.fin-row.bad{border-color:var(--cinnabar);background:rgba(201,67,29,.06)}
+.fin-tag{
+  margin-left:auto;font-size:.68rem;font-weight:700;white-space:nowrap;
+  padding:3px 10px;border-radius:999px;background:var(--paper-2);color:var(--sea);
+}
+.fin-row.bad .fin-tag{background:var(--cinnabar);color:#fff}
+
+/* 卖点 4：AI 对话 */
+.chat{display:grid;gap:12px}
+.bubble{
+  max-width:88%;padding:12px 16px;border-radius:14px;font-size:.88rem;
+}
+.bubble.user{
+  justify-self:end;background:var(--sea-deep);color:var(--paper);
+  border-bottom-right-radius:4px;
+}
+.bubble.bot{
+  justify-self:start;background:var(--paper-2);color:var(--ink);
+  border-bottom-left-radius:4px;
+}
+.chat-table{
+  margin-top:8px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  font-size:.78rem;background:#fff;
+}
+.chat-table div{
+  display:flex;justify-content:space-between;gap:16px;
+  padding:7px 12px;border-bottom:1px solid var(--line);
+}
+.chat-table div:last-child{border-bottom:none}
+.chat-table div:last-child b{color:var(--cinnabar-dk)}
+.chat-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.chat-chip{
+  font-size:.72rem;font-weight:700;color:var(--sea);
+  border:1px solid var(--line);border-radius:999px;padding:4px 12px;background:#fff;
+}
+
+/* 卖点 5：双端匹配 */
+.match{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center}
+.match-col{display:grid;gap:8px}
+.match-head{font-weight:700;font-size:.84rem;margin-bottom:2px}
+.match-item{
+  border:1px solid var(--line);border-radius:10px;padding:9px 12px;
+  font-size:.76rem;font-family:var(--mono);color:var(--ink-2);background:#fff;
+}
+.match-item b{display:block;font-family:var(--sans);color:var(--ink);font-size:.8rem}
+.match-link{
+  display:grid;place-items:center;color:var(--cinnabar);font-size:1.3rem;font-weight:700;
+}
+.match-badge{
+  grid-column:1/-1;text-align:center;font-size:.74rem;font-weight:700;
+  color:var(--sea);background:var(--paper-2);border-radius:999px;padding:6px;
+}
+
+/* ---------- 客户价值 ---------- */
+.values{background:var(--paper-2)}
+.values-grid{
+  display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--line);
+  border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:48px;
+}
+.value{
+  background:var(--paper);padding:26px 22px;
+}
+.value h3{font-family:var(--serif);font-size:1.06rem;font-weight:700;display:flex;gap:10px;align-items:center}
+.value h3 iconify-icon{color:var(--cinnabar);font-size:1.25rem;flex:none}
+.value p{font-size:.8rem;color:var(--ink-2);margin-top:10px;line-height:1.7}
+@media (max-width:1000px){.values-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.values-grid{grid-template-columns:1fr}}
+
+/* ---------- 三步上线 ---------- */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:clamp(20px,3vw,36px);margin-top:52px}
+.step{border-top:2px solid var(--ink);padding-top:22px}
+.step-no{font-family:var(--mono);font-size:.8rem;color:var(--cinnabar);font-weight:700;letter-spacing:.2em}
+.step h3{font-family:var(--serif);font-size:1.25rem;font-weight:700;margin-top:8px}
+.step p{color:var(--ink-2);font-size:.9rem;margin-top:10px}
+.cmd{
+  margin-top:18px;display:flex;align-items:center;gap:10px;
+  background:var(--sea-deep);color:#d7e4d0;border-radius:10px;
+  padding:12px 16px;font-family:var(--mono);font-size:.82rem;
+}
+.cmd code{flex:1;overflow-x:auto;white-space:nowrap}
+.cmd button{
+  flex:none;background:rgba(238,232,219,.12);color:var(--paper);border:none;
+  font-size:.72rem;font-weight:700;padding:6px 12px;border-radius:7px;cursor:pointer;
+  font-family:var(--sans);
+}
+.cmd button:hover{background:var(--cinnabar)}
+@media (max-width:860px){.steps{grid-template-columns:1fr}}
+
+/* ---------- 功能矩阵 ---------- */
+.matrix-wrap{overflow-x:auto;margin-top:48px;border:1px solid var(--line);border-radius:16px}
+.matrix{border-collapse:collapse;width:100%;min-width:760px;background:#fff}
+.matrix th,.matrix td{
+  padding:14px 18px;border-bottom:1px solid var(--line);text-align:left;
+  font-size:.86rem;vertical-align:top;
+}
+.matrix thead th{
+  background:var(--sea-deep);color:var(--paper);font-weight:700;font-size:.8rem;
+  letter-spacing:.06em;white-space:nowrap;
+}
+.matrix tbody tr:last-child td{border-bottom:none}
+.matrix tbody tr:nth-child(even){background:rgba(238,232,219,.35)}
+.matrix .m-name{font-weight:700;white-space:nowrap}
+.matrix .m-name small{display:block;font-weight:400;color:var(--ink-2);font-size:.72rem;white-space:normal}
+.matrix td:not(.m-name){color:var(--ink-2)}
+.dot{color:var(--cinnabar);font-weight:700;margin-right:6px}
+.dash{color:var(--line)}
+
+/* ---------- 对比 ---------- */
+.compare-wrap{overflow-x:auto;margin-top:48px;border:1px solid var(--line);border-radius:16px}
+.compare{border-collapse:collapse;width:100%;min-width:720px;background:#fff}
+.compare th,.compare td{
+  padding:15px 18px;border-bottom:1px solid var(--line);text-align:left;
+  font-size:.88rem;vertical-align:top;
+}
+.compare thead th{font-family:var(--serif);font-size:.94rem}
+.compare thead th:nth-child(3){
+  background:var(--cinnabar);color:#fff;position:relative;
+}
+.compare tbody tr:last-child td{border-bottom:none}
+.compare tbody tr:nth-child(even){background:rgba(238,232,219,.35)}
+.compare td:nth-child(3){
+  background:rgba(201,67,29,.06);font-weight:700;color:var(--sea-deep);
+}
+
+/* ---------- FAQ ---------- */
+.faq-list{margin-top:44px;max-width:820px}
+.faq-item{border-bottom:1px solid var(--line)}
+.faq-item summary{
+  cursor:pointer;list-style:none;display:flex;align-items:center;gap:16px;
+  padding:22px 4px;font-weight:700;font-size:1.02rem;
+}
+.faq-item summary::-webkit-details-marker{display:none}
+.faq-item summary::after{
+  content:"+";margin-left:auto;font-size:1.5rem;font-weight:400;color:var(--cinnabar);
+  transition:transform .25s;flex:none;line-height:1;
+}
+.faq-item[open] summary::after{transform:rotate(45deg)}
+.faq-item .faq-a{padding:0 4px 26px;color:var(--ink-2);max-width:62em}
+
+/* ---------- 最终 CTA ---------- */
+.final{
+  background:var(--hero-bg);color:var(--paper);text-align:center;
+}
+.final .kicker{color:rgba(238,232,219,.6)}
+.final .h2{margin-inline:auto}
+.final-lines{
+  margin:36px auto 0;display:grid;gap:14px;max-width:760px;text-align:left;
+}
+.final-card{
+  display:flex;align-items:center;gap:18px;
+  background:var(--hero-card);border:1px solid var(--hero-line);
+  border-radius:14px;padding:20px 24px;
+}
+.final-card iconify-icon{font-size:1.5rem;color:#e8b64c;flex:none}
+.final-card b{display:block;font-size:.98rem}
+.final-card span{font-size:.82rem;color:rgba(238,232,219,.65)}
+.final .btn-primary{margin-top:44px;font-size:1.05rem;padding:16px 44px}
+.final-note{margin-top:18px;font-size:.8rem;color:rgba(238,232,219,.5)}
+
+/* ---------- Footer ---------- */
+.footer{
+  background:var(--sea-deep);color:rgba(238,232,219,.55);
+  padding-block:34px;font-size:.8rem;
+}
+.footer-inner{display:flex;flex-wrap:wrap;gap:12px 30px;align-items:center;justify-content:space-between}
+
+/* ---------- 动效基线：仅 html.fx 下才隐藏初始态 ---------- */
+html.fx .fx-up,html.fx .fx-word{opacity:0}
+html.fx .flow-svg path{stroke-dasharray:240;stroke-dashoffset:240}
+@media (prefers-reduced-motion:reduce){
+  html.fx .fx-up,html.fx .fx-word{opacity:1}
+  html.fx .flow-svg path{stroke-dashoffset:0}
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要内容</a>
+
+<header class="nav">
+  <div class="container nav-inner">
+    <a class="brand" href="#top" aria-label="MTS 妈祖外贸管理系统 首页">
+      <span class="brand-mark">MTS<em>.</em></span>
+      <span class="brand-sub">妈祖外贸管理系统</span>
+    </a>
+    <nav class="nav-links" aria-label="页面导航">
+      <a href="#pain">解决的问题</a>
+      <a href="#points">五大卖点</a>
+      <a href="#matrix">功能矩阵</a>
+      <a href="#faq">常见问题</a>
+    </nav>
+    <a class="nav-cta" href="#start">立即体验</a>
+  </div>
+</header>
+
+<main id="main">
+<!-- ============ HERO ============ -->
+<section class="hero" id="top" aria-label="产品简介">
+  <div class="container hero-inner">
+    <div>
+      <p class="hero-kicker fx-up">Mazu Trade System · v2.8.0</p>
+      <h1 class="h1" id="hero-title">接单到退税，<br>一条线索<em class="accent" style="font-style:normal">管到底</em></h1>
+      <p class="chain" aria-label="业务链条：接单、备货、出货、收款、退税">
+        接单 <i>→</i> 备货 <i>→</i> 出货 <i>→</i> 收款 <i>→</i> 退税
+      </p>
+      <p class="hero-sub">
+        MTS 妈祖外贸管理系统，为 10～200 人的外贸工厂与贸易公司打造。
+        销售、采购、生产、委外、库存、财务、退税一个系统跑通——
+        单文件部署、开箱即用，一周内上线。
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#start">立即体验</a>
+        <a class="btn btn-ghost" href="#points">先看五大卖点 ↓</a>
+      </div>
+      <p class="hero-proof">
+        <span><b>285</b> 项后端测试</span>
+        <span><b>59</b> 项端到端测试</span>
+        <span>内置演示数据一键导入</span>
+        <span>默认账户开箱即用</span>
+      </p>
+    </div>
+
+    <div class="hero-visual" aria-label="销售订单三路分流示意图">
+      <div class="flow-card flow-order">
+        <span class="tag">销售订单 · 订单行</span>
+        <span class="so-no">SO-2026-081</span>
+        <span class="so-name">全棉帆布 · 2,000 m</span>
+        <div class="so-meta"><span>USD 12,800</span><span>交期 09-28</span></div>
+      </div>
+      <div class="flow-branches">
+        <svg class="flow-svg" viewBox="0 0 520 46" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M260 0 C 260 30, 80 16, 80 46"/>
+          <path d="M260 0 C 260 30, 260 16, 260 46"/>
+          <path d="M260 0 C 260 30, 440 16, 440 46"/>
+        </svg>
+        <div class="flow-card route" data-route>
+          <span class="route-ico"><iconify-icon icon="solar:cart-linear" aria-hidden="true"></iconify-icon></span>
+          <span>
+            <span class="route-name">转直采</span>
+            <span class="route-desc" style="display:block">贸易买进卖出，采购单自动生成</span>
+          </span>
+          <span class="mutex">互斥</span>
+          <span class="route-doc">→ PO-2026-107</span>
+        </div>
+        <div class="flow-card route" data-route data-active="true">
+          <span class="route-ico"><iconify-icon icon="solar:factory-linear" aria-hidden="true"></iconify-icon></span>
+          <span>
+            <span class="route-name">转外发</span>
+            <span class="route-desc" style="display:block">委外加工，应领量按 BOM×损耗自动算</span>
+          </span>
+          <span class="mutex">互斥</span>
+          <span class="route-doc">→ OUT-2026-32</span>
+        </div>
+        <div class="flow-card route" data-route>
+          <span class="route-ico"><iconify-icon icon="solar:settings-minimalistic-linear" aria-hidden="true"></iconify-icon></span>
+          <span>
+            <span class="route-name">转生产</span>
+            <span class="route-desc" style="display:block">自产入车间，派产发料一条线</span>
+          </span>
+          <span class="mutex">互斥</span>
+          <span class="route-doc">→ MO-2026-88</span>
+        </div>
+      </div>
+      <p class="flow-note">示意 · 每行明细三选一，互斥锁定</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 痛点 ============ -->
+<section class="section" id="pain">
+  <div class="container">
+    <p class="kicker fx-up">我们解决什么问题</p>
+    <h2 class="pain-quote" id="pain-title">
+      订单在 <span class="pn">Excel</span> 里，库存在仓管脑子里，
+      成本要等月底才算得清，退税材料到处翻单据，
+      老板看数据只能等人报表。
+    </h2>
+    <div class="pain-chips">
+      <span class="pain-chip">订单靠 Excel</span>
+      <span class="pain-chip">库存靠脑子</span>
+      <span class="pain-chip">成本靠月底</span>
+      <span class="pain-chip">退税靠翻单据</span>
+      <span class="pain-chip">报表靠等人</span>
+    </div>
+    <p class="pain-turn fx-up">MTS 把这些<em>全部装进一个系统</em>——不用实施顾问，一台电脑就能跑，备份就是拷一个文件。</p>
+  </div>
+</section>
+
+<!-- ============ 五大卖点 ============ -->
+<section class="points" id="points" aria-label="五大核心卖点">
+  <div class="container">
+
+    <article class="point">
+      <div class="point-copy">
+        <span class="point-no" aria-hidden="true">01</span>
+        <h3 class="point-title" id="p1">销售订单「三路分流」<br>混合业态一张订单全搞定</h3>
+        <p class="point-desc">
+          贸易买进卖出、发加工厂做、自己车间做——多数企业三种单都有，普通 ERP 只会一种。
+          MTS 的销售订单每一行明细独立选择「转直采 / 转外发 / 转生产」，三条路线互斥锁定，
+          从机制上杜绝「同一批货既在采购又在生产」；下游采购单、委外单、生产单自动生成、自动串联，业务员零录入。
+        </p>
+        <p class="point-value">价值：混合业态不再来回切换系统</p>
+      </div>
+      <div class="point-visual" aria-label="三路分流示意图">
+        <span class="pv-label">示意 · 订单行分流</span>
+        <div class="tri">
+          <div class="tri-line"><b>SO-081 · 全棉帆布 2,000m</b><span class="doc">销售订单</span></div>
+          <div class="tri-mutex">行级三选一 · 互斥锁定</div>
+          <div class="tri-line"><b>转直采</b><span class="doc">→ 采购单 PO-107</span></div>
+          <div class="tri-line hot"><b>转外发</b><span class="doc">→ 委外单 OUT-32 ✓</span></div>
+          <div class="tri-line"><b>转生产</b><span class="doc">→ 生产单 MO-88</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="point">
+      <div class="point-copy">
+        <span class="point-no" aria-hidden="true">02</span>
+        <h3 class="point-title">批次级成本核算<br>毛利精确到每一笔发货</h3>
+        <p class="point-desc">
+          库存按批次记数量和成本，出入库全部留带前后快照的流水；发货出库直接锁定批次成本，
+          驾驶舱毛利榜按发货单逐笔算「收入 − 出库成本」，退货自动冲减。
+          老板看到的不再是月底倒挤的模糊利润，而是每单每货的真实盈利。
+        </p>
+        <p class="point-value">价值：杜绝「账面盈利、实际亏损」</p>
+      </div>
+      <div class="point-visual" aria-label="批次成本流转示意图">
+        <span class="pv-label">示意 · 批次成本流转</span>
+        <div class="batch">
+          <div class="batch-step"><span class="batch-dot"></span><div><div class="batch-name">采购入库</div><div class="batch-meta">批次 B-2409 成本 ¥8.4/m 入账</div></div></div>
+          <div class="batch-step"><span class="batch-dot"></span><div><div class="batch-name">生产领料</div><div class="batch-meta">成本随领料单结转</div></div></div>
+          <div class="batch-step"><span class="batch-dot"></span><div><div class="batch-name">完工入库</div><div class="batch-meta">按比例自动分摊</div></div></div>
+          <div class="batch-step lock"><span class="batch-dot"></span><div><div class="batch-name">发货出库 · 锁定成本</div><div class="batch-meta">毛利 = 收入 − 出库成本，逐笔可查</div></div></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="point">
+      <div class="point-copy">
+        <span class="point-no" aria-hidden="true">03</span>
+        <h3 class="point-title">财务业务一体化<br>账期红冲全自动</h3>
+        <p class="point-desc">
+          开票自动生成应收应付，到期日按客户/供应商账期自动计算，收付款自动核销；
+          开错票一键红冲——自动负数发票 + 负数应收，全程留痕、禁改禁删；
+          应收到期提前 7 天自动提醒，逾期自动升级。
+        </p>
+        <p class="point-value">价值：催收不靠人记，账改不了</p>
+      </div>
+      <div class="point-visual" aria-label="应收账期与红冲示意图">
+        <span class="pv-label">示意 · 应收账期</span>
+        <div class="fin">
+          <div class="fin-row"><b>开票</b><span>自动生成应收，账期自动起算</span></div>
+          <div class="fin-row"><b>到期前 7 天</b><span>自动提醒收件角色</span><span class="fin-tag">预警</span></div>
+          <div class="fin-row warn"><b>已逾期</b><span>自动升级提醒</span><span class="fin-tag">升级</span></div>
+          <div class="fin-row bad"><b>开错票</b><span>一键红冲 · 留痕禁改禁删</span><span class="fin-tag">红冲</span></div>
+        </div>
+      </div>
+    </article>
+
+    <article class="point">
+      <div class="point-copy">
+        <span class="point-no" aria-hidden="true">04</span>
+        <h3 class="point-title">AI 助手 Matsu<br>会话即操作</h3>
+        <p class="point-desc">
+          右下角悬浮球随时呼出：<b>能查</b>——自然语言查客户、库存、应收、待审单据，结果即表格；
+          <b>能做</b>——对话式建订单、录收付款、开发票、审核，与页面同一套业务校验；
+          <b>能教</b>——内置操作手册问答。AI 的能力严格跟随当前用户权限，写操作自动记审计日志。
+        </p>
+        <p class="point-value">价值：业务员开口就能干活，权限不掉线</p>
+      </div>
+      <div class="point-visual" aria-label="AI 助手对话示意">
+        <span class="pv-label">示意 · Matsu 对话</span>
+        <div class="chat">
+          <div class="bubble user">查一下恒祥贸易这个月的应收</div>
+          <div class="bubble bot">
+            恒祥贸易本月应收 3 笔，明细如下：
+            <div class="chat-table">
+              <div><span>INV-260812 · 帆布 1,200m</span><b>¥86,400</b></div>
+              <div><span>INV-260819 · 里布 3,000m</span><b>¥112,000</b></div>
+              <div><span>INV-260827 · 打样费</span><b>¥8,000</b></div>
+              <div><span>合计</span><b>¥206,400</b></div>
+            </div>
+            <div class="chat-actions">
+              <span class="chat-chip">生成催收清单</span>
+              <span class="chat-chip">登记收款</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </article>
+
+    <article class="point">
+      <div class="point-copy">
+        <span class="point-no" aria-hidden="true">05</span>
+        <h3 class="point-title">免抵退申报引擎<br>退税资料一键归集</h3>
+        <p class="point-desc">
+          生产企业免抵退自动试算，应退税额、免抵税额一键算出；采购录入增值税专用发票自动汇入进项发票池；
+          申报表出口端挂报关单商品行、采购端挂进项发票，双端匹配防重复申报；出口退运自动生成负数冲减行、申报表自动重算。
+        </p>
+        <p class="point-value">价值：该退的税，一分别漏</p>
+      </div>
+      <div class="point-visual" aria-label="退税双端匹配示意图">
+        <span class="pv-label">示意 · 申报双端匹配</span>
+        <div class="match">
+          <div class="match-col">
+            <div class="match-head">出口端</div>
+            <div class="match-item"><b>报关单 312820260</b>帆布 2,000 m ✓</div>
+            <div class="match-item"><b>报关单 312820311</b>里布 3,000 m ✓</div>
+          </div>
+          <div class="match-link" aria-hidden="true">⇄</div>
+          <div class="match-col">
+            <div class="match-head">采购端</div>
+            <div class="match-item"><b>进项发票 ×12</b>自动归集成池 ✓</div>
+            <div class="match-item"><b>免抵退试算</b>应退 / 免抵 一键算出</div>
+          </div>
+          <div class="match-badge">双端匹配 · 防重复申报 · 退运自动负数冲减</div>
+        </div>
+      </div>
+    </article>
+
+  </div>
+</section>
+
+<!-- ============ 客户价值 ============ -->
+<section class="section values" aria-label="客户价值">
+  <div class="container">
+    <p class="kicker fx-up">客户价值</p>
+    <h2 class="h2" id="values-title">上线之后，变化看得见</h2>
+    <div class="values-grid">
+      <div class="value">
+        <h3><iconify-icon icon="solar:clock-circle-linear" aria-hidden="true"></iconify-icon>少招人不加班</h3>
+        <p>转单自动生成下游单据、需求量 BOM 自动算、到期日自动算、汇率自动拉，业务员从重复录入中解放。</p>
+      </div>
+      <div class="value">
+        <h3><iconify-icon icon="solar:wallet-money-linear" aria-hidden="true"></iconify-icon>资金看得住</h3>
+        <p>应收应付账龄实时呈现，到期前 7 天预警、逾期自动升级；账期、信用额度、审核锁定三重防线。</p>
+      </div>
+      <div class="value">
+        <h3><iconify-icon icon="solar:chart-square-linear" aria-hidden="true"></iconify-icon>利润算得准</h3>
+        <p>批次成本贯穿采购入库到发货出库，毛利钻取到每一笔发货，退货自动冲回。</p>
+      </div>
+      <div class="value">
+        <h3><iconify-icon icon="solar:box-linear" aria-hidden="true"></iconify-icon>货账对得上</h3>
+        <p>批次追溯一条时间线看到每批货的进出单据，盘点差异自动出盘盈亏，责任到单。</p>
+      </div>
+      <div class="value">
+        <h3><iconify-icon icon="solar:document-add-linear" aria-hidden="true"></iconify-icon>退税不丢钱</h3>
+        <p>进项发票自动归集、申报双端匹配防重复、退运负数自动冲减。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 三步上线 ============ -->
+<section class="section" id="start">
+  <div class="container">
+    <p class="kicker fx-up">怎么开始</p>
+    <h2 class="h2" id="start-title">三步，一周内上线</h2>
+    <div class="steps">
+      <div class="step">
+        <span class="step-no">STEP 1</span>
+        <h3>一键安装</h3>
+        <p>单文件数据库 + 一键安装脚本，不需要 DBA、不需要服务器集群，一台电脑就能跑。</p>
+        <div class="cmd">
+          <code>python launcher.py</code>
+          <button type="button" data-copy>复制</button>
+        </div>
+      </div>
+      <div class="step">
+        <span class="step-no">STEP 2</span>
+        <h3>导入演示数据</h3>
+        <p>内置纺织全流程演示数据一键导入，用默认账户 <code style="font-family:var(--mono)">admin</code> 登录即可开箱体验完整业务闭环。</p>
+      </div>
+      <div class="step">
+        <span class="step-no">STEP 3</span>
+        <h3>录入档案，跑通全流程</h3>
+        <p>从客户、供应商、产品、BOM 基础档案开始，用您真实的第一张订单走通「下单 → 分流 → 出货 → 开票 → 收款 → 退税」。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 功能矩阵 ============ -->
+<section class="section" id="matrix" style="padding-top:0">
+  <div class="container">
+    <p class="kicker fx-up">功能矩阵</p>
+    <h2 class="h2" id="matrix-title">九大模块，能力全开</h2>
+    <div class="matrix-wrap">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th scope="col">模块</th>
+            <th scope="col">流程管理</th>
+            <th scope="col">自动核算</th>
+            <th scope="col">反向操作</th>
+            <th scope="col">提醒预警</th>
+            <th scope="col">权限管控</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="m-name">销售管理<small>报价 / 订单 / 发货 / 开票 / 收款</small></td><td><span class="dot">●</span></td><td>开票生成应收、自动核销</td><td>退货 / 红冲 / 停售 / 变更</td><td>7 类事件提醒</td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">采购管理<small>转采购 / 订单 / 入库 / 发票 / 付款</small></td><td><span class="dot">●</span></td><td>BOM 展开需求、拆单、生成应付</td><td>退回 / 取消 / 多次部分红冲</td><td><span class="dot">●</span></td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">生产管理<small>派产 / 发料 / 完工 / 入库</small></td><td><span class="dot">●</span></td><td>成本按比例自动结转</td><td>反派产 / 取消发料 / 反退</td><td><span class="dot">●</span></td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">委外管理<small>工序拆单 / 认领原料 / 加工费</small></td><td><span class="dot">●</span></td><td>应领量 = BOM×(1+损耗)，FIFO 扣料</td><td>退回认领 / 反审核 / 删除回退</td><td><span class="dot">●</span></td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">库存管理<small>批次台账 / 收发存 / 盘点 / 追溯</small></td><td><span class="dot">●</span></td><td>批次成本快照、盘盈亏流水</td><td>退回 / 退数量 / 取消入库</td><td><span class="dot">●</span></td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">退税申报<small>免抵退 / 双端匹配 / 负数冲减</small></td><td><span class="dot">●</span></td><td>全公式自动计算</td><td>取消申报 / 取消退税</td><td><span class="dash">—</span></td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">驾驶舱<small>现金 / 账龄 / 毛利钻取</small></td><td><span class="dash">—</span></td><td>实时汇总</td><td><span class="dash">—</span></td><td>账期到期 / 逾期扫描</td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">系统管理<small>用户 / 角色 / AI / 提醒规则</small></td><td><span class="dot">●</span></td><td><span class="dash">—</span></td><td><span class="dash">—</span></td><td>规则可配置</td><td><span class="dot">●</span></td></tr>
+          <tr><td class="m-name">AI 助手 Matsu<small>对话式操作</small></td><td>查 + 做 + 教</td><td>与页面同一套校验</td><td>同一套回退</td><td><span class="dash">—</span></td><td>权限过滤 + 审计</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 对比 ============ -->
+<section class="section values" aria-label="差异化对比">
+  <div class="container">
+    <p class="kicker fx-up">差异化</p>
+    <h2 class="h2" id="compare-title">为什么选 MTS</h2>
+    <div class="compare-wrap">
+      <table class="compare">
+        <thead>
+          <tr><th scope="col">对比维度</th><th scope="col">大型 ERP</th><th scope="col">MTS</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>上线周期</td><td>数月起，需实施顾问</td><td>一周内，自助上线</td></tr>
+          <tr><td>外贸特有场景（三路分流 / 报关 / 免抵退）</td><td>需定制开发</td><td>原生内置</td></tr>
+          <tr><td>生产 + 委外 + 采购混合业态</td><td>支持，但重</td><td>订单行级三选一互斥分流</td></tr>
+          <tr><td>成本核算</td><td>强，配置复杂</td><td>批次级自动结转，零配置</td></tr>
+          <tr><td>AI 助手</td><td>附加模块另购</td><td>自带，权限感知 + 全程审计</td></tr>
+          <tr><td>使用成本</td><td>许可证 + 年维护费高</td><td>轻量一体，总拥有成本低</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:28px">
+      技术底子同样扎实：内置 7 大角色权限体系（每个接口都校验权限）、多币种 + 汇率自动获取、
+      预警规则全配置化、AI 大模型可插拔（DeepSeek / OpenAI / 兼容接口，密钥加密存储）、
+      <b>285 项后端测试 + 59 项端到端测试</b>兜底，敢升级、用得稳。
+    </p>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="section" id="faq">
+  <div class="container">
+    <p class="kicker fx-up">常见问题</p>
+    <h2 class="h2" id="faq-title">你可能想问</h2>
+    <div class="faq-list">
+      <details class="faq-item">
+        <summary>我们既有贸易买进卖出，又有委外加工和自产，管得了吗？</summary>
+        <p class="faq-a">这正是 MTS 的核心设计。销售订单每一行明细独立选择「转直采 / 转外发 / 转生产」，三条路线互斥锁定，同一张订单里贸易行、委外行、生产行可以混着开；下游采购单、委外单、生产单自动生成并串联，业务员零录入。</p>
+      </details>
+      <details class="faq-item">
+        <summary>不懂技术，装得起来吗？</summary>
+        <p class="faq-a">装得起来。单文件数据库 + 一键安装脚本（<code style="font-family:var(--mono)">python launcher.py</code>），不需要 DBA、不需要服务器集群，一台电脑就能跑；备份就是拷一个文件。多人局域网部署、数据迁移或二次开发可另行获取技术支持。</p>
+      </details>
+      <details class="faq-item">
+        <summary>AI 助手会不会越权操作？</summary>
+        <p class="faq-a">不会。AI 的能力严格跟随当前登录用户的权限——无权限的功能看不见也调不动；对话式操作与页面走同一套业务校验，每个写操作自动记入审计日志。</p>
+      </details>
+      <details class="faq-item">
+        <summary>成本核算要做很多配置吗？</summary>
+        <p class="faq-a">零配置。库存按批次自动记载数量与成本，出入库自动留快照流水，发货自动锁定批次成本，毛利榜逐笔算「收入 − 出库成本」，退货自动冲回。</p>
+      </details>
+      <details class="faq-item">
+        <summary>数据安全怎么保障？</summary>
+        <p class="faq-a">内置 7 大角色权限体系（管理员/销售/采购/生产/财务/库管/只读），每个接口都校验权限，库管看不到财务数据；收付款财务审核锁定防篡改，红冲全程留痕、禁改禁删。</p>
+      </details>
+      <details class="faq-item">
+        <summary>外币订单和汇率怎么办？</summary>
+        <p class="faq-a">支持多币种，外币订单自动折算本位币；汇率每天自动获取更新，也支持手工维护。</p>
+      </details>
+      <details class="faq-item">
+        <summary>现在在用 Excel，迁移麻烦吗？</summary>
+        <p class="faq-a">系统内置纺织全流程演示数据一键导入，可先完整体验再决策；正式使用时从基础档案（客户/供应商/产品/BOM/工序/HS 编码）录入起步，历史数据迁移可获取技术支持。</p>
+      </details>
+      <details class="faq-item">
+        <summary>退税功能现在能用吗？</summary>
+        <p class="faq-a">免抵退申报引擎能力已就绪：自动试算、进项发票自动归集、申报双端匹配防重复、退运负数自动冲减。退税界面在本版本（v2.8.0）暂未开放菜单入口，能力随版本开放。</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 最终 CTA ============ -->
+<section class="section final" aria-label="开始使用">
+  <div class="container">
+    <p class="kicker fx-up">现在就开始</p>
+    <h2 class="h2" id="final-title">别再让订单、库存、成本、退税<br>散落在 Excel 和人的脑子里</h2>
+    <div class="final-lines">
+      <div class="final-card">
+        <iconify-icon icon="solar:play-circle-linear" aria-hidden="true"></iconify-icon>
+        <div><b>立即体验</b><span>克隆代码 → <code style="font-family:var(--mono)">python launcher.py</code> → 打开 localhost:5173，admin 登录，演示数据一键导入</span></div>
+      </div>
+      <div class="final-card">
+        <iconify-icon icon="solar:eye-scan-linear" aria-hidden="true"></iconify-icon>
+        <div><b>预约演示</b><span>从您真实的一张订单开始，走一遍「下单 → 分流 → 出货 → 开票 → 收款 → 退税」全流程</span></div>
+      </div>
+      <div class="final-card">
+        <iconify-icon icon="solar:server-square-cloud-linear" aria-hidden="true"></iconify-icon>
+        <div><b>部署咨询</b><span>单机版开箱即用；多人局域网部署、数据迁移、二次开发提供技术支持</span></div>
+      </div>
+    </div>
+    <a class="btn btn-primary" href="#start">立即体验</a>
+    <p class="final-note">免抵退申报引擎能力已就绪，退税界面随版本开放 ｜ 本页信息以系统实际功能为准</p>
+  </div>
+</section>
+</main>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span><b style="color:var(--paper)">MTS 妈祖外贸管理系统</b> · Mazu Trade System v2.8.0</span>
+    <span>采购 · 销售 · 生产 · 库存 · 财务 · 退税，全链路数字化</span>
+  </div>
+</footer>
+
+<!-- 图标：Solar via Iconify（无 JS 时图标不渲染，文字承载全部语义） -->
+<script src="https://cdn.jsdelivr.net/npm/iconify-icon@2.3.0/dist/iconify-icon.min.js"></script>
+<!-- 动效：GSAP + Lenis（唯一平滑滚动引擎）。CDN 加载失败时页面保持静态完整。 -->
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.3.11/dist/lenis.min.js"></script>
+<script>
+(function(){
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var hasGsap = typeof window.gsap !== 'undefined' && typeof window.ScrollTrigger !== 'undefined';
+  var hasLenis = typeof window.Lenis !== 'undefined';
+
+  /* ---- 复制按钮（不依赖动效库） ---- */
+  document.querySelectorAll('[data-copy]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var code = btn.parentElement.querySelector('code');
+      var done = function(){ btn.textContent = '已复制'; setTimeout(function(){ btn.textContent = '复制'; }, 1800); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(code.textContent.trim()).then(done);
+      } else {
+        var r = document.createRange(); r.selectNodeContents(code);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        try { document.execCommand('copy'); done(); } catch(e){}
+        s.removeAllRanges();
+      }
+    });
+  });
+
+  /* ---- 平滑滚动 + 分节动效（仅完整环境启用） ---- */
+  if (reduced || !hasGsap) return;   // 无 JS / 降级环境：内容保持最终状态
+  document.documentElement.classList.add('fx');
+  gsap.registerPlugin(ScrollTrigger);
+
+  /* Lenis：唯一平滑滚动引擎，接入 GSAP ticker 与 ScrollTrigger */
+  var lenis = null;
+  if (hasLenis) {
+    lenis = new Lenis({ duration: 1.0, smoothWheel: true });
+    lenis.on('scroll', ScrollTrigger.update);
+    gsap.ticker.add(function(time){ lenis.raf(time * 1000); });
+    gsap.ticker.lagSmoothing(0);
+  }
+
+  /* 锚点平滑滚动（原生 scroll-behavior 之外由 Lenis 接管） */
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){
+    a.addEventListener('click', function(e){
+      var id = a.getAttribute('href');
+      if (id.length < 2) return;
+      var target = document.querySelector(id);
+      if (!target) return;
+      e.preventDefault();
+      if (lenis) { lenis.scrollTo(target, { offset: -72 }); }
+      else { target.scrollIntoView({ behavior: 'smooth' }); }
+    });
+  });
+
+  /* 标题按词拆分（保留可访问名称，装饰 span 对读屏隐藏） */
+  function splitWords(el){
+    var text = el.textContent;
+    el.setAttribute('aria-label', text);
+    var walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    var nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    nodes.forEach(function(node){
+      var frag = document.createDocumentFragment();
+      node.textContent.split(/(\s+)/).forEach(function(part){
+        if (!part) return;
+        var span = document.createElement('span');
+        span.textContent = part;
+        span.setAttribute('aria-hidden', 'true');
+        span.style.display = 'inline-block';
+        frag.appendChild(span);
+      });
+      node.parentNode.replaceChild(frag, node);
+    });
+    return el.querySelectorAll('span[aria-hidden]');
+  }
+
+  /* Hero 入场序列：导航可读前提下，标题 → 链条 → 副标 → CTA → 证明 → 分流图 */
+  var heroWords = splitWords(document.getElementById('hero-title'));
+  var tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+  tl.fromTo(heroWords, { yPercent: 60, opacity: 0 }, { yPercent: 0, opacity: 1, duration: .7, stagger: .06 })
+    .fromTo('.chain',      { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: .5 }, '-=.35')
+    .fromTo('.hero-sub',   { y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: .5 }, '-=.3')
+    .fromTo('.hero-actions',{ y: 18, opacity: 0 }, { y: 0, opacity: 1, duration: .5 }, '-=.3')
+    .fromTo('.hero-proof', { y: 14, opacity: 0 }, { y: 0, opacity: 1, duration: .45 }, '-=.3')
+    .fromTo('.flow-order', { y: 24, opacity: 0 }, { y: 0, opacity: 1, duration: .55 }, '-=.4')
+    .to('.flow-svg path',  { strokeDashoffset: 0, duration: .6, stagger: .12, ease: 'power2.inOut' }, '-=.15')
+    .fromTo('.route',      { y: 20, opacity: 0 }, { y: 0, opacity: 1, duration: .45, stagger: .1 }, '-=.4')
+    .fromTo('.flow-note',  { opacity: 0 }, { opacity: 1, duration: .4 }, '-=.2');
+
+  /* 分流图指针联动：悬停路线高亮（可访问性：仅视觉增益，焦点态同样生效） */
+  var routes = document.querySelectorAll('[data-route]');
+  function activate(route){
+    routes.forEach(function(r){ r.setAttribute('data-active', String(r === route)); });
+  }
+  routes.forEach(function(r){
+    r.addEventListener('pointerenter', function(){ activate(r); });
+    r.addEventListener('focus', function(){ activate(r); }, true);
+  });
+
+  /* 其余分节：标题按词浮现，内容整体上浮，一次性触发 */
+  document.querySelectorAll('.h2, .pain-quote').forEach(function(head){
+    var words = splitWords(head);
+    gsap.fromTo(words, { yPercent: 70, opacity: 0 }, {
+      yPercent: 0, opacity: 1, duration: .6, stagger: .025, ease: 'power3.out',
+      scrollTrigger: { trigger: head, start: 'top 82%', once: true }
+    });
+  });
+  document.querySelectorAll('.fx-up, .point, .value, .step, .final-card').forEach(function(el){
+    gsap.fromTo(el, { y: 28, opacity: 0 }, {
+      y: 0, opacity: 1, duration: .7, ease: 'power3.out',
+      scrollTrigger: { trigger: el, start: 'top 86%', once: true }
+    });
+  });
+  /* 表格容器整体浮现（不做逐行动画，保持克制） */
+  gsap.fromTo('.matrix-wrap, .compare-wrap', { y: 32, opacity: 0 }, {
+    y: 0, opacity: 1, duration: .8, ease: 'power3.out',
+    scrollTrigger: { trigger: '.matrix-wrap', start: 'top 85%', once: true }
+  });
+})();
+</script>
+</body>
+</html>

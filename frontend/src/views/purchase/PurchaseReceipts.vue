@@ -28,7 +28,7 @@
     </el-card>
 
     <!-- ========== 入库单列表（上） ========== -->
-    <el-card style="flex: none">
+    <el-card ref="listCardRef" :body-style="cardBodyStyle" :style="{ height: topHeight + 'px', flex: 'none', display: 'flex', flexDirection: 'column', overflow: 'hidden' }">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>采购入库单</span>
@@ -36,7 +36,7 @@
           <el-button size="small" @click="openOrderSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="orderTableRef" class="drag-table-receipts" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row @current-change="onReceiptSelect" :height="topHeight - 92 + 'px'">
+      <el-table ref="orderTableRef" class="drag-table-receipts" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" highlight-current-row @current-change="onReceiptSelect" :height="orderTableHeight + 'px'">
         <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -77,7 +77,7 @@
     </div>
 
     <!-- ========== 收货明细（跟随选中入库单，占剩余高度） ========== -->
-    <el-card style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
+    <el-card ref="itemCardRef" :body-style="cardBodyStyle" style="flex: 1; min-height: 140px; display: flex; flexDirection: column; overflow: hidden">
       <template #header>
         <div style="display: flex; align-items: center">
           <span>收货明细</span>
@@ -85,7 +85,7 @@
           <el-button size="small" @click="openItemSettingsRaw">⚙ 列设置</el-button>
         </div>
       </template>
-      <el-table ref="itemTableRef" class="drag-table-receipt-items" :key="itemColumnVersion" :data="receiptDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方入库单行查看明细" show-summary :summary-method="itemSummary" :height="'max(calc(100vh - ' + (topHeight + 264) + 'px), 140px)'">
+      <el-table ref="itemTableRef" class="drag-table-receipt-items" :key="itemColumnVersion" :data="receiptDetailList" v-loading="itemLoading" stripe border size="small" empty-text="点击上方入库单行查看明细" show-summary :summary-method="itemSummary" :height="orderItemHeight + 'px'">
         <el-table-column v-for="col in visibleItemColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :sortable="col.sortable" :align="col.align">
           <template #header>
             <el-dropdown trigger="contextmenu" :hide-on-click="false">
@@ -191,9 +191,7 @@ import { useColumnDrag } from '../../composables/useColumnDrag'
 import { useColumnAutoFit } from '../../composables/useColumnAutoFit'
 import { useColumnCustomize } from '../../composables/useColumnCustomize'
 import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
-import { purchaseApi } from '../../api/business'
-import { foundationApi } from '../../api/foundation'
-import request from '../../api/request'
+import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
 
 const route = useRoute()
 const { fitTable } = useColumnAutoFit()
@@ -270,6 +268,11 @@ function resetSearch() {
 // ========== 收货明细（跟随选中入库单） ==========
 const orderTableRef = ref(null)
 const itemTableRef = ref(null)
+const listCardRef = ref(null)
+const itemCardRef = ref(null)
+const orderTableHeight = ref(400)
+const orderItemHeight = ref(400)
+const cardBodyStyle = { flex: '1', minHeight: '0', display: 'flex', flexDirection: 'column', padding: '8px 16px' }
 const itemLoading = ref(false)
 const selectedReceipt = ref(null)
 const receiptDetailList = ref([])
@@ -284,6 +287,7 @@ function onSplitterDown(e) {
   const onMove = (ev) => {
     const h = startH + (ev.clientY - startY)
     topHeight.value = Math.min(Math.max(h, 140), window.innerHeight - 320)
+    nextTick(calcListHeight)
     localStorage.setItem(SPLIT_KEY, String(topHeight.value))
   }
   const onUp = () => {
@@ -297,6 +301,28 @@ function onSplitterDown(e) {
   document.body.style.cursor = 'row-resize'
   document.body.style.userSelect = 'none'
   e.preventDefault()
+}
+
+function _calcCardTableHeight(card, pagElSelector) {
+  if (!card) return 400
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  const bodyRect = body ? body.getBoundingClientRect() : el.getBoundingClientRect()
+  const pagEl = pagElSelector ? el.querySelector(pagElSelector) : null
+  const pagH = pagEl ? pagEl.getBoundingClientRect().height : 0
+  return Math.max(140, Math.round(bodyRect.height - pagH))
+}
+
+function calcListHeight() {
+  orderTableHeight.value = _calcCardTableHeight(listCardRef.value, '.el-pagination')
+}
+
+function calcItemHeight() {
+  const card = itemCardRef.value
+  if (!card) return
+  const el = card.$el || card
+  const body = el.querySelector('.el-card__body')
+  orderItemHeight.value = Math.max(140, Math.round((body || el).getBoundingClientRect().height - 16))
 }
 
 // ========== 合计栏 ==========
@@ -328,9 +354,9 @@ async function loadReceiptDetail(receiptId) {
   if (!receiptId) { receiptDetailList.value = []; return }
   itemLoading.value = true
   try {
-    const res = await request.get(`/purchase/receipts/${receiptId}`)
+    const res = await purchaseApi.receipts.get(receiptId)
     receiptDetailList.value = res.items || []
-  } catch {} finally {
+  } catch (e) {} finally {
     itemLoading.value = false
     nextTick(() => {
       initItemColumnDrag()
@@ -408,14 +434,14 @@ async function loadOrders() {
     orderList.value = (res.items || res.list || res.data || []).filter((o) =>
       ['已审核', '部分入库', '待开票'].includes(o.status) && (o.item_count || 0) > 0
     )
-  } catch {}
+  } catch (e) {}
 }
 
 async function loadWarehouses() {
   try {
     const res = await foundationApi.warehouses.list({ page: 1, pageSize: 100 })
     warehouseList.value = res.items || res.list || res.data || []
-  } catch {}
+  } catch (e) {}
 }
 
 async function fetchData() {
@@ -492,7 +518,7 @@ async function handleCancel(row) {
     '提示', { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '再想想' }
   )
   try {
-    await request.delete(`/purchase/receipts/${row.id}`)
+    await purchaseApi.receipts.delete(row.id)
     ElMessage.success('入库已取消，库存已回滚')
     fetchData()
   } catch (e) {
@@ -512,7 +538,7 @@ onMounted(async () => {
   if (orderId) {
     autoFillMode.value = true
     try {
-      const res = await request.get('/purchase/orders/' + orderId)
+      const res = await purchaseApi.orders.get(orderId)
       if (res && res.items) {
         const batchNo = 'BATCH-' + Date.now()
         // 直接赋值，不用 openDialog（避免重置 items）
@@ -541,6 +567,8 @@ onMounted(async () => {
 
   // ===== 模式2：手工"新建入库" =====
   // 纯空表单，用户自己选订单触发 onOrderChange
+  nextTick(() => { calcListHeight(); calcItemHeight() })
+  window.addEventListener('resize', () => { calcListHeight(); calcItemHeight() })
 })
 
 // 列顺序变化时重同步（表头拖拽 + 弹窗排序都会触发）

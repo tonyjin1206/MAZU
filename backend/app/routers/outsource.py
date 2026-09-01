@@ -12,10 +12,23 @@ from app.models.production import OutsourceOrder, OutsourceMaterial, OsClaimMate
 from app.models.purchase import AccountsPayable
 from app.models.sales import SalesOrder, SalesOrderItem
 from app.models.foundation import Material, BomItem
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission, require_any_permission
 from app.utils.batch_no import generate_doc_no
 
 router = APIRouter()
+
+# ==================== 读端点授权域（BUG-L4-02 同模式：本域 + 业务引用域） ====================
+# 委外归口转外发（v2.8.0）：本域 = 委外订单/销售订单转委外；
+# 采购侧办理委外（SO_TO_OUTSOURCE 收件人=purchase_manager）→ 含 purchase 域；
+# 销售侧查看明细行状态 → 含 sales:orders。
+OUTSOURCE_READ_PERMS = (
+    "menu:outsource:orders", "menu:outsource:from-sales",
+    "menu:purchase:orders", "menu:purchase:from-sales",
+    "menu:sales:orders",
+)
+SALES_TO_OUTSOURCE_READ_PERMS = ("menu:outsource:from-sales", "menu:outsource:orders", "menu:sales:orders")
+# 写端点：委外订单域（订单+转外发页）
+OUTSOURCE_WRITE_PERMS = ("menu:outsource:orders", "menu:outsource:from-sales")
 
 
 def _os_materials(db: Session, os_order_id: int):
@@ -50,7 +63,7 @@ def list_orders(
     status: str = Query("", description="状态筛选"),
     keyword: str = Query("", description="单号/产品搜索"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*OUTSOURCE_READ_PERMS)),
 ):
     """委外订单列表"""
     query = db.query(OutsourceOrder)
@@ -108,7 +121,7 @@ def list_orders(
 
 
 @router.get("/orders/{order_id}", tags=["委外管理"])
-def get_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_order(order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_READ_PERMS))):
     os = db.query(OutsourceOrder).filter(OutsourceOrder.id == order_id).first()
     if not os:
         raise HTTPException(404, "委外订单不存在")
@@ -143,7 +156,7 @@ def get_order(order_id: int, db: Session = Depends(get_db), current_user: User =
 @router.put("/orders/{order_id}", tags=["委外管理"])
 def update_order(
     order_id: int, data: dict,
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS)),
 ):
     """维护委外订单（待确认状态：委外商/加工单价/交期/备注）"""
     os = db.query(OutsourceOrder).filter(OutsourceOrder.id == order_id).first()
@@ -179,7 +192,7 @@ def _is_last_process(db: Session, os_order) -> bool:
 
 @router.post("/orders/{order_id}/approve", tags=["委外管理"])
 def approve_order(
-    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS)),
 ):
     """审核委外订单 → 生成加工费应付账款"""
     os = db.query(OutsourceOrder).filter(OutsourceOrder.id == order_id).first()
@@ -230,7 +243,7 @@ def approve_order(
 
 @router.post("/orders/{order_id}/unapprove", tags=["委外管理"])
 def unapprove_order(
-    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS)),
 ):
     """取消审核委外订单 → 回「待确认」（有下游应收/入库则拒绝）"""
     os = db.query(OutsourceOrder).filter(OutsourceOrder.id == order_id).first()
@@ -263,7 +276,7 @@ def unapprove_order(
 
 @router.delete("/orders/{order_id}", tags=["委外管理"])
 def delete_order(
-    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    order_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS)),
 ):
     """删除委外订单（仅待确认状态；已认领材料先退回原批次，单据链闭环；删除后销售明细行回到未生产，可重新操作）"""
     os = db.query(OutsourceOrder).filter(OutsourceOrder.id == order_id).first()
@@ -360,7 +373,7 @@ def _so_outsource_status(db: Session, order):
 def list_sales_to_outsource(
     page: int = Query(1, ge=1), page_size: int = Query(100, ge=1, le=200),
     keyword: str = Query(""), date_from: str = Query(""), date_to: str = Query(""),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*SALES_TO_OUTSOURCE_READ_PERMS)),
 ):
     """销售订单转委外：已「转外发」的销售明细行列表（按行显示产品+批次号）+ 委外状态"""
     from app.models.sales import SalesOrder, SalesOrderItem
@@ -424,7 +437,7 @@ def list_sales_to_outsource(
 
 
 @router.post("/sales-to-outsource/{item_id}/return", tags=["委外管理"])
-def return_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def return_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS))):
     """退回销售明细行关联的委外订单（销售订单明细变更前必须先退委外单）
     待确认的直接删除；已审核/已完工的先取消审核再删除；已入库(有下游)则拒绝"""
     from app.models.sales import SalesOrderItem
@@ -448,7 +461,7 @@ def return_sales_to_outsource(item_id: int, db: Session = Depends(get_db), curre
 
 
 @router.post("/sales-to-outsource/{item_id}/complete", tags=["委外管理"])
-def complete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def complete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS))):
     """人工确认委外完成（业务员判断数量足够）"""
     from app.models.sales import SalesOrderItem
     si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
@@ -460,7 +473,7 @@ def complete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), cur
 
 
 @router.post("/sales-to-outsource/{item_id}/uncomplete", tags=["委外管理"])
-def uncomplete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def uncomplete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS))):
     """取消委外完成（业务员改主意，可继续追加委外）"""
     from app.models.sales import SalesOrderItem
     si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
@@ -472,7 +485,7 @@ def uncomplete_sales_to_outsource(item_id: int, db: Session = Depends(get_db), c
 
 
 @router.get("/sales-to-outsource/{item_id}", tags=["委外管理"])
-def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*SALES_TO_OUTSOURCE_READ_PERMS))):
     """销售明细行转委外详情（订单级供料方式）：产品行 + 工序卡片（加工商/单价/数量/金额） + 该行已认领材料
     工序不再挂 BOM 材料/认领；BOM 材料清单与认领记录走 GET /outsource/claims 接口（认领弹窗用）"""
     from app.models.sales import SalesOrderItem
@@ -560,7 +573,7 @@ def get_sales_to_outsource(item_id: int, db: Session = Depends(get_db), current_
 
 
 @router.post("/orders/from-sales", tags=["委外管理"])
-def create_outsource_from_sales(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_outsource_from_sales(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS))):
     """销售订单转委外：明细行批量生成委外订单（草稿，待确认）
     data: { sales_order_id: int, rows: [{sales_item_id, quantity}] }
     """
@@ -643,7 +656,7 @@ def _claim_rows(db: Session, sales_item_id: int):
 @router.get("/claims", tags=["委外管理"])
 def list_claims(
     sales_item_id: int = Query(...),
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS)),
 ):
     """订单级认领数据：BOM 材料清单（认领弹窗用）+ 该行已认领记录"""
     from app.models.sales import SalesOrderItem
@@ -676,7 +689,7 @@ def list_claims(
 
 
 @router.post("/claims", tags=["委外管理"])
-def create_claims(data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def create_claims(data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS))):
     """订单级材料认领：只管总发料
     data: { sales_item_id, supply_type?: '己方提供', materials: [{material_id, batch_no, quantity}], loss_pct?: 10 }
     校验: 供料方式==己方提供(否则400)、材料在BOM内、每种BOM材料认领量(含历史累计) ≥ 销售数量×BOM用量×(1+损耗%)、
@@ -814,7 +827,7 @@ def create_claims(data: dict, db: Session = Depends(get_db), current_user: User 
 
 
 @router.delete("/claims/{claim_id}", tags=["委外管理"])
-def delete_claim(claim_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_claim(claim_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS))):
     """删除订单级认领记录：材料退回原批次（加回库存 + 认领退回流水）"""
     c = db.query(OsClaimMaterial).filter(OsClaimMaterial.id == claim_id).first()
     if not c:
@@ -862,7 +875,7 @@ def delete_claim(claim_id: int, db: Session = Depends(get_db), current_user: Use
 
 @router.post("/orders/from-sales-process", tags=["委外管理"])
 def create_outsource_from_sales_process(
-    data: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+    data: dict, db: Session = Depends(get_db), current_user: User = Depends(require_any_permission(*OUTSOURCE_WRITE_PERMS)),
 ):
     """销售订单转委外（订单级简化）：每道工序生成一张委外订单
     data: { sales_order_id: int, sales_item_id: int, supply_type?: '己方提供'/'包工包料', loss_pct?: 10,

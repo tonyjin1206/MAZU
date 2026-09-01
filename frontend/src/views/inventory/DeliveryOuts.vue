@@ -1,6 +1,7 @@
 <template>
-  <div style="height: calc(100vh - 92px); display: flex; flex-direction: column; overflow: hidden">
+  <TablePageLayout>
     <!-- ========== 搜索区 ========== -->
+    <template #search>
     <el-card style="margin-bottom: 8px; flex: none">
       <template #header>
         <div style="display: flex; justify-content: flex-end; gap: 8px">
@@ -21,36 +22,30 @@
         </el-form-item>
       </el-form>
     </el-card>
+    </template>
 
     <!-- ========== 成品出库列表 ========== -->
-    <el-card style="flex: 1; min-height: 0; display: flex; flexDirection: column; overflow: hidden">
-      <template #header>
-        <div style="display: flex; align-items: center">
-          <span>成品出库（业务员通知发货后，由库管选择批次出库）</span>
-          <span style="flex: 1" />
-        </div>
-      </template>
-      <el-table :data="dataList" v-loading="loading" stripe border size="small" :height="'calc(100vh - 180px)'">
-        <el-table-column prop="delivery_no" label="SD单号" width="150" sortable />
-        <el-table-column prop="order_no" label="销售订单号" width="140" sortable />
-        <el-table-column prop="customer_name" label="客户名称" minWidth="110" sortable />
-        <el-table-column prop="product_code" label="产品编码" width="110" sortable />
-        <el-table-column prop="product_name" label="产品名称" minWidth="130" sortable />
-        <el-table-column prop="notify_qty" label="通知数量" width="95" align="right" sortable>
-          <template #default="{ row }">{{ $fq(row.notify_qty) }}</template>
-        </el-table-column>
-        <el-table-column prop="delivered_qty" label="已出库" width="90" align="right" sortable>
-          <template #default="{ row }"><span>{{ $fq(row.delivered_qty) }}</span></template>
-        </el-table-column>
-        <el-table-column prop="unout_qty" label="未出库" width="90" align="right" sortable>
-          <template #default="{ row }"><span :style="row.unout_qty > 0 ? '' : 'color:#c0c4cc'">{{ $fq(row.unout_qty) }}</span></template>
-        </el-table-column>
-        <el-table-column prop="amount" label="金额" width="110" align="right" sortable>
-          <template #default="{ row }">{{ $fm(row.amount) }}</template>
-        </el-table-column>
-        <el-table-column prop="notify_date" label="通知日期" width="105" sortable />
-        <el-table-column prop="status" label="状态" width="95" align="center" sortable>
-          <template #default="{ row }">
+    <template #header>
+      <div style="display: flex; align-items: center">
+        <span>成品出库（业务员通知发货后，由库管选择批次出库）</span>
+        <span style="flex: 1" />
+        <el-button size="small" @click="openColumnSettings">⚙ 列设置</el-button>
+      </div>
+    </template>
+    <template #default="{ height }">
+      <el-table ref="tableRef" :key="columnVersion" :data="dataList" v-loading="loading" stripe border size="small" :height="height">
+        <el-table-column v-for="col in visibleColumns" :key="col.prop" :prop="col.prop" :label="col.label" :width="col.width" :min-width="col.minWidth" :align="col.align" :sortable="col.sortable">
+          <template #header>
+            <span class="col-header-wrap">
+              <span class="col-drag-handle" title="拖动调整列顺序">⠿</span>
+              {{ col.label }}
+            </span>
+          </template>
+          <template v-if="col.prop === 'notify_qty'" #default="{ row }">{{ $fq(row.notify_qty) }}</template>
+          <template v-else-if="col.prop === 'delivered_qty'" #default="{ row }"><span>{{ $fq(row.delivered_qty) }}</span></template>
+          <template v-else-if="col.prop === 'unout_qty'" #default="{ row }"><span :style="row.unout_qty > 0 ? '' : 'color:#c0c4cc'">{{ $fq(row.unout_qty) }}</span></template>
+          <template v-else-if="col.prop === 'amount'" #default="{ row }">{{ $fm(row.amount) }}</template>
+          <template v-else-if="col.prop === 'status'" #default="{ row }">
             <el-tag :type="statusType(row.status)" size="small">{{ row.status }}</el-tag>
           </template>
         </el-table-column>
@@ -62,10 +57,13 @@
           </template>
         </el-table-column>
       </el-table>
+    </template>
+    <template #footer>
       <el-pagination v-model:current-page="queryParams.page" v-model:page-size="queryParams.page_size" :total="total" :page-sizes="[20, 50, 100]" layout="total, sizes, prev, pager, next" @change="fetchData" style="margin-top: 6px; flex: none" />
-    </el-card>
+    </template>
 
     <!-- ========== 出库弹窗 ========== -->
+    <template #dialog>
     <el-dialog v-model="issueVisible" title="库管出库" width="560px" destroy-on-close>
       <el-form :model="issueForm" label-width="100px">
         <el-form-item label="SD单号"><span>{{ issueForm.delivery_no }}</span></el-form-item>
@@ -129,16 +127,41 @@
         <el-button type="warning" :loading="issueReturnSubmitting" :disabled="!issueReturnForm.batch_no" @click="handleIssueReturnSubmit">确认退回</el-button>
       </template>
     </el-dialog>
-  </div>
+    <ColumnSettingsDialog v-model:visible="settingsVisible" :columns="settingsList" @confirm="confirmSettings" />
+    </template>
+  </TablePageLayout>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import request from '../../api/request'
+import request from '../../api/request'; import { inventoryApi, purchaseApi, salesApi } from '../../api/business'; import { foundationApi } from '../../api/foundation'
+import TablePageLayout from '../../components/TablePageLayout.vue'
+import { useColumnDrag } from '../../composables/useColumnDrag'
+import { useColumnCustomize } from '../../composables/useColumnCustomize'
+import ColumnSettingsDialog from '../../components/ColumnSettingsDialog.vue'
+
+// ===== 列配置（可拖拽排序 + 显隐）=====
+const STORAGE_KEY = 'mazu_delivery_outs_columns'
+const defaultColumns = [
+  { prop: 'delivery_no', label: 'SD单号', width: 150, sortable: true },
+  { prop: 'order_no', label: '销售订单号', width: 140, sortable: true },
+  { prop: 'customer_name', label: '客户名称', minWidth: 110, sortable: true },
+  { prop: 'product_code', label: '产品编码', width: 110, sortable: true },
+  { prop: 'product_name', label: '产品名称', minWidth: 130, sortable: true },
+  { prop: 'notify_qty', label: '通知数量', width: 95, align: 'right', sortable: true },
+  { prop: 'delivered_qty', label: '已出库', width: 90, align: 'right', sortable: true },
+  { prop: 'unout_qty', label: '未出库', width: 90, align: 'right', sortable: true },
+  { prop: 'amount', label: '金额', width: 110, align: 'right', sortable: true },
+  { prop: 'notify_date', label: '通知日期', width: 105, sortable: true },
+  { prop: 'status', label: '状态', width: 95, align: 'center', sortable: true },
+]
+const { columns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY)
+const { visibleColumns, allColumns, toggleColumn, initColumnVisible } = useColumnCustomize(columns, STORAGE_KEY)
 
 const dataList = ref([])
 const loading = ref(false)
+const tableRef = ref(null)
 const total = ref(0)
 const queryParams = reactive({ page: 1, page_size: 20 })
 const searchForm = reactive({ keyword: '', status: '' })
@@ -172,7 +195,7 @@ async function fetchData() {
     const params = { page: queryParams.page, page_size: queryParams.page_size }
     if (searchForm.keyword) params.keyword = searchForm.keyword
     if (searchForm.status) params.status = searchForm.status
-    const res = await request.get('/sales/deliveries/outs', { params })
+    const res = await salesApi.deliveries.outs(params)
     dataList.value = res.items || []
     total.value = res.total || 0
   } catch (e) { ElMessage.error(e.response?.data?.detail || '加载失败') } finally { loading.value = false }
@@ -188,9 +211,9 @@ async function openIssueDialog(row) {
   issueMax.value = Math.max(1, row.unout_qty || 1)
   issueBatchList.value = []
   try {
-    const res = await request.get('/inventory/available-batches', { params: { product_id: row.product_id, order_id: null } })
+    const res = await inventoryApi.availableBatches({ product_id: row.product_id, order_id: null })
     issueBatchList.value = res.items || []
-  } catch { issueBatchList.value = [] }
+  } catch (e) { issueBatchList.value = [] }
   issueVisible.value = true
 }
 
@@ -206,7 +229,7 @@ async function handleIssueSubmit() {
   if (!qty || qty <= 0 || qty > issueForm.max_issue) { ElMessage.warning(`请输入 1~${issueForm.max_issue} 的出库数量`); return }
   issueSubmitting.value = true
   try {
-    await request.post(`/sales/deliveries/${issueForm.id}/issue`, {
+    await salesApi.deliveries.issue(issueForm.id, {
       batch_no: issueForm.batch_no,
       quantity: qty,
       issue_date: issueForm.issue_date,
@@ -250,7 +273,7 @@ async function handleIssueReturnSubmit() {
   if (!qty || qty <= 0 || qty > issueReturnMax.value) { ElMessage.warning(`请输入 1~${issueReturnMax.value} 的退回数量`); return }
   issueReturnSubmitting.value = true
   try {
-    await request.post(`/sales/deliveries/${issueReturnForm.id}/issue-return`, {
+    await salesApi.deliveries.issueReturn(issueReturnForm.id, {
       batch_no: issueReturnForm.batch_no,
       quantity: qty,
       remark: issueReturnForm.remark,
@@ -261,5 +284,7 @@ async function handleIssueReturnSubmit() {
   } catch (e) { ElMessage.error(e.response?.data?.detail || '退回失败') } finally { issueReturnSubmitting.value = false }
 }
 
-onMounted(() => { fetchData() })
+onMounted(() => {
+  initColumnVisible(); initColumnDrag(); fetchData()
+})
 </script>

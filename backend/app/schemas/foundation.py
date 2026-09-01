@@ -1,7 +1,8 @@
 """基础档案 Schemas"""
 
+import re
 from datetime import date, datetime
-from pydantic import BaseModel, Field, model_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
 
 # ==================== 材料 ====================
@@ -366,6 +367,15 @@ class CurrencyCreate(BaseModel):
     symbol: str = ""
     is_base: int = 0
 
+    @field_validator("code")
+    @classmethod
+    def validate_currency_code(cls, v: str) -> str:
+        """币种代码校验：2-8 位字母/数字（ISO 4217 风格），防止混入拼接脏数据"""
+        code = (v or "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{2,8}", code):
+            raise ValueError("币种代码须为 2-8 位字母/数字（如 CNY/USD/EUR）")
+        return code
+
 
 class CurrencyOut(BaseModel):
     id: int
@@ -533,8 +543,7 @@ class SystemParamOut(BaseModel):
     remark: str = ""
     is_active: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class SystemParamOptionOut(BaseModel):

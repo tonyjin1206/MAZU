@@ -46,10 +46,12 @@ def setup_db():
         conn.execute(text("PRAGMA foreign_keys=ON"))
         conn.commit()
     from app.main import _seed_rbac, _seed_currencies
+    from app.services.reminder import seed_reminder_rules
     db = SessionLocal()
     try:
         _seed_currencies(db)
         _seed_rbac(db)
+        seed_reminder_rules(db)
     finally:
         db.close()
     yield

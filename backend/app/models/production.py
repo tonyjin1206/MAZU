@@ -1,4 +1,4 @@
-"""生产与委外模块模型 — 生产订单、物料清单、工艺路线、发料、完工入库"""
+"""生产（自产）与委外订单模型 — 生产订单、物料清单、工艺路线、发料、完工入库；委外订单归口 outsource 路线"""
 
 from datetime import date, datetime
 from sqlalchemy import (
@@ -9,7 +9,7 @@ from app.database import Base
 
 
 class ProductionOrder(Base):
-    """生产订单"""
+    """生产订单（纯自产）"""
     __tablename__ = "mo_production"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -22,8 +22,10 @@ class ProductionOrder(Base):
     start_date = Column(Date, comment="计划开始日")
     due_date = Column(Date, comment="计划完成日")
     status = Column(String(16), default="待确认", comment="状态: 待确认/待排产/已排产/生产中/已完成/部分入库/已入库/待采购/采购中/已关闭")
-    production_type = Column(String(16), comment="备货方式: 自产/委外/外购")
-    requisition_id = Column(Integer, ForeignKey("po_requisition.id"), comment="外购时关联的采购需求")
+    production_type = Column(String(16), comment="备货方式: 自产/外购")
+    # 普通 Integer（不建 FK）：与 po_requisition.production_order_id 互为引用会形成表级循环，
+    # 导致 SQLAlchemy sorted_tables 无法排序（启动/测试告警）；业务上仅为 ID 关联，无 relationship 依赖
+    requisition_id = Column(Integer, comment="外购时关联的采购需求")
     total_material_cost = Column(Float, default=0, comment="物料成本合计(全部发出)")
     total_process_cost = Column(Float, default=0, comment="加工费合计(全部完工)")
     received_qty = Column(Float, default=0, comment="已入库数量")
@@ -58,14 +60,13 @@ class ProductionMaterial(Base):
 
 
 class ProductionProcess(Base):
-    """生产订单工艺路线（有序工序清单，替代旧委外工单）"""
+    """生产订单工艺路线（有序工序清单，纯自产）"""
     __tablename__ = "mo_production_process"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     production_id = Column(Integer, ForeignKey("mo_production.id"), nullable=False)
     process_id = Column(Integer, ForeignKey("fd_process.id"), nullable=False)
     seq = Column(Integer, nullable=False, default=0, comment="工序序号")
-    outsourcer_id = Column(Integer, ForeignKey("fd_supplier.id"), comment="委外商(供应商,空=自产)")
     unit_price = Column(Float, default=0, comment="加工单价")
     process_qty = Column(Float, default=0, comment="加工数量(默认=订单数量)")
     process_amount = Column(Float, default=0, comment="加工费金额(=process_qty*unit_price)")
@@ -73,7 +74,6 @@ class ProductionProcess(Base):
 
     production = relationship("ProductionOrder", back_populates="processes")
     process = relationship("Process")
-    outsourcer = relationship("Supplier")
 
 
 class ProductionReceipt(Base):
@@ -195,7 +195,7 @@ class OutsourcingOrder(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     outsource_no = Column(String(64), unique=True, nullable=False, comment="委外单号: OS-YYYYMMDD-NNN")
     production_id = Column(Integer, ForeignKey("mo_production.id"), nullable=False, comment="关联生产订单")
-    outsourcer_id = Column(Integer, ForeignKey("fd_outsourcer.id"), nullable=False, comment="委外商")
+    outsourcer_id = Column(Integer, ForeignKey("fd_supplier.id"), nullable=False, comment="委外商(供应商)")
     product_id = Column(Integer, ForeignKey("fd_product.id"), nullable=False)
     quantity = Column(Float, nullable=False, comment="加工数量")
     unit_price = Column(Float, default=0, comment="加工单价")

@@ -89,7 +89,7 @@
       <div style="flex: 1; min-height: 0; overflow: auto">
       <el-timeline>
         <el-timeline-item v-for="t in traceData" :key="t.id" :timestamp="t.date" :color="t.quantity > 0 ? '#67c23a' : '#e6a23c'">
-          {{ { purchase_in: '采购入库', production_in: '完工入库', sale_out: '销售出库', outsource_out: '委外发料' }[t.type] || t.type }}
+          {{ { purchase_in: '采购入库', production_in: '完工入库', sale_out: '销售出库' }[t.type] || t.type }}
           数量: {{ t.quantity > 0 ? '+' : '' }}{{ t.quantity }}
           <span style="color: #909399; margin-left: 8px">单据: {{ t.doc_type }} {{ t.doc_no }}</span>
         </el-timeline-item>
@@ -170,7 +170,7 @@ watch(columnVersion, () => {
 
 onMounted(async () => {
   initColumnVisible()
-  try { warehouseList.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch {}
+  try { warehouseList.value = (await foundationApi.warehouses.list({ page_size: 200 })).items || [] } catch (e) {}
 })
 
 function getBatchSummary({ columns, data }) {

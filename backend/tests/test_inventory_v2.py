@@ -43,7 +43,7 @@ class TestInventoryV2:
         api = self._api
         n = f"{990000 + int(tag[1:]):06d}"  # A1→990001 ... A6→990006（大数字段，避开自动编码 000001 起）
         cny = api(client, "POST", "/api/foundation/currencies",
-                  {"code": f"CNY{n}", "name": "人民币", "symbol": "¥", "is_base": 1}, h)
+                  {"code": f"CN{n}", "name": "人民币", "symbol": "¥", "is_base": 1}, h)
         wh_rm = api(client, "POST", "/api/foundation/warehouses",
                     {"code": f"RM{n}", "name": "原料仓", "wh_type": "原料仓",
                      "address": "浙江省绍兴市柯桥区轻纺城大道88号", "manager": "王建国"}, h)["id"]
@@ -113,7 +113,7 @@ class TestInventoryV2:
         return po["id"], rcp["id"], oi["batch_no"] if oi.get("batch_no") else None
 
     def _create_mo(self, client, h, base, qty=50, ptype="自产"):
-        """销售订单→审核→MO→确认备货方式，返回 (so_id, mo_id)"""
+        """SP 流程：销售订单→审核→重发生产→确认备货方式，返回 (so_id, mo_id)"""
         api = self._api
         so = api(client, "POST", "/api/sales/orders", {
             "customer_id": base["cust"], "currency_id": base["cny"]["id"],
@@ -122,15 +122,16 @@ class TestInventoryV2:
         }, h)
         so_id = so["id"]
         api(client, "POST", f"/api/sales/orders/{so_id}/approve", {}, h)
-        mlist = api(client, "GET",
-                    f"/api/production/productions?sales_order_id={so_id}&page_size=5", None, h)
-        mo = mlist["items"][0]
-        mo_id = mo["id"]
+        # SP 流程：审核后需调用 re-produce 生成 MO
+        so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
+        item_id = so_detail["items"][0]["id"]
+        mo_resp = api(client, "POST", f"/api/sales/orders/{so_id}/items/{item_id}/re-produce", {}, h)
+        mo_id = mo_resp["id"]
         api(client, "POST", f"/api/production/productions/{mo_id}/set-type",
             {"production_type": ptype}, h)
         return so_id, mo_id
 
-    # ==================== 1. 发料拆类型 ====================
+    # ==================== 1. 自产发料 ====================
 
     def test_issue_trans_type_split(self, client, auth_headers):
         api = self._api
@@ -150,41 +151,32 @@ class TestInventoryV2:
         md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
         procs = sorted(md["processes"], key=lambda p: p["seq"])
 
-        # 工序1（自产）发料 → material_issue_out
-        p1 = procs[0]
-        assert not p1.get("outsourcer_id"), "工序1应为自产"
-        api(client, "POST",
-            f"/api/production/productions/{mo_id}/processes/{p1['id']}/issue", {
-                "material_id": base["mat"], "quantity": 30, "batch_no": batch_no,
-                "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-            }, h)
+        # 生产=纯自产：所有工序均无委外商
+        for p in procs:
+            assert not p.get("outsourcer_id"), f"工序应为自产，实际 {p}"
 
-        # 工序2（委外）发料 → outsource_out
-        p2 = procs[1]
-        assert p2.get("outsourcer_id"), "工序2应为委外"
-        api(client, "POST",
-            f"/api/production/productions/{mo_id}/processes/{p2['id']}/issue", {
-                "material_id": base["mat"], "quantity": 20, "batch_no": batch_no,
-                "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-            }, h)
+        # 两道工序发料 → 均为 material_issue_out
+        for p, qty in zip(procs, [30, 20]):
+            api(client, "POST",
+                f"/api/production/productions/{mo_id}/processes/{p['id']}/issue", {
+                    "material_id": base["mat"], "quantity": qty, "batch_no": batch_no,
+                    "warehouse_id": base["wh_rm"], "unit_price": 32.0,
+                }, h)
 
-        # 验证流水类型
+        # 验证流水类型：只有 material_issue_out（生产=纯自产，无委外发料）
         txns = api(client, "GET", "/api/inventory/transactions?type=material&page_size=50", None, h)
         assert txns, "应能查到流水"
-        types = [(t["trans_type"], abs(t["quantity"])) for t in txns["items"]
-                 if t.get("material_name") == f"棉纱{base['mat'] and 'A1'}"]
-        # 按来源单据过滤更稳：查该批次
         btxns = [t for t in txns["items"] if t["batch_no"] == batch_no]
         self_types = sorted([t["trans_type"] for t in btxns if t["quantity"] < 0])
         assert "material_issue_out" in self_types, f"自产发料应为 material_issue_out，实际: {self_types}"
-        assert "outsource_out" in self_types, f"委外发料应为 outsource_out，实际: {self_types}"
+        assert "material_out" not in self_types, f"纯自产不应有 material_out，实际: {self_types}"
 
-        # 成本汇总应识别两类（发料 50 × 32 = 1600）
+        # 成本汇总 = 全部自产发料（30+20）×32 = 1600
         md2 = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
         assert md2["total_material_cost"] == 1600.0, \
             f"物料成本汇总应为 1600，实际 {md2.get('total_material_cost')}"
 
-        # 取消一条发料（30件自产领料）→ 成本回退
+        # 取消一条发料（30件自产领料）→ 成本回退到 20×32=640
         issues = api(client, "GET", f"/api/production/productions/{mo_id}/issues", None, h)
         first_issue = next(i for i in issues["items"] if i["quantity"] == 30)
         api(client, "POST",
@@ -240,8 +232,16 @@ class TestInventoryV2:
         fg_batch2 = rcp2["batch_no"]
         so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
         oi_id = so_detail["items"][0]["id"]
-        dlv = api(client, "POST", "/api/sales/deliveries", {
+        # 两段式发货：通知发货 → 库管出库
+        dlv_notify = api(client, "POST", "/api/sales/deliveries/notify", {
             "order_id": so_id, "order_item_id": oi_id,
+            "quantity": 20,
+        }, h)
+        assert dlv_notify, "发货通知失败"
+        dlv_id = dlv_notify["id"]
+        
+        # 库管出库（第二段）
+        dlv = api(client, "POST", f"/api/sales/deliveries/{dlv_id}/issue", {
             "batch_no": fg_batch2, "quantity": 20, "warehouse_id": base["wh_fg"],
         }, h)
         assert dlv, "销售发货失败"
@@ -323,7 +323,12 @@ class TestInventoryV2:
         assert resp.status_code == 400, "批次已清空再冲应被拒"
 
     def test_purchase_red_mo_rollback(self, client, auth_headers):
-        """外购型 MO：入库→已入库；红冲→回退待采购"""
+        """外购型 MO：采购入库（转成品库入库）→ 库存/订单联动
+
+        SP 流程（2026-08 重写）：外购型 MO → 推采购需求 → 转采购订单 → 审核 →
+        采购明细「转成品库入库」→ 成品入库模块收货。直接 POST /purchase/receipts
+        对成品类采购明细已由后端拒绝（提示走转成品库入库）。
+        """
         api = self._api
         h = auth_headers
         base = self._setup_base(client, h, "A4")
@@ -335,7 +340,7 @@ class TestInventoryV2:
         assert pr, "推采购需求失败"
         req_id = pr["requisition_id"]
 
-        # 采购转单 → PO → 审核 → 入库（买成品）
+        # 采购转单 → PO → 审核 → 成品采购明细转待入库单
         po = api(client, "POST", f"/api/purchase/requisitions/{req_id}/to-purchase", {
             "supplier_id": base["sup"], "unit_price": 12.0, "quantity": 60, "tax_rate": 13,
         }, h)
@@ -343,24 +348,38 @@ class TestInventoryV2:
         api(client, "POST", f"/api/purchase/orders/{po_id}/approve", {}, h)
         detail = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
         oi = detail["items"][0]
-        rcp = api(client, "POST", "/api/purchase/receipts", {
+        # 成品采购明细不能直接走采购入库（后端拒绝），必须「转成品库入库」
+        resp = client.post("/api/purchase/receipts", json={
             "order_id": po_id, "warehouse_id": base["wh_fg"],
             "items": [{"order_item_id": oi["id"], "product_id": oi["product_id"],
                        "quantity": 60, "unit_price": 12.0}],
-        }, h)
-        assert rcp, "外购入库失败"
+        }, headers=h)
+        assert resp.status_code == 400, "成品采购明细直接采购入库应被拒（走转成品库入库）"
 
-        # MO → 已入库
-        md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        assert md["status"] == "已入库", f"MO 应为已入库，实际 {md['status']}"
+        # 转成品库入库 → 待入库单 → 收货
+        api(client, "POST", f"/api/purchase/orders/{po_id}/items/{oi['id']}/to-stock-in",
+            {"stock_in_order_id": 0}, h)
+        sl = api(client, "GET", "/api/stock-in?source_type=purchase&page_size=10", None, h)
+        sin = next((s for s in sl["items"] if s["purchase_item_id"] == oi["id"]), None)
+        assert sin, "采购明细转成品库入库后应生成待入库单"
+        rcv = api(client, "POST", f"/api/stock-in/{sin['id']}/receive",
+                  {"quantity": 60, "warehouse_id": base["wh_fg"]}, h)
+        assert rcv and rcv.get("status") == "已入库", f"成品收货应完成，实际 {rcv}"
 
-        # 红冲 60 → MO 回退 待采购
-        api(client, "POST", f"/api/purchase/receipts/{rcp['id']}/red", {}, h)
-        md2 = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        assert md2["status"] == "待采购", f"MO 红冲后应为待采购，实际 {md2['status']}"
-        mlist2 = api(client, "GET",
-                     f"/api/production/productions?sales_order_id={so_id}&page_size=5", None, h)
-        assert mlist2["items"][0]["received_qty"] == 0, "MO received_qty 应回退为 0"
+        # 订单明细已入数量回写
+        detail2 = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
+        assert detail2["items"][0]["received_qty"] == 60, "采购明细 received_qty 应为 60"
+
+        # 成品批次入库 → 台账可查
+        bal = api(client, "GET", "/api/inventory/balance?type=product&page_size=10", None, h)
+        assert bal["items"], "成品入库后应存在产品库存"
+
+        # 收货退回（数量纠正）→ 批次扣减、订单明细回退
+        ret = api(client, "POST", f"/api/stock-in/{sin['id']}/return",
+                  {"return_qty": 10}, h)
+        assert ret, "收货退回失败"
+        detail3 = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
+        assert detail3["items"][0]["received_qty"] == 50, "退回10后 received_qty 应为 50"
 
     # ==================== 4. 销售退货 ====================
 
@@ -398,7 +417,9 @@ class TestInventoryV2:
         fg_batch = rcp["batch_no"]
         assert rcp.get("cost") is None or True  # 不传成本用自动结转
 
-        # 自动结转后单位成本应 >0（材料1280+加工85=1365 / 50 = 27.30）
+        # 自动结转后单位成本：材料 40×32=1280（两道自产工序各发 20，全部计入） + 加工费
+        # 50×0.5+50×1.2=85 → 1365/50 = 27.30。
+        # 生产=纯自产（v2.8.0 去委外化），所有发料均为 material_issue_out 全计入成本。
         bal2 = api(client, "GET", "/api/inventory/balance?type=product&page_size=10", None, h)
         row = next(r for r in bal2["items"] if r["batch_no"] == fg_batch)
         assert row["unit_cost"] == 27.3, f"自动结转单件成本应为 27.3，实际 {row['unit_cost']}"
@@ -406,10 +427,17 @@ class TestInventoryV2:
         # 发货 40 → 退货 15 → 批次 25 → 订单 部分发货
         so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
         oi_id = so_detail["items"][0]["id"]
-        dlv = api(client, "POST", "/api/sales/deliveries", {
+        # 两段式发货：通知发货 → 库管出库
+        dlv_notify = api(client, "POST", "/api/sales/deliveries/notify", {
             "order_id": so_id, "order_item_id": oi_id,
+            "quantity": 40,
+        }, h)
+        assert dlv_notify, "发货通知失败"
+        dlv_id = dlv_notify["id"]
+        dlv = api(client, "POST", f"/api/sales/deliveries/{dlv_id}/issue", {
             "batch_no": fg_batch, "quantity": 40, "warehouse_id": base["wh_fg"],
         }, h)
+        assert dlv, "销售发货失败"
         ret = api(client, "POST", f"/api/sales/deliveries/{dlv['id']}/return",
                   {"quantity": 15}, h)
         assert ret, "部分退货失败"

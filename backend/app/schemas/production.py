@@ -1,4 +1,4 @@
-"""生产/委外模块 Schemas"""
+"""生产模块 Schemas（生产=纯自产）"""
 
 from datetime import date, datetime
 from pydantic import BaseModel, Field, ConfigDict

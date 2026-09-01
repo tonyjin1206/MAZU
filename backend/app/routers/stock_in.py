@@ -15,10 +15,20 @@ from app.models.inventory import StockInOrder, WarehouseInventory, StockTransact
 from app.models.sales import SalesOrder, SalesOrderItem
 from app.models.purchase import PurchaseOrder, PurchaseOrderItem
 from app.models.production import OutsourceOrder
-from app.utils.auth import get_current_user
+from app.utils.auth import get_current_user, require_permission, require_any_permission
 from app.utils.batch_no import generate_batch_no, generate_doc_no
 
 router = APIRouter()
+
+# ==================== 读端点授权域（BUG-L4-02 同模式：本域 + 业务引用域） ====================
+# 待入库单由 库管（成品/原料入库页）+ 采购（采购入库）+ 委外/销售（查看收货进度）共同使用。
+STOCK_IN_READ_PERMS = (
+    "menu:inventory:stock-ins", "menu:inventory:material-ins",
+    "menu:purchase:receipts", "menu:purchase:orders",
+    "menu:outsource:orders", "menu:outsource:from-sales", "menu:sales:orders",
+)
+# 收货/完成/退回写端点：库管入库页 + 采购入库页
+STOCK_IN_WRITE_PERMS = ("menu:inventory:stock-ins", "menu:inventory:material-ins", "menu:purchase:receipts")
 
 
 def _source_label(db: Session, sin: StockInOrder) -> str:
@@ -44,7 +54,7 @@ def list_stock_in(
     keyword: str = Query("", description="单号/产品搜索"),
     kind: str = Query("", description="类型: product=成品 / material=原料 / 空=全部"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*STOCK_IN_READ_PERMS)),
 ):
     """待入库单列表（kind=product 成品入库页 / kind=material 原料入库页）"""
     from app.models.foundation import Material
@@ -133,7 +143,7 @@ def receive_stock_in(
     stock_in_id: int,
     data: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*STOCK_IN_WRITE_PERMS)),
 ):
     """收货入库（可分批，收满自动完成，未满保持部分入库）"""
     sin = db.query(StockInOrder).filter(StockInOrder.id == stock_in_id).first()
@@ -148,13 +158,14 @@ def receive_stock_in(
     # 仓库自动匹配：成品单→成品仓库，材料单→原辅料仓库（前端不再选择）
     if not warehouse_id:
         is_material = sin.material_id is not None
-        target_type = "原辅料仓库" if is_material else "成品仓库"
+        # 仓库类型存在两套取值（Warehouses.vue=原料仓/成品仓；SystemParams.vue=原辅料仓库/成品仓库）
+        target_types = ("原料仓", "原辅料仓库") if is_material else ("成品仓", "成品仓库")
         auto_wh = db.query(Warehouse).filter(
-            Warehouse.wh_type == target_type,
+            Warehouse.wh_type.in_(target_types),
             Warehouse.is_active == 1,
         ).first()
         if not auto_wh:
-            raise HTTPException(400, f"系统未找到「{target_type}」，请先在基础档案→仓库维护类型")
+            raise HTTPException(400, f"系统未找到「{'/'.join(target_types)}」，请先在基础档案→仓库维护类型")
         warehouse_id = auto_wh.id
 
     operator = current_user.display_name or current_user.username
@@ -278,7 +289,7 @@ def receive_stock_in(
 def complete_stock_in(
     stock_in_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*STOCK_IN_WRITE_PERMS)),
 ):
     """人工确认完成入库（入库数量≠应入数量时由人工判定）"""
     sin = db.query(StockInOrder).filter(StockInOrder.id == stock_in_id).first()
@@ -298,7 +309,7 @@ def complete_stock_in(
 def cancel_stock_in(
     stock_in_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*STOCK_IN_WRITE_PERMS)),
 ):
     """退回待入库单（仅未收货时允许；下游退回后上游销售明细才可变更）"""
     sin = db.query(StockInOrder).filter(StockInOrder.id == stock_in_id).first()
@@ -333,7 +344,7 @@ def return_stock_in(
     stock_in_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*STOCK_IN_WRITE_PERMS)),
 ):
     """退回已入库/部分入库的收货数量（填错数量时纠正）"""
     sin = db.query(StockInOrder).filter(StockInOrder.id == stock_in_id).first()
@@ -363,55 +374,46 @@ def return_stock_in(
                 item.production_status = "已通知入库"
     else:
         sin.status = "部分入库"
-    # 扣减库存批次
-    inv = db.query(WarehouseInventory).filter(
+    # 扣减库存批次（FIFO 逐条：多次收货时同一批次有多条台账记录，
+    # 原实现只扣第一条且不校验足够性 → 退回量大于首条记录会扣成负库存）
+    remaining_return = round(return_qty, 2)
+    invs = db.query(WarehouseInventory).filter(
         WarehouseInventory.source_doc_id == stock_in_id,
         WarehouseInventory.source_type == "stock_in",
         WarehouseInventory.quantity > 0
-    ).first()
-    if inv:
+    ).order_by(WarehouseInventory.id.asc()).all()
+    for inv in invs:
+        if remaining_return <= 0:
+            break
+        take = round(min(inv.quantity or 0, remaining_return), 2)
+        if take <= 0:
+            continue
         before_qty = inv.quantity
         before_cost = inv.total_cost or 0
-        inv.quantity -= return_qty
-        inv.total_cost = inv.unit_cost * inv.quantity
-        # 生成负数入库流水（退回记录，可追溯）
-        if inv.material_id:
-            trans = StockTransaction(
-                trans_type="stock_in_return",
-                warehouse_id=inv.warehouse_id,
-                material_id=inv.material_id,
-                batch_no=inv.batch_no,
-                quantity=-return_qty,
-                unit_cost=inv.unit_cost,
-                total_amount=-(return_qty * (inv.unit_cost or 0)),
-                before_qty=before_qty,
-                after_qty=inv.quantity,
-                before_cost=before_cost,
-                after_cost=inv.total_cost,
-                source_doc_type="原料入库退回",
-                source_doc_no=inv.receipt_no or "",
-                trans_no=generate_doc_no(db, "ST"),
-                operator=current_user.display_name or current_user.username,
-            )
-        else:
-            trans = StockTransaction(
-                trans_type="stock_in_return",
-                warehouse_id=inv.warehouse_id,
-                product_id=inv.product_id,
-                batch_no=inv.batch_no,
-                quantity=-return_qty,
-                unit_cost=inv.unit_cost,
-                total_amount=-(return_qty * (inv.unit_cost or 0)),
-                before_qty=before_qty,
-                after_qty=inv.quantity,
-                before_cost=before_cost,
-                after_cost=inv.total_cost,
-                source_doc_type="成品入库退回",
-                source_doc_no=inv.receipt_no or "",
-                trans_no=generate_doc_no(db, "ST"),
-                operator=current_user.display_name or current_user.username,
-            )
-        db.add(trans)
+        inv.quantity = round(inv.quantity - take, 2)
+        inv.total_cost = round((inv.unit_cost or 0) * inv.quantity, 2)
+        is_material = inv.material_id is not None
+        db.add(StockTransaction(
+            trans_type="stock_in_return",
+            warehouse_id=inv.warehouse_id,
+            material_id=inv.material_id if is_material else None,
+            product_id=None if is_material else inv.product_id,
+            batch_no=inv.batch_no,
+            quantity=-take,
+            unit_cost=inv.unit_cost,
+            total_amount=round(-take * (inv.unit_cost or 0), 2),
+            before_qty=before_qty,
+            after_qty=inv.quantity,
+            before_cost=before_cost,
+            after_cost=inv.total_cost,
+            source_doc_type="原料入库退回" if is_material else "成品入库退回",
+            source_doc_no=inv.receipt_no or "",
+            trans_no=generate_doc_no(db, "ST"),
+            operator=current_user.display_name or current_user.username,
+        ))
+        remaining_return = round(remaining_return - take, 2)
+    if remaining_return > 0.001:
+        raise HTTPException(400, f"库存批次不足退回 {remaining_return}（请核对收货记录）")
     db.commit()
     return {"message": f"已退回 {return_qty}，当前已入 {sin.received_qty}"}
 
@@ -420,7 +422,7 @@ def return_stock_in(
 def get_stock_in_records(
     stock_in_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_any_permission(*STOCK_IN_READ_PERMS)),
 ):
     """穿透查询：该入库单的所有收货记录（批次库存）"""
     sin = db.query(StockInOrder).filter(StockInOrder.id == stock_in_id).first()
