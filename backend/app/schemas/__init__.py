@@ -29,10 +29,6 @@ from app.schemas.purchase import (
     PaymentCreate, PaymentOut,
     PaymentAllocationCreate,
 )
-from app.schemas.production import (
-    ProductionOrderCreate, ProductionOrderUpdate, ProductionOrderOut,
-    MaterialIssueItemCreate, MaterialIssueItemOut,
-)
 from app.schemas.sales import (
     SalesQuoteCreate, SalesQuoteOut,
     SalesOrderCreate, SalesOrderUpdate, SalesOrderOut,
@@ -76,9 +72,6 @@ __all__ = [
     "PurchaseInvoiceCreate", "PurchaseInvoiceOut",
     "AccountsPayableOut",
     "PaymentCreate", "PaymentOut", "PaymentAllocationCreate",
-    # production
-    "ProductionOrderCreate", "ProductionOrderUpdate", "ProductionOrderOut",
-    "MaterialIssueItemCreate", "MaterialIssueItemOut",
     # sales
     "SalesQuoteCreate", "SalesQuoteOut",
     "SalesOrderCreate", "SalesOrderUpdate", "SalesOrderOut",

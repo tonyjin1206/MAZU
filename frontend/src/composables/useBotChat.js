@@ -13,11 +13,8 @@ marked.setOptions({ breaks: true, gfm: true })
 const DOC_ROUTES = {
   'PO-': '/purchase/orders',
   'SO-': '/sales/orders',
-  'MO-': '/production/orders',
   'RC-': '/sales/collections',
   'PAY-': '/purchase/payments',
-  'FG-': '/production/orders',
-  'IS-': '/production/workspace',
 }
 
 const DEFAULT_WELCOME = `你好！我是 **Matsu** 😊

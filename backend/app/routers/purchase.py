@@ -45,9 +45,9 @@ router = APIRouter()
 PURCHASE_ORDERS_READ_PERMS = (
     "menu:purchase:orders", "menu:purchase:from-sales", "menu:purchase:requisitions",
     "menu:purchase:receipts", "menu:purchase:invoices", "menu:purchase:ap",
-    "menu:purchase:payments", "menu:production:orders",
+    "menu:purchase:payments",
 )
-PURCHASE_REQUISITIONS_READ_PERMS = ("menu:purchase:requisitions", "menu:purchase:orders", "menu:production:orders")
+PURCHASE_REQUISITIONS_READ_PERMS = ("menu:purchase:requisitions", "menu:purchase:orders")
 SALES_TO_PURCHASE_READ_PERMS = ("menu:purchase:from-sales", "menu:purchase:orders", "menu:sales:orders")
 PURCHASE_RECEIPTS_READ_PERMS = ("menu:purchase:receipts", "menu:purchase:orders",
                                 "menu:inventory:material-ins", "menu:inventory:stock-ins")
@@ -549,18 +549,8 @@ def create_order(
 # ==================== 销售订单转采购（按供应商拆单） ====================
 
 def _so_row_requirements(db: Session, si):
-    """销售明细行的采购需求清单（按 BOM 展开，无 BOM 则产品本身）
+    """销售明细行的采购需求清单（转直采：无视 BOM，恒买产品本身）
     返回: [{'material_id'|'product_id', 'need_qty'}]"""
-    from app.models.foundation import BomItem
-    bom_items = db.query(BomItem).filter(
-        BomItem.product_id == si.product_id, BomItem.is_active == 1).all()
-    if bom_items:
-        return [
-            {
-                "material_id": b.material_id, "product_id": None,
-                "need_qty": round((si.quantity or 0) * (b.quantity or 1) * (1 + (b.loss_rate or 0) / 100), 2),
-            } for b in bom_items
-        ]
     return [{"material_id": None, "product_id": si.product_id, "need_qty": si.quantity or 0}]
 
 
@@ -617,9 +607,9 @@ def list_sales_to_purchase(
     from app.models.sales import SalesOrder, SalesOrderItem
     from app.models.foundation import Customer
     from app.models.purchase import PurchaseOrderItem
-    # 只显示在销售订单那边点了「转入库」的明细行
+    # 只显示在销售订单那边点了「转入库」的明细行（转直采=贸易型；委外材料走手填采购链路，不在此列表）
     query = db.query(SalesOrderItem).join(SalesOrder, SalesOrder.id == SalesOrderItem.order_id).filter(
-        SalesOrderItem.production_status.in_(["已通知入库", "已通知外发"]),
+        SalesOrderItem.production_status == "已通知入库",
         SalesOrder.status.in_(["已审", "生产中", "部分发货"]),
     )
     if keyword:
@@ -672,7 +662,7 @@ def list_sales_to_purchase(
             "code": prod.code if prod else "", "name": prod.name_cn if prod else "",
             "spec": (prod.spec or "") if prod else "", "unit": prod.unit if prod else "",
             "quantity": si.quantity or 0, "batch_no": si.batch_no or "",
-            "source": "转直采" if si.production_status == "已通知入库" else "转外发",
+            "source": "转直采",
             "purchase_status": row_status(si),
         })
     return {"total": total, "page": page, "page_size": page_size, "items": result}
@@ -735,8 +725,8 @@ def get_sales_to_purchase(item_id: int, db: Session = Depends(get_db), current_u
     si = db.query(SalesOrderItem).filter(SalesOrderItem.id == item_id).first()
     if not si:
         raise HTTPException(404, "销售明细行不存在")
-    if si.production_status not in ("已通知入库", "已通知外发"):
-        raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请先在销售订单明细行转直采/转外发）")
+    if si.production_status != "已通知入库":
+        raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请先在销售订单明细行转直采）")
 
     pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
         PurchaseOrderItem.sales_item_id == si.id,
@@ -809,17 +799,14 @@ def create_orders_from_sales(data: dict, db: Session = Depends(get_db), current_
             raise HTTPException(400, f"{r.get('name','')} 单价必须大于 0，请填写单价")
         if not r.get("material_id") and not r.get("product_id"):
             raise HTTPException(400, "明细行缺少物料/产品")
-        # 找到对应销售明细行，按 BOM 计算真实需求量
+        # 找到对应销售明细行，需求量按成品本身（转直采无视 BOM）
         si = next((i for i in order.items if i.id == r["sales_item_id"]), None)
         if not si:
             raise HTTPException(400, "销售明细行不存在")
-        if si.production_status not in ("已通知入库", "已通知外发"):
-            raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请先在销售订单明细行转直采/转外发）")
-        req = next((x for x in _so_row_requirements(db, si)
-                    if (x["material_id"] == r.get("material_id") and x["product_id"] == r.get("product_id"))), None)
-        if not req:
-            raise HTTPException(400, "该物料不在 BOM 比例内，不允许采购（请先维护 BOM）")
-        # 剩余可采购量 = BOM 需求量 - 已采购
+        if si.production_status != "已通知入库":
+            raise HTTPException(400, f"该明细行状态为「{si.production_status}」，不能转采购（请先在销售订单明细行转直采）")
+        req = _so_row_requirements(db, si)[0]
+        # 剩余可采购量 = 成品需求量 - 已采购
         pois = db.query(PurchaseOrderItem).join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderItem.order_id).filter(
             PurchaseOrderItem.sales_item_id == r["sales_item_id"],
             PurchaseOrder.status != "已关闭",

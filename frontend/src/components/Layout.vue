@@ -91,21 +91,8 @@
           <el-menu-item index="/outsource/orders" v-if="hasPerm('menu:outsource:orders')">委外订单</el-menu-item>
         </el-sub-menu>
 
-        <!-- 采购管理 -->
-        <!-- 4. 生产管理（自产） -->
-        <el-sub-menu index="production" v-if="hasPerm('menu:production:orders') || hasPerm('menu:production:workspace') || hasPerm('menu:production:invoices') || hasPerm('menu:production:batch')">
-          <template #title>
-            <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-application"/></svg>
-            <span>生产管理</span>
-          </template>
-          <el-menu-item index="/production/orders" v-if="hasPerm('menu:production:orders')">生产订单</el-menu-item>
-          <el-menu-item index="/production/workspace" v-if="hasPerm('menu:production:workspace')">生产工作台</el-menu-item>
-          <el-menu-item index="/production/invoices" v-if="hasPerm('menu:production:invoices')">加工费发票</el-menu-item>
-          <el-menu-item index="/production/inventory" v-if="hasPerm('menu:production:batch')">批次追溯</el-menu-item>
-        </el-sub-menu>
-
-        <!-- 5. 库存管理 -->
-        <el-sub-menu index="inventory" v-if="hasPerm('menu:inventory') || hasPerm('menu:inventory:summary') || hasPerm('menu:inventory:stock-ins') || hasPerm('menu:inventory:material-ins') || hasPerm('menu:inventory:material-outs') || hasPerm('menu:inventory:delivery-outs') || hasPerm('menu:inventory:stocktake')">
+        <!-- 4. 库存管理（批次追溯=原生产批次追溯，挪到库存菜单） -->
+        <el-sub-menu index="inventory" v-if="hasPerm('menu:inventory') || hasPerm('menu:inventory:summary') || hasPerm('menu:inventory:stock-ins') || hasPerm('menu:inventory:material-ins') || hasPerm('menu:inventory:material-outs') || hasPerm('menu:inventory:delivery-outs') || hasPerm('menu:inventory:stocktake') || hasPerm('menu:production:batch')">
           <template #title>
             <svg width="16" height="16" style="margin-right: 4px; vertical-align: middle"><use href="#icon-database-set"/></svg>
             <span>库存管理</span>
@@ -116,6 +103,7 @@
           <el-menu-item index="/inventory/delivery-outs" v-if="hasPerm('menu:inventory:delivery-outs')">成品出库</el-menu-item>
           <el-menu-item index="/inventory/stocktakes" v-if="hasPerm('menu:inventory:stocktake')">盘点管理</el-menu-item>
           <el-menu-item index="/inventory/management" v-if="hasPerm('menu:inventory')">库存查询</el-menu-item>
+          <el-menu-item index="/inventory/batch-trace" v-if="hasPerm('menu:production:batch')">批次追溯</el-menu-item>
           <el-menu-item index="/inventory/summary" v-if="hasPerm('menu:inventory:summary')">收发存明细</el-menu-item>
         </el-sub-menu>
 
@@ -257,10 +245,7 @@ const pageTitle = computed(() => {
     '/sales/invoices': '销售发票',
     '/sales/ar': '应收账款',
     '/sales/collections': '收款单',
-    '/production/orders': '生产订单',
-    '/production/workspace': '生产工作台',
-    '/production/invoices': '加工费发票',
-    '/production/inventory': '批次库存/追溯',
+    '/inventory/batch-trace': '批次追溯',
     '/inventory/management': '库存管理',
     '/inventory/stocktakes': '盘点管理',
     '/inventory/stock-ins': '成品入库',
@@ -276,7 +261,6 @@ const pageTitle = computed(() => {
     '/system/bot-chat': 'AI 助手',
     '/system/reminders': '预警提醒设置',
   }
-  if (path.startsWith('/production/detail')) return '生产订单详情'
   return titles[path] || 'MTS'
 })
 

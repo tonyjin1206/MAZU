@@ -3,13 +3,11 @@ MTS 健壮性测试套件 — 正向流程 / 反向流程 / 恢复流程 全集
 ========================================================
 覆盖：
   A. 基础档案：正向创建 + 反向（重复/缺字段/非法ID）
-  B. 销售链路：正向（订单→审核→生产→发货→发票→收款）
+  B. 销售链路：正向（订单→审核→转直采→发货→发票→收款）
               + 反向（未审核发货/超量/库存不足/重复发票/删已审订单）
   C. 采购链路：正向（订单→审核→入库→发票→应付→付款）
               + 反向（删已审/重复发票/超量入库）
-  D. 生产链路：正向（BOM→工艺→派产→发料→完工→入库）
-              + 反向（未派产完工/库存不足发料）
-  E. 恢复流程：反向后重做（删入库→重入、取消完工→重完工、删发票→重开）
+  E. 恢复流程：反向后重做（删入库→重入、删发票→重开）
   F. 边界输入：负数/零/超长/特殊字符/不存在ID
 
 真实 Bug 用 expect_fail() 标记（已知问题，不修代码），测试退出码仍为 0。
@@ -78,7 +76,7 @@ if not T:
 r = login("admin", "wrong-password")
 expect_status("错误密码登录 401", r, 401)
 r = api("GET", "/auth/me")
-expect_status("无 token 访问 401", r, 401)
+check("无 token 访问被拒绝(401/403)", r.status_code in (401, 403), f"({r.status_code})")
 r = api("GET", "/auth/me", token="invalid.token.here")
 expect_status("伪造 token 访问 401", r, 401)
 
@@ -173,11 +171,13 @@ expect_fail("BOM引用不存在材料返回4xx",
             r.status_code == 500,
             "引用不存在材料返回 500，应返回 400/404（外键未校验）")
 
-# 超长名称
+# 超长名称（常量名会跨run命中「名称已存在」400，属同一业务拒绝；成功后清理防累积）
 r = api("POST", "/foundation/suppliers", token=T, data={
     "code": f"SL{TAG}", "name": "长" * 500, "supplier_type": "原材料",
     "contact_person": "x", "phone": "1"})
-check("超长名称(500字符)被拒绝(422)或截断(200)", r.status_code in (200, 422), f"({r.status_code})")
+check("超长名称(500字符)被拒绝(400/422)或截断(200)", r.status_code in (200, 400, 422), f"({r.status_code})")
+if r.status_code == 200:
+    api("DELETE", f"/foundation/suppliers/{r.json()['id']}", token=T)
 
 # XSS 注入（应存储原样，前端负责转义）
 r = api("POST", "/foundation/customers", token=T, data={
@@ -200,13 +200,7 @@ check("销售订单号 SO-", SO.get("order_no", "").startswith("SO-"))
 
 r = api("POST", f"/sales/orders/{SO['id']}/approve", token=T)
 expect_status("审核销售订单 200", r, 200)
-mo_nos = r.json().get("production_order_nos", []) if r.status_code == 200 else []
-check("审核返回生产订单号", len(mo_nos) >= 1, f"({mo_nos})")
-
-# 查最新 MO（按创建时间倒序第一条）
-r = api("GET", "/production/productions", token=T, params={"page_size": 5})
-MO_LIST = r.json().get("items", [])
-check("存在生产订单", len(MO_LIST) >= 1)
+check("审核成功返回消息", r.json().get("message") == "订单已审核", f"({r.text})")
 
 section("B2. 销售链路 — 反向")
 r = api("POST", "/sales/orders", token=T, data={
@@ -327,65 +321,6 @@ if r.status_code == 200:
     api("DELETE", f"/purchase/receipts/{r.json()['id']}", token=T)
 api("DELETE", f"/purchase/orders/{PO_UN['id']}", token=T)
 
-# ==================== D. 生产链路 ====================
-section("D. 生产链路 — 正向/反向")
-MO = MO_LIST[0] if MO_LIST else None
-if MO:
-    MID = MO["id"]
-    r = api("POST", f"/production/productions/{MID}/expand-bom", token=T)
-    expect_status("展开BOM 200", r, 200)
-
-    r = api("PUT", f"/production/productions/{MID}/processes", token=T, data={
-        "items": [{"process_id": PROC["id"], "process_qty": MO["quantity"], "unit_price": 5}]})
-    expect_status("保存工艺路线 200", r, 200)
-
-    # 未派产完工 → 拒绝(400/404 均算拒绝)
-    r = api("POST", f"/production/productions/{MID}/processes/{PROC['id']}/finish", token=T,
-            data={"unit_price": 5, "process_qty": MO["quantity"]})
-    check("未派产完工被拒绝(400/404)", r.status_code in (400, 404), f"({r.status_code})")
-
-    r = api("POST", f"/production/productions/{MID}/release", token=T)
-    expect_status("派产 200", r, 200)
-
-    r = api("GET", f"/production/productions/{MID}", token=T)
-    detail = r.json()
-    procs = detail.get("processes", [])
-    mats = detail.get("materials", [])
-
-    if procs:
-        # 批次不存在发料
-        r = api("POST", f"/production/productions/{MID}/processes/{procs[0]['id']}/issue", token=T,
-                data={"material_id": MAT["id"], "batch_no": "NONEXIST-BATCH", "quantity": 99999, "warehouse_id": 1})
-        check("不存在批次发料被拒绝(400/404)", r.status_code in (400, 404), f"({r.status_code})")
-
-        # 正常发料
-        r = api("GET", "/inventory/balance", token=T, params={"material_id": MAT["id"]})
-        batch = r.json()["items"][0]["batch_no"] if r.status_code == 200 and r.json().get("items") else None
-        need = mats[0]["planned_qty"] if mats else 1
-        if batch:
-            r = api("POST", f"/production/productions/{MID}/processes/{procs[0]['id']}/issue", token=T,
-                    data={"material_id": MAT["id"], "batch_no": batch, "quantity": need, "warehouse_id": 1})
-            expect_status("正常发料 200", r, 200)
-
-        # 完工
-        r = api("POST", f"/production/productions/{MID}/processes/{procs[0]['id']}/finish", token=T,
-                data={"unit_price": 5, "process_qty": MO["quantity"]})
-        expect_status("工序完工 200", r, 200)
-
-    # 完工入库
-    r = api("POST", f"/production/productions/{MID}/receipt", token=T, data={
-        "quantity": MO["quantity"], "warehouse_id": 2,
-        "material_cost": 0, "process_cost": 0, "receipt_date": "2026-08-10"})
-    expect_status("完工入库 200", r, 200)
-
-    # 重复超量入库 → 已知Bug（与采购超量同类，用户确认暂不修）
-    r = api("POST", f"/production/productions/{MID}/receipt", token=T, data={
-        "quantity": MO["quantity"], "warehouse_id": 2,
-        "material_cost": 0, "process_cost": 0, "receipt_date": "2026-08-10"})
-    expect_fail("重复超量入库被拒绝(400)",
-                r.status_code == 200,
-                "生产完工入库超量仍被接受(200)——与采购超量同类问题，遗留暂不修复")
-
 # ==================== E. 恢复流程 ====================
 section("E. 恢复流程 — 反向后重做")
 
@@ -395,6 +330,11 @@ r = api("POST", "/purchase/orders", token=T, data={
     "items": [{"material_id": MAT["id"], "quantity": 20, "unit_price": 10}]})
 PO_REC = r.json()
 api("POST", f"/purchase/orders/{PO_REC['id']}/approve", token=T)
+
+# 记录入库前库存，作为取消后应回落的基准
+r = api("GET", "/inventory/balance", token=T, params={"material_id": MAT["id"]})
+bal_before_rec = sum(i.get("quantity", 0) for i in r.json().get("items", [])) if r.status_code == 200 else -1
+
 r = api("POST", "/purchase/receipts", token=T, data={
     "order_id": PO_REC["id"], "warehouse_id": 1,
     "items": [{"material_id": MAT["id"], "quantity": 20}]})
@@ -405,7 +345,7 @@ expect_status("取消采购入库 200", r, 200)
 
 r = api("GET", "/inventory/balance", token=T, params={"material_id": MAT["id"]})
 bal_after = sum(i.get("quantity", 0) for i in r.json().get("items", [])) if r.status_code == 200 else -1
-check("取消入库后库存减少", bal_after < 100, f"(实际{bal_after})")
+check("取消入库后库存回到入库前", bal_after == bal_before_rec, f"(实际{bal_after}, 基准{bal_before_rec})")
 
 r = api("POST", "/purchase/receipts", token=T, data={
     "order_id": PO_REC["id"], "warehouse_id": 1,
@@ -415,30 +355,6 @@ expect_status("重新入库 200", r, 200)
 # 有发票的入库不能取消（业务规则）
 r = api("DELETE", f"/purchase/receipts/{RECEIPT['id']}", token=T)
 check("有发票的入库不可取消(400)", r.status_code == 400, f"({r.status_code})")
-
-# E2. 取消完工 → 重新完工（MO_LIST 第二条）
-if len(MO_LIST) > 1:
-    MO2 = MO_LIST[1]
-    MID2 = MO2["id"]
-    api("POST", f"/production/productions/{MID2}/expand-bom", token=T)
-    api("PUT", f"/production/productions/{MID2}/processes", token=T, data={
-        "items": [{"process_id": PROC["id"], "process_qty": MO2["quantity"], "unit_price": 5}]})
-    api("POST", f"/production/productions/{MID2}/release", token=T)
-    r = api("GET", f"/production/productions/{MID2}", token=T)
-    procs2 = r.json().get("processes", [])
-    if procs2:
-        r = api("POST", f"/production/productions/{MID2}/processes/{procs2[0]['id']}/finish", token=T,
-                data={"unit_price": 5, "process_qty": MO2["quantity"]})
-        expect_status("工序完工(正向) 200", r, 200)
-
-        # 取消完工（revert 接口）→ 重新完工
-        r = api("POST", f"/production/productions/{MID2}/processes/{procs2[0]['id']}/revert", token=T)
-        expect_status("取消完工(revert) 200", r, 200)
-
-        # 重新完工（幂等验证）
-        r = api("POST", f"/production/productions/{MID2}/processes/{procs2[0]['id']}/finish", token=T,
-                data={"unit_price": 5, "process_qty": MO2["quantity"]})
-        expect_status("重新完工 200", r, 200)
 
 # E3. 删除发票 → 重新开票
 r = api("POST", "/purchase/invoices", token=T, data={

@@ -137,30 +137,6 @@ TOOLS = [
     },
     {
         "type": "function", "function": {
-            "name": "issue_materials",
-            "description": "生产领料/发料：为生产订单（纯自产）发出物料到产线。",
-            "parameters": {"type": "object", "properties": {
-                "production_order_no": {"type": "string", "description": "生产订单编号"},
-                "material_name": {"type": "string", "description": "物料名称"},
-                "quantity": {"type": "number", "description": "发料数量"},
-                "warehouse_name": {"type": "string", "description": "仓库名称，不填用默认"},
-            }, "required": ["production_order_no", "material_name", "quantity"]},
-        }
-    },
-    {
-        "type": "function", "function": {
-            "name": "production_receipt",
-            "description": "生产完工入库：将生产完成的成品入到成品仓。",
-            "parameters": {"type": "object", "properties": {
-                "production_order_no": {"type": "string", "description": "生产订单编号"},
-                "quantity": {"type": "number", "description": "入库数量"},
-                "warehouse_name": {"type": "string", "description": "仓库名称，不填用默认成品仓"},
-                "receipt_date": {"type": "string", "description": "入库日期，默认今天"},
-            }, "required": ["production_order_no", "quantity"]},
-        }
-    },
-    {
-        "type": "function", "function": {
             "name": "query_inventory",
             "description": "查询当前库存：按物料/产品名称或仓库查看库存数量与批次。",
             "parameters": {"type": "object", "properties": {
@@ -182,7 +158,7 @@ TOOLS = [
     {
         "type": "function", "function": {
             "name": "approve_order",
-            "description": "审核单据：采购订单（待审核→已审核）或销售订单（待审核→已审，不自动生成生产订单）。审核后明细行可转直采/转外发(委外)/转生产(自产)。必须先列出单据让用户指定再调用。",
+            "description": "审核单据：采购订单（待审核→已审核）或销售订单（待审核→已审，不自动生成生产订单）。审核后明细行可转直采/转外发(委外)。必须先列出单据让用户指定再调用。",
             "parameters": {"type": "object", "properties": {
                 "order_type": {"type": "string", "enum": ["purchase_order", "sales_order"], "description": "单据类型"},
                 "order_no": {"type": "string", "description": "单据编号，如 PO-xxx / SO-xxx"},
@@ -221,9 +197,7 @@ SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手（Matsu），通过对话帮�
 6. create_collection — 创建收款单（客户回款+自动核销应收）
 7. create_payment — 创建付款单（向供应商付款+自动核销应付）
 8. create_purchase_invoice / create_sales_invoice — 录入发票
-9. issue_materials — 生产发料/领料
-10. production_receipt — 生产完工入库
-11. query_manual — 查系统操作手册（教用户怎么操作）
+9. query_manual — 查系统操作手册（教用户怎么操作）
 
 ## 权限规则
 - 系统已按用户权限过滤工具，只使用提供的工具
@@ -243,11 +217,10 @@ SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手（Matsu），通过对话帮�
 第二步：让用户指定单据号（如 PO-20260731-001）
 第三步：确认后调 approve_order，核对返回结果
 
-- 销售订单审核**不会生成生产订单**；审核通过后明细行处于「未生产」，用户需为每行选择三条独立路线之一：
-  - **转直采**：进入「采购管理→销售订单转采购」办理采购
-  - **转外发**：进入「委外管理→销售订单转委外」办理委外（委外=outsource）
-  - **转生产**：转为自产，生成生产订单（纯自产=production）
-  三者互斥，按业务实际选择，不要替用户假设路线。用户说「转外发/委外」指转外发路线，「转生产/自产/生产」指转生产路线。
+- 销售订单审核**不会生成生产订单**；审核通过后明细行处于「未生产」，用户需为每行选择两条独立路线之一：
+  - **转直采**：进入「采购管理→销售订单转采购」办理采购（买成品，无视 BOM）
+  - **转外发**：进入「委外管理→销售订单转委外」办理委外（委外=outsource，按 BOM 领料）
+  两者互斥，按业务实际选择，不要替用户假设路线。用户说「转外发/委外」指转外发路线，「转直采/采购」指转直采路线。
 
 ### 创建类操作（三步确认）
 第一步：问清要做什么
@@ -570,105 +543,6 @@ def _execute_create_sales_invoice(args: dict, db: Session, user=None) -> str:
     except Exception as e: return f"❌ 失败：{e}"
 
 
-def _execute_issue_materials(args: dict, db: Session, user=None) -> str:
-    from app.models.foundation import Material
-    from app.models.production import ProductionOrder, MaterialIssueItem, ProductionProcess
-    from app.models.inventory import WarehouseInventory, StockTransaction
-    from app.utils.batch_no import generate_doc_no
-    try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
-        if not mo: return f"未找到生产订单「{args['production_order_no']}」"
-        mat = db.query(Material).filter(Material.name.like(f"%{args['material_name']}%")).first()
-        if not mat: return f"未找到物料「{args['material_name']}」"
-        qty = float(args["quantity"])
-
-        # 找物料库存批次（优先数量充足的最早批次）
-        batch = (db.query(WarehouseInventory)
-                 .filter(WarehouseInventory.material_id == mat.id, WarehouseInventory.quantity >= qty)
-                 .order_by(WarehouseInventory.in_date).first())
-        if not batch:
-            total = db.query(WarehouseInventory).filter(WarehouseInventory.material_id == mat.id).all()
-            avail = sum(i.quantity or 0 for i in total)
-            return f"❌ 物料「{mat.name}」库存不足（可用 {avail:g}{mat.unit}），无法发料 {qty:g}{mat.unit}"
-
-        # 扣库存
-        old_qty = batch.quantity
-        batch.quantity -= qty
-        batch.total_cost = round(batch.quantity * (batch.unit_cost or 0), 2)
-
-        # 找待发料工序（无工序关联则仅记录发料）
-        proc = (db.query(ProductionProcess)
-                .filter(ProductionProcess.production_id == mo.id, ProductionProcess.status == "待发料")
-                .first())
-        issue_no = generate_doc_no(db, "MI", MaterialIssueItem, "issue_no")
-        db.add(MaterialIssueItem(issue_no=issue_no, production_id=mo.id,
-                                 process_id=proc.id if proc else None,
-                                 material_id=mat.id, batch_no=batch.batch_no, quantity=qty,
-                                 unit_price=batch.unit_cost or 0, issue_date=date.today(),
-                                 warehouse_id=batch.warehouse_id, operator=_operator_name(user)))
-        db.flush()
-        # 库存流水
-        db.add(StockTransaction(
-            trans_type="material_issue_out", warehouse_id=batch.warehouse_id,
-            material_id=mat.id, batch_no=batch.batch_no, quantity=-qty,
-            unit_cost=batch.unit_cost or 0, total_amount=round(-qty * (batch.unit_cost or 0), 2),
-            before_qty=old_qty, after_qty=batch.quantity,
-            source_doc_type="发料", source_doc_no=issue_no,
-            trans_no=generate_doc_no(db, "ST"), operator=_operator_name(user)))
-        # 更新工序状态
-        if proc and proc.status == "待发料":
-            proc.status = "已发料"
-        db.commit()
-        return f"✅ 已发料：{mat.name} × {qty:g}{mat.unit}（批次 {batch.batch_no}）"
-    except Exception as e: db.rollback(); return f"❌ 发料失败：{e}"
-
-
-def _execute_production_receipt(args: dict, db: Session, user=None) -> str:
-    from app.models.production import ProductionOrder, ProductionReceipt
-    from app.models.inventory import WarehouseInventory, StockTransaction
-    from app.models.foundation import Warehouse
-    from app.utils.batch_no import generate_doc_no, generate_batch_no
-    try:
-        mo = db.query(ProductionOrder).filter(ProductionOrder.order_no==args["production_order_no"]).first()
-        if not mo: return f"未找到生产订单「{args['production_order_no']}」"
-        qty = float(args["quantity"])
-
-        # 成品仓（未指定则默认成品仓）
-        wh = None
-        if args.get("warehouse_name"):
-            wh = db.query(Warehouse).filter(Warehouse.name.like(f"%{args['warehouse_name']}%")).first()
-            if not wh: return f"未找到仓库「{args['warehouse_name']}」"
-        if not wh:
-            wh = db.query(Warehouse).filter(Warehouse.wh_type == "成品仓").first()
-        if not wh:
-            return "❌ 未找到成品仓，请先维护仓库档案"
-
-        rc = generate_doc_no(db, "FG", ProductionReceipt, "receipt_no")
-        batch_no = generate_batch_no(db, prefix="FG")
-        unit_cost = 0
-        db.add(ProductionReceipt(receipt_no=rc, production_id=mo.id, product_id=mo.product_id,
-                                 batch_no=batch_no, quantity=qty, warehouse_id=wh.id,
-                                 material_cost=0, process_cost=0, unit_cost=unit_cost,
-                                 receipt_date=_parse_date(args.get("receipt_date","")), operator=_operator_name(user)))
-        db.flush()
-        # 成品库存 + 流水
-        db.add(WarehouseInventory(warehouse_id=wh.id, product_id=mo.product_id, batch_no=batch_no,
-                                  quantity=qty, unit_cost=unit_cost, total_cost=0,
-                                  in_date=_parse_date(args.get("receipt_date","")) or date.today(),
-                                  source_type="production"))
-        db.add(StockTransaction(trans_type="production_in", warehouse_id=wh.id,
-                                product_id=mo.product_id, batch_no=batch_no, quantity=qty,
-                                unit_cost=unit_cost, total_amount=0, before_qty=0, after_qty=qty,
-                                source_doc_type="完工入库", source_doc_no=rc,
-                                trans_no=generate_doc_no(db, "ST"), operator=_operator_name(user)))
-        # 更新生产订单状态
-        mo.received_qty = (mo.received_qty or 0) + qty
-        mo.status = "已入库" if (mo.received_qty or 0) >= mo.quantity else "部分入库"
-        db.commit()
-        return f"✅ 入库单 {rc}（{qty:g}个，批次 {batch_no}）"
-    except Exception as e: db.rollback(); return f"❌ 入库失败：{e}"
-
-
 def _execute_query_inventory(args: dict, db: Session, user=None) -> str:
     """查库存：按名称关键词 + 仓库，按 物料/产品+仓库 汇总"""
     from app.models.inventory import WarehouseInventory
@@ -895,8 +769,6 @@ TOOL_PERMS = {
     "create_payment": "menu:purchase:payments",
     "create_purchase_invoice": "menu:purchase:invoices",
     "create_sales_invoice": "menu:sales:invoices",
-    "issue_materials": "menu:production:orders",
-    "production_receipt": "menu:production:orders",
     "query_inventory": "menu:inventory",
     "query_pending_approvals": None,  # 内部按权限过滤可见单据
     "approve_order": {"purchase_order": "menu:purchase:orders", "sales_order": "menu:sales:orders"},
@@ -908,7 +780,6 @@ TOOL_PERMS = {
 AUDIT_TOOLS = {
     "create_order", "create_collection", "create_payment",
     "create_purchase_invoice", "create_sales_invoice",
-    "issue_materials", "production_receipt",
     "approve_order", "unapprove_order",
 }
 
@@ -983,7 +854,6 @@ def _log_operation(db: Session, user, instruction: str, tool_name: str, args: di
 TOOL_EXECUTORS = {k: globals()[f"_execute_{k}"] for k in
     ["query_entities", "create_order", "create_collection", "create_payment",
      "create_purchase_invoice", "create_sales_invoice",
-     "issue_materials", "production_receipt",
      "query_inventory", "query_pending_approvals",
      "approve_order", "unapprove_order", "query_manual"]}
 

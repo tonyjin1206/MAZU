@@ -106,7 +106,6 @@ const CAP_DEFS = [
   ['menu:inventory', '查库存'],
   ['menu:sales:collections', '收款'],
   ['menu:purchase:payments', '付款'],
-  ['menu:production:orders', '生产·发料/入库'],
 ]
 const caps = computed(() => {
   const list = ['查档案', '操作手册']

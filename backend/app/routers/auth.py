@@ -186,11 +186,7 @@ PERMISSION_DEFS = [
     {"code": "menu:sales:customs", "name": "报关管理", "module": "销售管理", "description": ""},
     {"code": "menu:sales:ar", "name": "应收账款", "module": "销售管理", "description": ""},
     {"code": "menu:sales:collections", "name": "收款管理", "module": "销售管理", "description": ""},
-    # 生产管理
-    {"code": "menu:production:orders", "name": "生产订单", "module": "生产管理", "description": ""},
-    {"code": "menu:production:workspace", "name": "生产工作台", "module": "生产管理", "description": ""},
-    {"code": "menu:production:invoices", "name": "加工费发票", "module": "生产管理", "description": ""},
-    {"code": "menu:production:receipts", "name": "完工入库", "module": "生产管理", "description": ""},
+    # 生产管理（生产订单/工作台/加工费发票/完工入库已下线，仅保留批次追溯）
     {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
     # 库存管理
     {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},

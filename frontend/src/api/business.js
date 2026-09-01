@@ -61,7 +61,6 @@ export const salesApi = {
     delete: (id) => request.delete(`/sales/orders/${id}`),
     approve: (id) => request.post(`/sales/orders/${id}/approve`),
     listItems: (params) => request.get('/sales/order-items', { params }),
-    reProduce: (orderId, itemId) => request.post(`/sales/orders/${orderId}/items/${itemId}/re-produce`),
     stockIn: (orderId, itemId) => request.post(`/sales/orders/${orderId}/items/${itemId}/stock-in`),
     outsource: (orderId, itemId) => request.post(`/sales/orders/${orderId}/items/${itemId}/outsource`),
     claimBatch: (orderId, itemId, data) => request.post(`/sales/orders/${orderId}/items/${itemId}/claim-batch`, data),
@@ -111,38 +110,7 @@ export const salesApi = {
 }
 
 export const productionApi = {
-  productions: {
-    update: (id, data) => request.put(`/production/productions/${id}`, data),
-    list: (params) => request.get('/production/productions', { params }),
-    detail: (id) => request.get(`/production/productions/${id}`),
-    expandBom: (id) => request.post(`/production/productions/${id}/expand-bom`),
-    saveMaterials: (id, items) => request.put(`/production/productions/${id}/materials`, { items }),
-    saveProcesses: (id, items) => request.put(`/production/productions/${id}/processes`, { items }),
-    release: (id) => request.post(`/production/productions/${id}/release`),
-    unrelease: (id) => request.post(`/production/productions/${id}/unrelease`),
-    issueMaterial: (prodId, procId, data) => request.post(`/production/productions/${prodId}/processes/${procId}/issue`, data),
-    finishProcess: (prodId, procId, data) => request.post(`/production/productions/${prodId}/processes/${procId}/finish`, data),
-    receipt: (prodId, data) => request.post(`/production/productions/${prodId}/receipt`, data),
-    workspace: (params) => request.get('/production/workspace', { params }),
-    listIssues: (prodId, processId) => request.get(`/production/productions/${prodId}/issues`, { params: { process_id: processId } }),
-    listMaterialIssues: (prodId, materialId) => request.get(`/production/productions/${prodId}/material-issues/${materialId}`),
-    listReceipts: (prodId) => request.get(`/production/productions/${prodId}/receipts`),
-    listTransactions: (prodId) => request.get(`/production/productions/${prodId}/transactions`),
-    cancelIssue: (prodId, issueId) => request.post(`/production/productions/${prodId}/issues/${issueId}/cancel`),
-    cancelReceipt: (prodId, receiptId) => request.post(`/production/productions/${prodId}/receipts/${receiptId}/cancel`),
-    close: (id) => request.post(`/production/productions/${id}/close`),
-    unclose: (id) => request.post(`/production/productions/${id}/unclose`),
-    revertProcess: (prodId, procId) => request.post(`/production/productions/${prodId}/processes/${procId}/revert`),
-    setType: (id, data) => request.post(`/production/productions/${id}/set-type`, data),
-    toRequisition: (id, data) => request.post(`/production/productions/${id}/to-requisition`, data),
-    processingInvoices: {
-      list: (params) => request.get('/production/processing-invoices', { params }),
-      create: (data) => request.post('/production/processing-invoices', data),
-      delete: (id) => request.delete(`/production/processing-invoices/${id}`),
-      candidates: () => request.get('/production/processing-invoices/receipt-candidates'),
-    },
-    delete: (id) => request.delete(`/production/productions/${id}`),
-  },
+  // 生产订单/工作台/加工费发票已下线；仅保留批次追溯（挪到库存管理菜单，后端路径不变）
   batch: {
     query: (params) => request.get('/production/inventory/batch', { params }),
     trace: (batchNo) => request.get('/production/inventory/trace', { params: { batch_no: batchNo } }),

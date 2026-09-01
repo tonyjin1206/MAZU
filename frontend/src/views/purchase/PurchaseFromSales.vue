@@ -10,7 +10,7 @@
         </div>
       </template>
       <div style="font-size: 12px; color: #606266">
-        已审核的销售订单转采购：点击「采购」按 BOM 展开物料清单，每个物料可指定不同供应商，系统自动按供应商拆成多张采购订单。
+        已审核的销售订单转直采（买成品）：点击「采购」按成品数量下单，指定供应商后系统按供应商拆成多张采购订单。
       </div>
     </el-card>
 
@@ -31,10 +31,6 @@
               </span>
             </template>
             <template v-if="col.prop === 'quantity'" #default="{ row }">{{ fmtQty(row.quantity) }}</template>
-            <template v-else-if="col.prop === 'source'" #default="{ row }">
-              <el-tag v-if="row.source === '转外发'" type="success" size="small">转外发</el-tag>
-              <el-tag v-else type="info" size="small">转直采</el-tag>
-            </template>
             <template v-else-if="col.prop === 'purchase_status'" #default="{ row }">
               <el-tag v-if="row.purchase_status === 'completed'" type="success" size="small">采购完成</el-tag>
               <el-tag v-else-if="row.purchase_status === 'transferred'" type="success" size="small">已转采购订单</el-tag>
@@ -68,7 +64,7 @@
         </span>
       </div>
       <div style="margin-bottom: 10px; font-size: 12px; color: #909399">
-        每个物料行选择供应商后，系统按供应商自动拆成多张采购订单，一次生成。单价默认带出参考采购价，可改。采购数量上限 = 需求数量 ×（1+损耗%），损耗默认 10%。
+        采购成品（转直采，无视 BOM）：选择供应商后系统按供应商自动拆成多张采购订单，一次生成。单价默认带出参考采购价，可改。采购数量上限 = 销售数量 ×（1+损耗%），损耗默认 10%。
       </div>
       <el-table :data="purchaseRows" height="420" border size="small">
         <el-table-column type="index" label="#" width="45" align="center" />
@@ -154,7 +150,6 @@ const defaultColumns = [
   { prop: 'unit', label: '单位', width: 60, align: 'center', sortable: true },
   { prop: 'quantity', label: '数量', width: 95, align: 'right', sortable: true },
   { prop: 'batch_no', label: '批次号', minWidth: 150, sortable: true },
-  { prop: 'source', label: '来源', width: 90, align: 'center', sortable: true },
   { prop: 'purchase_status', label: '采购状态', width: 120, align: 'center', sortable: true, sortMethod: (a, b) => statusRank(a.purchase_status) - statusRank(b.purchase_status) },
 ]
 const { columns, visibleColumns, columnVersion, initColumnDrag, settingsVisible, settingsList, openColumnSettings, confirmSettings, resetSettings } = useColumnDrag(defaultColumns, STORAGE_KEY, '.drag-table-so .el-table__header-wrapper thead tr')

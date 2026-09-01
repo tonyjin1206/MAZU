@@ -44,11 +44,7 @@ def _seed_rbac(db):
         {"code": "menu:sales:invoices", "name": "销售发票", "module": "销售管理", "description": ""},
         {"code": "menu:sales:ar", "name": "应收账款", "module": "销售管理", "description": ""},
         {"code": "menu:sales:collections", "name": "收款管理", "module": "销售管理", "description": ""},
-        # 生产管理
-        {"code": "menu:production:orders", "name": "生产订单", "module": "生产管理", "description": ""},
-        {"code": "menu:production:workspace", "name": "生产工作台", "module": "生产管理", "description": ""},
-        {"code": "menu:production:invoices", "name": "加工费发票", "module": "生产管理", "description": ""},
-        {"code": "menu:production:receipts", "name": "完工入库", "module": "生产管理", "description": ""},
+        # 生产管理（生产订单/工作台/加工费发票/完工入库已下线，仅保留批次追溯）
         {"code": "menu:production:batch", "name": "批次追溯", "module": "生产管理", "description": ""},
         # 库存管理
         {"code": "menu:inventory", "name": "库存收发存", "module": "库存管理", "description": ""},
@@ -71,7 +67,12 @@ def _seed_rbac(db):
     ]
 
     # 报关/退税/HS 编码功能已从前端取消（代码保留，下个版本再发布）—— 权限码一并移除
-    DEPRECATED_PERMS = ("menu:hs-codes", "menu:sales:customs", "menu:tax")
+    # 生产管理（生产订单/工作台/加工费发票/完工入库）已下线：权限码并入弃用清理逻辑
+    DEPRECATED_PERMS = (
+        "menu:hs-codes", "menu:sales:customs", "menu:tax",
+        "menu:production:orders", "menu:production:workspace",
+        "menu:production:invoices", "menu:production:receipts",
+    )
 
     # 插入权限（不存在则创建）
     for pd in permission_defs:
