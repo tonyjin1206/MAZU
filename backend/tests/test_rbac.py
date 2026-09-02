@@ -213,14 +213,15 @@ class TestPermissionRoles:
         assert "menu:system:users" not in codes  # 无系统管理
 
     def test_production_manager_has_foundation(self, client, admin_token):
-        """生产经理有基础档案 + 生产 + 库存"""
+        """生产经理有基础档案 + 生产(批次追溯) + 库存"""
         h = {"Authorization": f"Bearer {admin_token}"}
         roles = client.get("/api/auth/roles", headers=h).json()
         pm = [r for r in roles if r["code"] == "production_manager"][0]
         codes = set(pm["permission_codes"])
         assert "menu:customers" in codes
         assert "menu:products" in codes
-        assert "menu:production:orders" in codes
+        assert "menu:production:batch" in codes  # 生产订单/工作台等已下线，仅保留批次追溯
+        assert "menu:production:orders" not in codes
         assert "menu:inventory" in codes
         assert "menu:purchase:orders" not in codes  # 无采购
         assert "menu:sales:orders" not in codes  # 无销售

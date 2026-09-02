@@ -33,13 +33,10 @@ PAGES = [
     "/sales/customs",
     "/sales/ar",
     "/sales/collections",
-    # 生产
-    "/production/orders",
-    "/production/workspace",
-    "/production/invoices",
-    "/production/inventory",
+    # 生产管理已下线（2026-09）；批次追溯挪至库存管理
     # 库存
     "/inventory/management",
+    "/inventory/batch-trace",
     # 退税
     "/tax-refund/declarations",
     # 系统

@@ -1,21 +1,21 @@
 """
-纺织企业全流程测试 v4（2026-07-31 重写）
+纺织企业全流程测试 v5（2026-09-02 随生产管理下线重写）
 =============================================
 数据规范：全部档案来自共享 foundation fixture（tests/test_data.py），本文件不再自建档案。
 数据规模：1 客户 × 1 产品 × 1 订单（少而真实）。
 
-覆盖（对齐最新业务逻辑）：
-  销售→审核→生产→备货方式→BOM展开→派产→采购入库→生产领料/委外发料(拆类型)
-  →完工入库(成本自动结转)→销售出库→发票/应收→报关→退税
-  逆向：取消发料→重发料、取消入库→重入库、关闭→阻止→取消关闭→关闭
-  库存v2：采购红冲、销售退货、盘点(盘盈/盘亏)、仓库档案参照校验
+覆盖（对齐最新业务逻辑，生产管理已下线）：
+  销售→审核→转直采（无视BOM）→销售订单转采购→成品明细「转成品库入库」收货
+  →销售出库→退货（逆向）
+  库存v2：盘点(盘亏)、成本=采购价校验
+  发票/应收→报关→退税
 """
 
-from tests.test_data import _realistic
+from app.database import SessionLocal
 
 
 class TestTextileFullFlow:
-    """纺织企业完整业务流 — 含所有逆向操作 + 库存 v2 闭环"""
+    """纺织企业完整业务流 — 转直采主线 + 逆向操作 + 库存 v2 闭环"""
 
     def test_full_flow(self, client, auth_headers, foundation):
         api = self._api
@@ -23,16 +23,15 @@ class TestTextileFullFlow:
         f = foundation  # 共享基础档案
 
         cny = f["cny"]
-        wh_rm, wh_fg = f["wh_rm"], f["wh_fg"]
-        sup, sup_os = f["sup"], f["sup_os"]
+        wh_fg = f["wh_fg"]
+        sup = f["sup"]
         cust = f["cust"][0]
-        mats, procs, prods = f["mats"], f["procs"], f["prods"]
-        mat_32s = mats["精梳棉纱32S"]
-        # 用「全棉色织布」—— 工艺路线含委外工序（染色→江苏阳光），可验证发料拆类型
+        prods = f["prods"]
+        # 用「全棉色织布」—— 共享档案中的标准成品
         pid = prods["全棉色织布"]["id"]
         unit_price = prods["全棉色织布"]["price"]
 
-        # ======================== 1. 销售订单 → 生产 ========================
+        # ======================== 1. 销售订单 → 审核 → 转直采 ========================
         so = api(client, "POST", "/api/sales/orders", {
             "customer_id": cust, "currency_id": cny["id"], "payment_terms": "TT",
             "items": [{"product_id": pid, "quantity": 100, "unit_price": unit_price, "tax_rate": 13}],
@@ -41,142 +40,69 @@ class TestTextileFullFlow:
         print(f"① 销售订单 {so_no}")
 
         api(client, "POST", f"/api/sales/orders/{so_id}/approve", {}, h)
-        # SP 流程：审核后需调用 re-produce 生成 MO
         so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
         item_id = so_detail["items"][0]["id"]
-        mo_resp = api(client, "POST", f"/api/sales/orders/{so_id}/items/{item_id}/re-produce", {}, h)
-        mo_id = mo_resp["id"]
-        mo = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        mo_no = mo["order_no"]
-        print(f"② 生产订单 {mo_no}")
+        r = client.post(f"/api/sales/orders/{so_id}/items/{item_id}/stock-in", json={}, headers=h)
+        assert r.status_code == 200, f"转直采失败: {r.text[:200]}"
+        print(f"①·② 转直采 → 明细行「已通知入库」✅")
 
-        api(client, "POST", f"/api/production/productions/{mo_id}/set-type",
-            {"production_type": "自产"}, h)
-        api(client, "POST", f"/api/production/productions/{mo_id}/expand-bom", {}, h)
-        api(client, "POST", f"/api/production/productions/{mo_id}/release", {}, h)
-        md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        print(f"③ BOM展开+派产: {len(md['materials'])}项物料/{len(md['processes'])}道工序")
+        # ======================== 2. 转直采采购 → 成品入库 ========================
+        rows = api(client, "GET", f"/api/purchase/sales-to-purchase?keyword={so_no}", None, h)
+        assert rows and rows["items"], "转直采行应出现在「销售订单转采购」列表"
+        assert any(x["sales_item_id"] == item_id for x in rows["items"]), "列表应含本明细行"
 
-        # ======================== 2. 采购材料（需求×1.3 余量） ========================
-        boms = _realistic["boms"]["全棉色织布"]  # 3 项材料
-        po = api(client, "POST", "/api/purchase/orders", {
-            "supplier_id": sup, "currency_id": cny["id"], "tax_rate": 13,
-            "items": [
-                {"material_id": mats[mname], "quantity": round(100 * qty * 1.3, 2),
-                 "unit_price": 30.0}
-                for mname, qty in boms
-            ],
+        gen = api(client, "POST", "/api/purchase/orders/from-sales", {
+            "sales_order_id": so_id,
+            "rows": [{"sales_item_id": item_id, "product_id": pid,
+                      "supplier_id": sup, "quantity": 100,
+                      "unit_price": 12.0, "tax_rate": 13}],
         }, h)
-        po_id = po["id"]
+        assert gen and gen.get("orders"), f"转采购生成采购订单失败: {gen}"
+        po_no = gen["orders"][0]["order_no"]
+
+        # 转直采无视 BOM：明细应为成品本身（product_id），不展开材料行
+        from app.models.purchase import PurchaseOrder, PurchaseOrderItem
+        db = SessionLocal()
+        try:
+            po = db.query(PurchaseOrder).filter(PurchaseOrder.order_no == po_no).first()
+            po_id = po.id
+            items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.order_id == po_id).all()
+        finally:
+            db.close()
+        assert len(items) == 1 and items[0].product_id == pid and items[0].material_id is None, \
+            "转直采明细应为成品本身（无视 BOM，不展开材料行）"
         api(client, "POST", f"/api/purchase/orders/{po_id}/approve", {}, h)
         pod = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
-        receipt_items = [{"order_item_id": i["id"], "material_id": i["material_id"],
-                          "quantity": i["quantity"], "unit_price": i["unit_price"]}
-                         for i in pod["items"]]
-        rcp = api(client, "POST", "/api/purchase/receipts", {
-            "order_id": po_id, "warehouse_id": wh_rm, "items": receipt_items}, h)
-        batch_rm = rcp.get("batch_no", "")
-        print(f"④ 采购入库 → 材料批次 {batch_rm}")
+        oi = pod["items"][0]
+        print(f"③ 转采购 {po_no}（无视 BOM，买成品）→ 审核通过 ✅")
 
-        # ---- 仓库参照校验：不存在的仓库 → 400 ----
+        # 成品明细直接采购入库 → 400，必须走「转成品库入库」
         bad = client.post("/api/purchase/receipts", json={
-            "order_id": po_id, "warehouse_id": 99999,
-            "items": [{"order_item_id": receipt_items[0]["order_item_id"],
-                       "material_id": receipt_items[0]["material_id"],
-                       "quantity": 1, "unit_price": 30.0}]}, headers=h)
-        assert bad.status_code == 400, f"不存在的仓库应被拒，实际 {bad.status_code}"
-        print(f"④·⑤ 仓库参照校验: 不存在仓库 → 400 ✅")
+            "order_id": po_id, "warehouse_id": wh_fg,
+            "items": [{"order_item_id": oi["id"], "product_id": pid,
+                       "quantity": 100, "unit_price": 12.0}]}, headers=h)
+        assert bad.status_code == 400, f"成品明细直接采购入库应被拒，实际 {bad.status_code}"
+        print(f"③·④ 仓库参照校验: 成品明细直接采购入库 → 400 ✅")
 
-        # ---- 采购红冲（冲 1kg，验证功能；未指定的行必须显式 0 避免被默认全冲）----
-        rcp_detail = api(client, "GET", f"/api/purchase/receipts/{rcp['id']}", None, h)
-        red = api(client, "POST", f"/api/purchase/receipts/{rcp['id']}/red",
-                  {"items": [
-                      {"receipt_item_id": rcp_detail["items"][0]["id"], "quantity": 1},
-                      {"receipt_item_id": rcp_detail["items"][1]["id"], "quantity": 0},
-                      {"receipt_item_id": rcp_detail["items"][2]["id"], "quantity": 0},
-                  ]}, h)
-        assert red, "采购红冲失败"
-        print(f"④·⑥ 采购红冲 1kg ✅（批次剩余应减 1）")
+        # 转成品库入库 → 待入库单 → 收货
+        api(client, "POST", f"/api/purchase/orders/{po_id}/items/{oi['id']}/to-stock-in",
+            {"stock_in_order_id": 0}, h)
+        sl = api(client, "GET", "/api/stock-in?source_type=purchase&page_size=10", None, h)
+        sin = next((s for s in sl["items"] if s["purchase_item_id"] == oi["id"]), None)
+        assert sin, "转成品库入库后应生成待入库单"
+        rcv = api(client, "POST", f"/api/stock-in/{sin['id']}/receive",
+                  {"quantity": 100, "warehouse_id": wh_fg}, h)
+        assert rcv and rcv.get("status") == "已入库", f"成品收货应完成，实际 {rcv}"
+        bal0 = api(client, "GET", "/api/inventory/balance?type=product&page_size=50", None, h)
+        fgrow = [r for r in bal0["items"] if r["product_id"] == pid and r["quantity"] >= 100][-1]
+        batch_fg = fgrow["batch_no"]
+        assert fgrow["unit_cost"] == 12.0, f"成品入库成本应为采购价 12，实际 {fgrow['unit_cost']}"
+        print(f"④ 转成品库入库 → 成品批次 {batch_fg}（成本=采购价 12）✅")
 
-        # ======================== 3. 生产领料 / 委外发料（拆类型） ========================
-        inv_tracker = {}
-        bal = api(client, "GET", "/api/inventory/balance?type=material&page_size=50", None, h)
-        for bi in bal.get("items", []):
-            inv_tracker.setdefault(bi["material_id"], []).append({
-                "batch_no": bi.get("batch_no", ""), "qty": bi["quantity"], "price": bi.get("unit_cost", 0)})
-
-        def consume(mid, needed):
-            remaining = needed
-            out = []
-            for b in inv_tracker.get(mid, []):
-                if remaining <= 0:
-                    break
-                take = min(remaining, b["qty"])
-                if take > 0:
-                    out.append((b["batch_no"], take, b["price"]))
-                    b["qty"] -= take
-                    remaining -= take
-            assert remaining <= 0.01, f"物料 {mid} 库存不足，缺 {remaining}"
-            return out
-
-        # 按工艺路线发料：整经/织造(自产) → material_issue_out；委外工序用 outsource_out
-        proc_issues = {}  # proc_id -> qty
-        for pm in md["materials"]:
-            proc_issues[pm["material_id"]] = pm["planned_qty"]
-
-        # 按工序发料（同一 issue 接口：自产工序→material_issue_out，委外工序→outsource_out）
-        proc_by_material = {}  # material_id -> proc（材料归属哪道工序由测试简化为全部发到第一道）
-        first_proc = sorted(md["processes"], key=lambda p: p["seq"])[0]
-        issue_total = 0
-        for mid, need in proc_issues.items():
-            for batch_no, qty, price in consume(mid, need):
-                api(client, "POST",
-                    f"/api/production/productions/{mo_id}/processes/{first_proc['id']}/issue",
-                    {"material_id": mid, "quantity": qty, "batch_no": batch_no,
-                     "warehouse_id": wh_rm}, h)
-                issue_total += 1
-        print(f"⑤ 生产领料 {issue_total} 次（material_issue_out）")
-
-        # 流水类型验证：生产=纯自产，发料类型只有 material_issue_out
-        txns = api(client, "GET", "/api/inventory/transactions?type=material&page_size=50", None, h)
-        types = {t["trans_type"] for t in txns["items"]}
-        assert "material_issue_out" in types, f"自产发料类型缺失: {types}"
-        print(f"⑤·⑥ 自产发料验证: material_issue_out ✅")
-
-        # ======================== 4. 完工 → 入库（成本自动结转） ========================
-        for proc in sorted(md["processes"], key=lambda p: p["seq"]):
-            finish_body = {"unit_price": proc.get("unit_price") or 0.5,
-                           "process_qty": 100}
-            api(client, "POST", f"/api/production/productions/{mo_id}/processes/{proc['id']}/finish",
-                finish_body, h)
-        # 成本留空 → 自动结转（剩余投入 × 本次占比）
-        receipt = api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
-            "quantity": 100, "warehouse_id": wh_fg,
-            "material_cost": None, "process_cost": None,
-            "receipt_date": "2026-07-28"}, h)
-        batch_fg = receipt.get("batch_no", "")
-        # 成本自动结转验证（成本在返回 message 中）
-        import re
-        m_cost = re.search(r"成本: ¥([\d.]+)", receipt.get("message", ""))
-        assert m_cost and float(m_cost.group(1)) > 0, f"成本应自动结转 >0，实际 {receipt}"
-        print(f"⑥ 完工入库 → 成品批次 {batch_fg}，成本自动结转 ¥{m_cost.group(1)}")
-
-        # ---- 取消入库 → 重新入库（逆向）----
-        cancel = api(client, "POST",
-                     f"/api/production/productions/{mo_id}/receipts/{receipt['id']}/cancel", {}, h)
-        assert cancel, "取消入库失败"
-        receipt2 = api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
-            "quantity": 100, "warehouse_id": wh_fg,
-            "material_cost": None, "process_cost": None, "receipt_date": "2026-07-28"}, h)
-        batch_fg = receipt2.get("batch_no", "")
-        print(f"⑥·⑤ 取消入库→重新入库 ✅ 批次 {batch_fg}")
-
-        # ======================== 5. 销售出库 → 退货（逆向） ========================
-        so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
-        oi_id = so_detail["items"][0]["id"]
-        # 两段式发货：通知发货 → 库管出库
+        # ======================== 3. 销售出库 → 退货（逆向） ========================
+        # ---- 两段式发货：通知发货 → 库管出库 ----
         dlv_notify = api(client, "POST", "/api/sales/deliveries/notify", {
-            "order_id": so_id, "order_item_id": oi_id,
+            "order_id": so_id, "order_item_id": item_id,
             "quantity": 100,
         }, h)
         assert dlv_notify, "发货通知失败"
@@ -186,23 +112,15 @@ class TestTextileFullFlow:
         }, h)
         assert dlv, "销售发货失败"
         delivery_no = dlv.get("delivery_no", "")
-        print(f"⑦ 销售出库 {delivery_no}")
+        print(f"⑤ 销售出库 {delivery_no}")
 
         # 退货 10 件 → 回库
         ret = api(client, "POST", f"/api/sales/deliveries/{dlv['id']}/return",
                   {"quantity": 10}, h)
         assert ret, "销售退货失败"
-        print(f"⑦·⑤ 销售退货 10 → 回库（原批次/原成本）✅")
+        print(f"⑤·⑤ 销售退货 10 → 回库（原批次/原成本）✅")
 
-        # ---- 关闭 → 阻止 → 取消关闭 → 关闭 ----
-        assert api(client, "POST", f"/api/production/productions/{mo_id}/close", {}, h), "关闭失败"
-        assert api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
-            "quantity": 1, "warehouse_id": wh_fg}, h) is None, "已关闭不应允许入库"
-        assert api(client, "POST", f"/api/production/productions/{mo_id}/unclose", {}, h), "取消关闭失败"
-        assert api(client, "POST", f"/api/production/productions/{mo_id}/close", {}, h), "最终关闭失败"
-        print(f"⑦·⑥ 关闭→阻止→取消关闭→关闭 ✅")
-
-        # ======================== 6. 盘点（成品仓） ========================
+        # ======================== 4. 盘点（成品仓） ========================
         st = api(client, "POST", "/api/inventory/stocktakes", {"warehouse_id": wh_fg}, h)
         st_detail = api(client, "GET", f"/api/inventory/stocktakes/{st['id']}", None, h)
         assert st_detail["items"], "盘点应自动带出成品批次"
@@ -218,9 +136,9 @@ class TestTextileFullFlow:
         fg_bal = api(client, "GET", "/api/inventory/balance?type=product&page_size=50", None, h)
         fg_row = next(r for r in fg_bal["items"] if r["batch_no"] == batch_fg)
         assert fg_row["quantity"] == book_qty - 5, f"盘点后成品应为 {book_qty-5}，实际 {fg_row['quantity']}"
-        print(f"⑧ 盘点: 账面 {book_qty} → 实盘 {book_qty-5}（盘亏 5 入账）✅")
+        print(f"⑤·⑥ 盘点: 账面 {book_qty} → 实盘 {book_qty-5}（盘亏 5 入账）✅")
 
-        # ======================== 7. 发票/应收/报关/退税 ========================
+        # ======================== 5. 发票/应收/报关/退税 ========================
         sa = 100 * unit_price
         api(client, "POST", "/api/sales/customs", {
             "customs_no": "223320240728000001", "order_id": so_id,
@@ -235,11 +153,11 @@ class TestTextileFullFlow:
             "period": "202607", "export_amount_fob": sa,
             "tax_rate": 13, "refund_rate": 13, "input_tax": round(sa * 0.13 / 1.13, 2)}, h)
         api(client, "PUT", f"/api/tax-refund/declarations/{decl['id']}/submit", {}, h)
-        print(f"⑨ 报关+发票+退税申报完成 ✅")
+        print(f"⑥ 报关+发票+退税申报完成 ✅")
 
         # ======================== 汇总 ========================
         print(f"\n{'='*50}")
-        print(f"全流程测试完成 ✅（1 客户 × 1 产品 × 1 订单，含全部逆向 + 库存v2 闭环）")
+        print(f"全流程测试完成 ✅（转直采主线：销售→采购→入库→发货→发票/报关/退税，含逆向）")
         print(f"{'='*50}")
 
     @staticmethod

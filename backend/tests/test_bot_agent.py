@@ -22,8 +22,6 @@ from app.utils.ai_chat import (
     _execute_approve_order,
     _execute_query_manual,
     _execute_create_order,
-    _execute_issue_materials,
-    _execute_production_receipt,
     _execute_create_purchase_invoice,
     _execute_create_sales_invoice,
     _log_operation,
@@ -240,75 +238,6 @@ class TestExecutors:
         assert "✅ 销售订单" in r, f"AI 建 SO 失败: {r}"
         ai_no = r.split(" ")[2]
         assert ai_no != manual_no, f"AI 单号与人工单号撞号: {ai_no} == {manual_no}"
-
-    def test_ai_issue_materials_deducts_stock(self, db, users, base_data, client, admin_token):
-        """AI 发料必须扣库存 + 写流水 + 更新工序状态（此前只插记录库存不变）"""
-        from app.models.inventory import WarehouseInventory, StockTransaction
-        from app.models.production import ProductionOrder, ProductionProcess
-        from app.models.foundation import Process
-        # 建生产订单（含待发料工序）+ 物料库存
-        h = {"Authorization": f"Bearer {admin_token}"}
-        so = _mk_so(client, admin_token, base_data)
-        so_id = client.get(f"{BASE}/sales/orders?keyword={so}", headers=h).json()["items"][0]["id"]
-        # 转生产（自产）生成 MO
-        so_detail = client.get(f"{BASE}/sales/orders/{so_id}", headers=h).json()
-        item_id = so_detail["items"][0]["id"]
-        client.post(f"{BASE}/sales/orders/{so_id}/approve", json={}, headers=h)
-        r = client.post(f"{BASE}/sales/orders/{so_id}/items/{item_id}/re-produce", json={}, headers=h)
-        assert r.status_code == 200, f"转生产失败: {r.text[:200]}"
-        mo = db.query(ProductionOrder).filter(ProductionOrder.sales_order_item_id == item_id).first()
-        # 确认自产 + 展开 BOM + 派产
-        client.post(f"{BASE}/production/productions/{mo.id}/set-type", json={"production_type": "自产"}, headers=h)
-        client.post(f"{BASE}/production/productions/{mo.id}/expand-bom", headers=h)
-        client.post(f"{BASE}/production/productions/{mo.id}/release", headers=h)
-        # 物料库存
-        db.add(WarehouseInventory(warehouse_id=base_data["wh"], material_id=base_data["mat"],
-                                  batch_no="B-BOT-MI", quantity=100, unit_cost=10,
-                                  total_cost=1000, in_date=date(2026, 1, 1)))
-        db.commit()
-        r = _execute_issue_materials({
-            "production_order_no": mo.order_no, "material_name": "BOT测试材料", "quantity": 20,
-        }, db, _user(db, "admin"))
-        assert "✅ 已发料" in r, f"AI 发料失败: {r}"
-        inv = db.query(WarehouseInventory).filter(WarehouseInventory.batch_no == "B-BOT-MI").first()
-        assert inv.quantity == 80, f"库存应扣至 80，实际 {inv.quantity}"
-        txn = db.query(StockTransaction).filter(
-            StockTransaction.trans_type == "material_issue_out",
-            StockTransaction.batch_no == "B-BOT-MI").first()
-        assert txn and txn.quantity == -20, "AI 发料未写库存流水"
-
-    def test_ai_production_receipt_creates_stock(self, db, users, base_data, client, admin_token):
-        """AI 完工入库必须建库存 + 写流水 + 更新生产单状态（此前只插记录库存不变）"""
-        from app.models.inventory import WarehouseInventory, StockTransaction
-        from app.models.production import ProductionOrder
-        h = {"Authorization": f"Bearer {admin_token}"}
-        # AI 入库需要成品仓（base_data 只建了原料仓）
-        r_wh = client.post(f"{BASE}/foundation/warehouses", json={
-            "code": "WH-BOT-FG", "name": "成品仓-BOT", "wh_type": "成品仓",
-            "address": "浙江省绍兴市柯桥区", "manager": "BOT测试员",
-        }, headers=h)
-        assert r_wh.status_code < 400, r_wh.text[:150]
-        so = _mk_so(client, admin_token, base_data)
-        so_id = client.get(f"{BASE}/sales/orders?keyword={so}", headers=h).json()["items"][0]["id"]
-        so_detail = client.get(f"{BASE}/sales/orders/{so_id}", headers=h).json()
-        item_id = so_detail["items"][0]["id"]
-        client.post(f"{BASE}/sales/orders/{so_id}/approve", json={}, headers=h)
-        client.post(f"{BASE}/sales/orders/{so_id}/items/{item_id}/re-produce", json={}, headers=h)
-        mo = db.query(ProductionOrder).filter(ProductionOrder.sales_order_item_id == item_id).first()
-        r = _execute_production_receipt({
-            "production_order_no": mo.order_no, "quantity": mo.quantity,
-        }, db, _user(db, "admin"))
-        assert "✅ 入库单" in r, f"AI 入库失败: {r}"
-        inv = db.query(WarehouseInventory).filter(
-            WarehouseInventory.product_id == base_data["prod"]).first()
-        assert inv and inv.quantity == mo.quantity, f"AI 入库未建库存: {inv}"
-        txn = db.query(StockTransaction).filter(
-            StockTransaction.trans_type == "production_in",
-            StockTransaction.product_id == base_data["prod"]).first()
-        assert txn, "AI 入库未写流水"
-        db.refresh(mo)
-        assert mo.received_qty == mo.quantity and mo.status in ("部分入库", "已入库"), \
-            f"生产单状态未更新: {mo.status} received={mo.received_qty}"
 
     def test_ai_purchase_invoice_creates_ap_and_input(self, db, users, base_data, client, admin_token):
         """AI 录采购发票必须生成应付账款 + 进项发票（原实现只插发票，无法付款核销/退税关联）"""

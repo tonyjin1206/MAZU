@@ -5,8 +5,11 @@
 任何低权限角色（只读/库管员）均可通过 API 增删改业务单据。
 本测试验证上述模块的读写端点已统一补权限：
 - 只读用户（仅 dashboard）→ 所有业务模块读写一律 403
-- 库管员（仅库存域）→ 采购/生产/委外/退税写 403；库存域读 200
+- 库管员（仅库存域）→ 采购/委外/退税写 403；库存域读 200
 - 合法角色（采购经理/生产经理/财务经理）→ 各自业务域操作 200
+
+注（2026-09 生产管理下线）：生产写端点已删除无法再测，只读读用例改用
+存活的批次追溯端点 /api/production/inventory/batch（perm=menu:production:batch）。
 """
 
 import pytest
@@ -40,13 +43,11 @@ class TestLowPrivilegeBlocked:
         return _create_user(client, admin_h, "wk_l4_ext", "warehouse_keeper")
 
     def test_readonly_write_blocked_all_modules(self, client, readonly_h):
-        """只读用户写采购/生产/委外/待入库/退税 → 403"""
+        """只读用户写采购/委外/待入库/退税 → 403（生产写端点已随生产管理下线）"""
         blocked = [
             ("POST", "/api/purchase/orders", {"supplier_id": 1, "items": []}),
             ("POST", "/api/purchase/invoices", {"order_id": 1}),
             ("POST", "/api/purchase/payments", {"supplier_id": 1, "amount": 100}),
-            ("POST", "/api/production/productions/1/set-type", {"production_type": "自产"}),
-            ("POST", "/api/production/processing-invoices", {}),
             ("POST", "/api/outsource/orders/1/approve", {}),
             ("POST", "/api/outsource/claims", {}),
             ("POST", "/api/stock-in/1/receive", {"quantity": 1}),
@@ -59,12 +60,11 @@ class TestLowPrivilegeBlocked:
                 f"只读用户 {method} {path} 应 403，实际 {r.status_code}: {r.text[:150]}")
 
     def test_readonly_read_blocked_all_modules(self, client, readonly_h):
-        """只读用户读采购/生产/委外/待入库/退税 → 403"""
+        """只读用户读采购/生产(批次追溯)/委外/待入库/退税 → 403"""
         blocked = [
             ("GET", "/api/purchase/orders"),
             ("GET", "/api/purchase/ap"),
-            ("GET", "/api/production/productions"),
-            ("GET", "/api/production/workspace"),
+            ("GET", "/api/production/inventory/batch"),
             ("GET", "/api/outsource/orders"),
             ("GET", "/api/stock-in"),
             ("GET", "/api/tax-refund/declarations"),
@@ -76,11 +76,9 @@ class TestLowPrivilegeBlocked:
                 f"只读用户 {method} {path} 应 403，实际 {r.status_code}: {r.text[:150]}")
 
     def test_warehouse_keeper_write_blocked(self, client, keeper_h):
-        """库管员（仅库存域）写采购/生产/委外/退税 → 403"""
+        """库管员（仅库存域）写采购/委外/退税 → 403（生产写端点已随生产管理下线）"""
         blocked = [
             ("POST", "/api/purchase/orders", {"supplier_id": 1, "items": []}),
-            ("POST", "/api/production/productions/1/set-type", {"production_type": "自产"}),
-            ("POST", "/api/production/processing-invoices", {}),
             ("POST", "/api/outsource/orders/1/approve", {}),
             ("POST", "/api/tax-refund/declarations", {}),
         ]

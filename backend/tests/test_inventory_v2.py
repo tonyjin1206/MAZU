@@ -1,13 +1,14 @@
 """
 库存收发存 v2 专项测试
 ======================
-覆盖：发料拆类型 / 取消完工入库保护 / 采购红冲 / 销售退货 / 盘点闭环
+覆盖：采购红冲 / 销售退货 / 盘点闭环
 
-- 自产工序发料 → material_issue_out，委外工序发料 → outsource_out
-- 取消完工入库：批次无出库可取消；有出库禁止（防账实不符）
-- 采购红冲：批次消耗后红冲剩余、订单/MO 状态回退
+- 采购红冲：批次消耗后红冲剩余、订单状态回退
+- 成品采购明细：直接采购入库被拒，必须走「转成品库入库」→ 待入库单收货
 - 销售退货：退回原批次原成本、订单状态回退
 - 盘点：建单→录实盘→提交→盘盈盘亏入账、盘亏超账面拒绝
+
+注（2026-09 生产管理下线）：发料拆类型 / 取消完工入库保护用例随生产端点删除而移除。
 """
 
 import time
@@ -112,154 +113,31 @@ class TestInventoryV2:
         }, h)
         return po["id"], rcp["id"], oi["batch_no"] if oi.get("batch_no") else None
 
-    def _create_mo(self, client, h, base, qty=50, ptype="自产"):
-        """SP 流程：销售订单→审核→重发生产→确认备货方式，返回 (so_id, mo_id)"""
+    def _create_product_po(self, client, h, base, qty=60, price=12.0):
+        """手填成品采购订单 → 审核，返回 (po_id, order_item_id)"""
         api = self._api
-        so = api(client, "POST", "/api/sales/orders", {
-            "customer_id": base["cust"], "currency_id": base["cny"]["id"],
-            "payment_terms": "TT",
-            "items": [{"product_id": base["prod"], "quantity": qty, "unit_price": 15.0, "tax_rate": 13}],
+        po = api(client, "POST", "/api/purchase/orders", {
+            "supplier_id": base["sup"], "currency_id": base["cny"]["id"], "tax_rate": 13,
+            "items": [{"product_id": base["prod"], "quantity": qty, "unit_price": price}],
         }, h)
-        so_id = so["id"]
-        api(client, "POST", f"/api/sales/orders/{so_id}/approve", {}, h)
-        # SP 流程：审核后需调用 re-produce 生成 MO
-        so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
-        item_id = so_detail["items"][0]["id"]
-        mo_resp = api(client, "POST", f"/api/sales/orders/{so_id}/items/{item_id}/re-produce", {}, h)
-        mo_id = mo_resp["id"]
-        api(client, "POST", f"/api/production/productions/{mo_id}/set-type",
-            {"production_type": ptype}, h)
-        return so_id, mo_id
+        assert po, "成品采购订单创建失败"
+        po_id = po["id"]
+        api(client, "POST", f"/api/purchase/orders/{po_id}/approve", {}, h)
+        detail = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
+        return po_id, detail["items"][0]["id"]
 
-    # ==================== 1. 自产发料 ====================
-
-    def test_issue_trans_type_split(self, client, auth_headers):
+    def _to_stock_in_and_receive(self, client, h, base, po_id, oi_id, qty, price=12.0):
+        """采购成品明细 → 转成品库入库 → 待入库单收货，返回待入库单 id"""
         api = self._api
-        h = auth_headers
-        base = self._setup_base(client, h, "A1")
-
-        # 材料入库 100
-        self._po_receipt_material(client, h, base, qty=100)
-        bal = self._mat_balance(client, h, base)
-        assert bal and bal["items"], "材料库存应为 100"
-        batch_no = bal["items"][0]["batch_no"]
-
-        # MO 自产 50 → 展开BOM → 派产
-        so_id, mo_id = self._create_mo(client, h, base, qty=50, ptype="自产")
-        api(client, "POST", f"/api/production/productions/{mo_id}/expand-bom", {}, h)
-        api(client, "POST", f"/api/production/productions/{mo_id}/release", {}, h)
-        md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        procs = sorted(md["processes"], key=lambda p: p["seq"])
-
-        # 生产=纯自产：所有工序均无委外商
-        for p in procs:
-            assert not p.get("outsourcer_id"), f"工序应为自产，实际 {p}"
-
-        # 两道工序发料 → 均为 material_issue_out
-        for p, qty in zip(procs, [30, 20]):
-            api(client, "POST",
-                f"/api/production/productions/{mo_id}/processes/{p['id']}/issue", {
-                    "material_id": base["mat"], "quantity": qty, "batch_no": batch_no,
-                    "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-                }, h)
-
-        # 验证流水类型：只有 material_issue_out（生产=纯自产，无委外发料）
-        txns = api(client, "GET", "/api/inventory/transactions?type=material&page_size=50", None, h)
-        assert txns, "应能查到流水"
-        btxns = [t for t in txns["items"] if t["batch_no"] == batch_no]
-        self_types = sorted([t["trans_type"] for t in btxns if t["quantity"] < 0])
-        assert "material_issue_out" in self_types, f"自产发料应为 material_issue_out，实际: {self_types}"
-        assert "material_out" not in self_types, f"纯自产不应有 material_out，实际: {self_types}"
-
-        # 成本汇总 = 全部自产发料（30+20）×32 = 1600
-        md2 = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        assert md2["total_material_cost"] == 1600.0, \
-            f"物料成本汇总应为 1600，实际 {md2.get('total_material_cost')}"
-
-        # 取消一条发料（30件自产领料）→ 成本回退到 20×32=640
-        issues = api(client, "GET", f"/api/production/productions/{mo_id}/issues", None, h)
-        first_issue = next(i for i in issues["items"] if i["quantity"] == 30)
-        api(client, "POST",
-            f"/api/production/productions/{mo_id}/issues/{first_issue['id']}/cancel", {}, h)
-        md3 = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        assert md3["total_material_cost"] == 640.0, \
-            f"取消发料后成本应为 640，实际 {md3.get('total_material_cost')}"
-
-    # ==================== 2. 取消完工入库保护 ====================
-
-    def test_receipt_cancel_guard(self, client, auth_headers):
-        api = self._api
-        h = auth_headers
-        base = self._setup_base(client, h, "A2")
-
-        # 材料入库 + MO 自产
-        self._po_receipt_material(client, h, base, qty=100)
-        bal = self._mat_balance(client, h, base)
-        batch_no = bal["items"][0]["batch_no"]
-        so_id, mo_id = self._create_mo(client, h, base, qty=50, ptype="自产")
-        api(client, "POST", f"/api/production/productions/{mo_id}/expand-bom", {}, h)
-        api(client, "POST", f"/api/production/productions/{mo_id}/release", {}, h)
-        md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        procs = sorted(md["processes"], key=lambda p: p["seq"])
-        for p in procs:
-            api(client, "POST",
-                f"/api/production/productions/{mo_id}/processes/{p['id']}/issue", {
-                    "material_id": base["mat"], "quantity": 20, "batch_no": batch_no,
-                    "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-                }, h)
-            api(client, "POST",
-                f"/api/production/productions/{mo_id}/processes/{p['id']}/finish", {
-                    "unit_price": p.get("unit_price") or 0.5,
-                    "process_qty": 50,
-                }, h)
-
-        # 完工入库 50
-        rcp = api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
-            "quantity": 50, "warehouse_id": base["wh_fg"],
-        }, h)
-        assert rcp, "完工入库失败"
-        fg_batch = rcp["batch_no"]
-
-        # 无出库 → 可取消
-        rc = api(client, "POST",
-                 f"/api/production/productions/{mo_id}/receipts/{rcp['id']}/cancel", {}, h)
-        assert rc, "无出库批次应可取消完工入库"
-
-        # 再入库一次，然后销售发货 → 禁止取消
-        rcp2 = api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
-            "quantity": 50, "warehouse_id": base["wh_fg"],
-        }, h)
-        fg_batch2 = rcp2["batch_no"]
-        so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
-        oi_id = so_detail["items"][0]["id"]
-        # 两段式发货：通知发货 → 库管出库
-        dlv_notify = api(client, "POST", "/api/sales/deliveries/notify", {
-            "order_id": so_id, "order_item_id": oi_id,
-            "quantity": 20,
-        }, h)
-        assert dlv_notify, "发货通知失败"
-        dlv_id = dlv_notify["id"]
-        
-        # 库管出库（第二段）
-        dlv = api(client, "POST", f"/api/sales/deliveries/{dlv_id}/issue", {
-            "batch_no": fg_batch2, "quantity": 20, "warehouse_id": base["wh_fg"],
-        }, h)
-        assert dlv, "销售发货失败"
-
-        # 取消完工入库 → 400
-        resp = client.post(
-            f"/api/production/productions/{mo_id}/receipts/{rcp2['id']}/cancel",
-            json={}, headers=h)
-        assert resp.status_code == 400, \
-            f"已出库批次取消入库应被拒绝，实际 {resp.status_code}: {resp.text[:200]}"
-
-        # 走销售退货后批次恢复，账实一致
-        ret = api(client, "POST", f"/api/sales/deliveries/{dlv['id']}/return",
-                  {"quantity": 20}, h)
-        assert ret, "销售退货失败"
-        bal2 = api(client, "GET", f"/api/inventory/balance?type=product&page_size=10", None, h)
-        row = next(r for r in bal2["items"] if r["batch_no"] == fg_batch2)
-        assert row["quantity"] == 50, f"退货后批次应恢复 50，实际 {row['quantity']}"
+        api(client, "POST", f"/api/purchase/orders/{po_id}/items/{oi_id}/to-stock-in",
+            {"stock_in_order_id": 0}, h)
+        sl = api(client, "GET", "/api/stock-in?source_type=purchase&page_size=10", None, h)
+        sin = next((s for s in sl["items"] if s["purchase_item_id"] == oi_id), None)
+        assert sin, "采购明细转成品库入库后应生成待入库单"
+        rcv = api(client, "POST", f"/api/stock-in/{sin['id']}/receive",
+                  {"quantity": qty, "warehouse_id": base["wh_fg"]}, h)
+        assert rcv and rcv.get("status") == "已入库", f"成品收货应完成，实际 {rcv}"
+        return sin["id"]
 
     # ==================== 3. 采购红冲 ====================
 
@@ -268,23 +146,12 @@ class TestInventoryV2:
         h = auth_headers
         base = self._setup_base(client, h, "A3")
 
-        po_id, rcp_id, _ = self._po_receipt_material(client, h, base, qty=100, price=32.0)
+        # 入库 70（留出红冲余量的非整额场景）
+        po_id, rcp_id, _ = self._po_receipt_material(client, h, base, qty=70, price=32.0)
 
-        # 先消耗 30（发料）→ 批次剩 70
+        # 批次 70，显式请求红冲 100 → 应被拒
         bal = self._mat_balance(client, h, base)
         batch_no = bal["items"][0]["batch_no"]
-        so_id, mo_id = self._create_mo(client, h, base, qty=50, ptype="自产")
-        api(client, "POST", f"/api/production/productions/{mo_id}/expand-bom", {}, h)
-        api(client, "POST", f"/api/production/productions/{mo_id}/release", {}, h)
-        md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        p1 = sorted(md["processes"], key=lambda p: p["seq"])[0]
-        api(client, "POST",
-            f"/api/production/productions/{mo_id}/processes/{p1['id']}/issue", {
-                "material_id": base["mat"], "quantity": 30, "batch_no": batch_no,
-                "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-            }, h)
-
-        # 批次剩 70，显式请求红冲 100 → 应被拒
         rcp_detail0 = api(client, "GET", f"/api/purchase/receipts/{rcp_id}", None, h)
         ri0 = rcp_detail0["items"][0]["id"]
         resp = client.post(f"/api/purchase/receipts/{rcp_id}/red",
@@ -311,7 +178,7 @@ class TestInventoryV2:
         # 订单状态回退 → 部分入库
         po_detail = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
         assert po_detail["status"] == "部分入库", f"订单状态应为部分入库，实际 {po_detail['status']}"
-        assert po_detail["items"][0]["received_qty"] == 40
+        assert po_detail["items"][0]["received_qty"] == 10
 
         # 再冲剩余 10 → 批次清空，订单 received 30
         api(client, "POST", f"/api/purchase/receipts/{rcp_id}/red", {}, h)
@@ -323,9 +190,9 @@ class TestInventoryV2:
         assert resp.status_code == 400, "批次已清空再冲应被拒"
 
     def test_purchase_red_mo_rollback(self, client, auth_headers):
-        """外购型 MO：采购入库（转成品库入库）→ 库存/订单联动
+        """成品采购明细：采购入库（转成品库入库）→ 库存/订单联动
 
-        SP 流程（2026-08 重写）：外购型 MO → 推采购需求 → 转采购订单 → 审核 →
+        手填成品采购订单（生产/采购需求已随生产管理下线，改为直建成品 PO）→ 审核 →
         采购明细「转成品库入库」→ 成品入库模块收货。直接 POST /purchase/receipts
         对成品类采购明细已由后端拒绝（提示走转成品库入库）。
         """
@@ -333,38 +200,19 @@ class TestInventoryV2:
         h = auth_headers
         base = self._setup_base(client, h, "A4")
 
-        # 外购型 MO（不展开BOM）→ 推采购需求
-        so_id, mo_id = self._create_mo(client, h, base, qty=60, ptype="外购")
-        pr = api(client, "POST", f"/api/production/productions/{mo_id}/to-requisition",
-                 {"quantity": 60}, h)
-        assert pr, "推采购需求失败"
-        req_id = pr["requisition_id"]
+        # 手填成品采购订单 → 审核
+        po_id, oi_id = self._create_product_po(client, h, base, qty=60, price=12.0)
 
-        # 采购转单 → PO → 审核 → 成品采购明细转待入库单
-        po = api(client, "POST", f"/api/purchase/requisitions/{req_id}/to-purchase", {
-            "supplier_id": base["sup"], "unit_price": 12.0, "quantity": 60, "tax_rate": 13,
-        }, h)
-        po_id = po["purchase_order_id"]
-        api(client, "POST", f"/api/purchase/orders/{po_id}/approve", {}, h)
-        detail = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
-        oi = detail["items"][0]
         # 成品采购明细不能直接走采购入库（后端拒绝），必须「转成品库入库」
         resp = client.post("/api/purchase/receipts", json={
             "order_id": po_id, "warehouse_id": base["wh_fg"],
-            "items": [{"order_item_id": oi["id"], "product_id": oi["product_id"],
+            "items": [{"order_item_id": oi_id, "product_id": base["prod"],
                        "quantity": 60, "unit_price": 12.0}],
         }, headers=h)
         assert resp.status_code == 400, "成品采购明细直接采购入库应被拒（走转成品库入库）"
 
         # 转成品库入库 → 待入库单 → 收货
-        api(client, "POST", f"/api/purchase/orders/{po_id}/items/{oi['id']}/to-stock-in",
-            {"stock_in_order_id": 0}, h)
-        sl = api(client, "GET", "/api/stock-in?source_type=purchase&page_size=10", None, h)
-        sin = next((s for s in sl["items"] if s["purchase_item_id"] == oi["id"]), None)
-        assert sin, "采购明细转成品库入库后应生成待入库单"
-        rcv = api(client, "POST", f"/api/stock-in/{sin['id']}/receive",
-                  {"quantity": 60, "warehouse_id": base["wh_fg"]}, h)
-        assert rcv and rcv.get("status") == "已入库", f"成品收货应完成，实际 {rcv}"
+        sin_id = self._to_stock_in_and_receive(client, h, base, po_id, oi_id, qty=60, price=12.0)
 
         # 订单明细已入数量回写
         detail2 = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
@@ -375,7 +223,7 @@ class TestInventoryV2:
         assert bal["items"], "成品入库后应存在产品库存"
 
         # 收货退回（数量纠正）→ 批次扣减、订单明细回退
-        ret = api(client, "POST", f"/api/stock-in/{sin['id']}/return",
+        ret = api(client, "POST", f"/api/stock-in/{sin_id}/return",
                   {"return_qty": 10}, h)
         assert ret, "收货退回失败"
         detail3 = api(client, "GET", f"/api/purchase/orders/{po_id}", None, h)
@@ -388,45 +236,27 @@ class TestInventoryV2:
         h = auth_headers
         base = self._setup_base(client, h, "A5")
 
-        # 材料入库 + 自产 MO → 完工入库 50（成本自动结转）
-        self._po_receipt_material(client, h, base, qty=100)
-        bal = self._mat_balance(client, h, base)
-        batch_no = bal["items"][0]["batch_no"]
-        so_id, mo_id = self._create_mo(client, h, base, qty=50, ptype="自产")
-        api(client, "POST", f"/api/production/productions/{mo_id}/expand-bom", {}, h)
-        api(client, "POST", f"/api/production/productions/{mo_id}/release", {}, h)
-        md = api(client, "GET", f"/api/production/productions/{mo_id}", None, h)
-        procs = sorted(md["processes"], key=lambda p: p["seq"])
-        for p in procs:
-            api(client, "POST",
-                f"/api/production/productions/{mo_id}/processes/{p['id']}/issue", {
-                    "material_id": base["mat"], "quantity": 20, "batch_no": batch_no,
-                    "warehouse_id": base["wh_rm"], "unit_price": 32.0,
-                }, h)
-            api(client, "POST",
-                f"/api/production/productions/{mo_id}/processes/{p['id']}/finish", {
-                    "unit_price": p.get("unit_price") or 0.5,
-                    "process_qty": 50,
-                }, h)
-
-        # 完工入库：不传成本 → 自动结转（材料 40×32=1280 + 加工费 50×0.5+50×1.2=85 → 单件 27.30）
-        rcp = api(client, "POST", f"/api/production/productions/{mo_id}/receipt", {
-            "quantity": 50, "warehouse_id": base["wh_fg"],
+        # 销售订单 → 审核 → 转直采（挂上销售单，后续才能发货）
+        so = api(client, "POST", "/api/sales/orders", {
+            "customer_id": base["cust"], "currency_id": base["cny"]["id"],
+            "payment_terms": "TT",
+            "items": [{"product_id": base["prod"], "quantity": 50, "unit_price": 15.0, "tax_rate": 13}],
         }, h)
-        assert rcp, "完工入库失败"
-        fg_batch = rcp["batch_no"]
-        assert rcp.get("cost") is None or True  # 不传成本用自动结转
-
-        # 自动结转后单位成本：材料 40×32=1280（两道自产工序各发 20，全部计入） + 加工费
-        # 50×0.5+50×1.2=85 → 1365/50 = 27.30。
-        # 生产=纯自产（v2.8.0 去委外化），所有发料均为 material_issue_out 全计入成本。
-        bal2 = api(client, "GET", "/api/inventory/balance?type=product&page_size=10", None, h)
-        row = next(r for r in bal2["items"] if r["batch_no"] == fg_batch)
-        assert row["unit_cost"] == 27.3, f"自动结转单件成本应为 27.3，实际 {row['unit_cost']}"
-
-        # 发货 40 → 退货 15 → 批次 25 → 订单 部分发货
+        so_id = so["id"]
+        api(client, "POST", f"/api/sales/orders/{so_id}/approve", {}, h)
         so_detail = api(client, "GET", f"/api/sales/orders/{so_id}", None, h)
         oi_id = so_detail["items"][0]["id"]
+        api(client, "POST", f"/api/sales/orders/{so_id}/items/{oi_id}/stock-in", {}, h)
+
+        # 成品采购（转直采链路）→ 转成品库入库 50 @12（采购价即入库成本）
+        po_id, poi_id = self._create_product_po(client, h, base, qty=50, price=12.0)
+        self._to_stock_in_and_receive(client, h, base, po_id, poi_id, qty=50)
+        bal2 = api(client, "GET", "/api/inventory/balance?type=product&page_size=10", None, h)
+        row = next(r for r in bal2["items"] if r["product_id"] == base["prod"])
+        fg_batch = row["batch_no"]
+        assert row["unit_cost"] == 12.0, f"成品入库成本应为采购价 12.0，实际 {row['unit_cost']}"
+
+        # 发货 40 → 退货 15 → 批次 25 → 订单 部分发货
         # 两段式发货：通知发货 → 库管出库
         dlv_notify = api(client, "POST", "/api/sales/deliveries/notify", {
             "order_id": so_id, "order_item_id": oi_id,
