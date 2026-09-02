@@ -688,7 +688,7 @@ def _execute_unapprove_order(args: dict, db: Session, user=None) -> str:
 
 # ==================== 操作手册检索 ====================
 
-MANUAL_PATH = Path(__file__).resolve().parents[3] / "docs" / "operations-manual.md"
+MANUAL_PATH = Path(__file__).resolve().parents[3] / "docs" / "04-操作手册.md"
 _manual_cache: dict = {"mtime": None, "sections": []}
 
 
