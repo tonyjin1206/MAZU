@@ -32,7 +32,8 @@ function startBackend() {
     serverPath = path.join(process.resourcesPath, `backend/server${ext}`)
   }
 
-  const env = { ...process.env, PORT: String(PORT), ERP_DATA_DIR: DATA_DIR }
+  // PYTHONUTF8: 避免 Windows 中文系统 locale 编码导致后端读写 UTF-8 文件出错
+  const env = { ...process.env, PORT: String(PORT), ERP_DATA_DIR: DATA_DIR, PYTHONUTF8: '1' }
 
   if (isDev) {
     backendProcess = spawn(pythonBin(), [serverPath], { env, stdio: 'pipe' })

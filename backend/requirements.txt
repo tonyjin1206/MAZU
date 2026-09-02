@@ -1,4 +1,4 @@
-# 外贸ERP 系统 — 后端依赖
+# MTS backend dependencies (ASCII only: pip on Windows reads this file with locale encoding)
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
 sqlalchemy==2.0.31

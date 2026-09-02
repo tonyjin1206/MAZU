@@ -40,11 +40,14 @@ jobs:
 
       - name: Setup backend venv
         working-directory: backend
+        env:
+          PYTHONUTF8: "1"
         run: |
           python -m venv venv
-          venv\Scripts\pip install --upgrade pip
-          venv\Scripts\pip install -r requirements.txt
-          venv\Scripts\pip install pyinstaller
+          venv\Scripts\python -m pip install --upgrade pip
+          venv\Scripts\python -m pip install -r requirements.txt
+          venv\Scripts\python -m pip install pyinstaller
+          venv\Scripts\python -c "import uvicorn, fastapi; print('deps ok:', uvicorn.__version__)"
 
       - name: PyInstaller backend (onefile, no console)
         working-directory: backend
