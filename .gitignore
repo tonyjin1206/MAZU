@@ -72,4 +72,5 @@ docs/gen_product_doc.py
 .codex/
 .hermes/
 .mimosa/
+.video_agent/
 e2e/.tmp_greenlet/
