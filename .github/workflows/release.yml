@@ -62,15 +62,26 @@ jobs:
         run: |
           $env:PORT = "18788"
           $env:ERP_DATA_DIR = "$env:RUNNER_TEMP\mts-data"
-          $p = Start-Process -FilePath "run_dist\server.exe" -PassThru -WindowStyle Hidden
+          New-Item -ItemType Directory -Force $env:ERP_DATA_DIR | Out-Null
+          $p = Start-Process -FilePath "run_dist\server.exe" -PassThru -WindowStyle Hidden `
+                 -RedirectStandardOutput "$env:RUNNER_TEMP\server-out.log" `
+                 -RedirectStandardError "$env:RUNNER_TEMP\server-err.log"
           $ok = $false
-          foreach ($i in 1..40) {
+          foreach ($i in 1..60) {
             Start-Sleep -Seconds 1
+            if ($p.HasExited) { break }
             try {
               $r = Invoke-RestMethod -Uri "http://127.0.0.1:18788/api/health" -TimeoutSec 2
               $ok = $true
               break
             } catch { }
+          }
+          if (-not $ok) {
+            Write-Host "=== server stdout ==="
+            Get-Content "$env:RUNNER_TEMP\server-out.log" -ErrorAction SilentlyContinue
+            Write-Host "=== server stderr ==="
+            Get-Content "$env:RUNNER_TEMP\server-err.log" -ErrorAction SilentlyContinue
+            Write-Host "=== process alive: $(-not $p.HasExited) exitcode: $($p.ExitCode) ==="
           }
           Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
           if (-not $ok) { throw "backend health check failed" }
