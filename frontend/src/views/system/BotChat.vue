@@ -5,7 +5,7 @@
       <div style="width: 32px; height: 32px; border-radius: 8px; background: #1d4ed8; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px">🤖</div>
       <div>
         <div style="font-weight: 600; font-size: 13px">MTS Bot</div>
-        <div style="font-size: 11px; color: #909399">说「采购」「销售」「生产」开始下单</div>
+        <div style="font-size: 11px; color: #909399">说「采购」「销售」开始下单</div>
       </div>
       <div style="margin-left: auto">
         <el-button size="small" @click="resetChat">新对话</el-button>
@@ -83,10 +83,8 @@ const RICH_WELCOME = `你好！我是 **Mazu Trade System** 的 AI 助手，我�
   「全部供应商」— 供应商清单
   「应收账款清单」— 应收汇总
 
-🏭 **生产**
+🏭 **委外**
   「委外工序1给深圳华强加工100个」— 委外单
-  「生产单MO-001发料PCB板50片」— 发料
-  「生产单MO-001入库80个」— 完工入库
 
 🛒 **审核**
   「有什么待审核的单」— 待审核清单

@@ -9,7 +9,6 @@ const routes = [
     redirect: '/dashboard',
     children: [
       { path: 'dashboard', name: 'Dashboard', component: () => import('../views/Dashboard.vue'), meta: { perm: 'menu:dashboard' } },
-
       // 基础档案
       { path: 'foundation/materials', name: 'Materials', component: () => import('../views/foundation/Materials.vue'), meta: { perm: 'menu:materials' } },
       { path: 'foundation/products', name: 'Products', component: () => import('../views/foundation/Products.vue'), meta: { perm: 'menu:products' } },
@@ -36,12 +35,7 @@ const routes = [
       { path: 'sales/ar', name: 'AccountsReceivable', component: () => import('../views/sales/AccountsReceivable.vue'), meta: { perm: 'menu:sales:ar' } },
       { path: 'sales/collections', name: 'Collections', component: () => import('../views/sales/Collections.vue'), meta: { perm: 'menu:sales:collections' } },
 
-      // 生产管理（路由保留，菜单不显示）
-      { path: 'production/orders', name: 'ProductionOrders', component: () => import('../views/production/ProductionOrders.vue'), meta: { perm: 'menu:production:orders' } },
-      { path: 'production/detail/:id', name: 'ProductionDetail', component: () => import('../views/production/ProductionDetail.vue'), meta: { perm: 'menu:production:orders' } },
-      { path: 'production/workspace', name: 'ProductionWorkspace', component: () => import('../views/production/ProductionWorkspace.vue'), meta: { perm: 'menu:production:workspace' } },
-      { path: 'production/invoices', name: 'ProcessingInvoices', component: () => import('../views/production/ProcessingInvoices.vue'), meta: { perm: 'menu:production:invoices' } },
-      { path: 'production/inventory', name: 'BatchInventory', component: () => import('../views/production/BatchInventory.vue'), meta: { perm: 'menu:production:batch' } },
+      // 生产管理（订单/工作台/详情/加工费发票已下线；批次追溯挪到库存管理）
 
       // 委外管理
       { path: 'outsource/from-sales', name: 'OutsourceFromSales', component: () => import('../views/outsource/OutsourceFromSales.vue'), meta: { perm: 'menu:outsource:from-sales' } },
@@ -49,6 +43,7 @@ const routes = [
 
       // 库存管理
       { path: 'inventory/management', name: 'InventoryManagement', component: () => import('../views/inventory/InventoryManagement.vue'), meta: { perm: 'menu:inventory' } },
+      { path: 'inventory/batch-trace', name: 'BatchInventory', component: () => import('../views/inventory/BatchInventory.vue'), meta: { perm: 'menu:production:batch' } },
       { path: 'inventory/summary', name: 'StockSummary', component: () => import('../views/inventory/StockSummary.vue'), meta: { perm: 'menu:inventory:summary' } },
       { path: 'inventory/stock-ins', name: 'StockIns', component: () => import('../views/inventory/StockIns.vue'), meta: { perm: 'menu:inventory:stock-ins' } },
       { path: 'inventory/material-ins', name: 'MaterialIns', component: () => import('../views/inventory/MaterialIns.vue'), meta: { perm: 'menu:inventory:material-ins' } },
@@ -72,7 +67,7 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫：未登录跳转登录页；无权限跳回工作台
+// 路由守卫：未登录跳转登录页；无权限跳回销售订单
 router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   const userStr = localStorage.getItem('user')

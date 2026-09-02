@@ -118,7 +118,6 @@
         </el-table-column>
         <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="success" size="small" @click="handleProduce(row)">转生产</el-button>
             <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="primary" size="small" @click="handleStockIn(row)">转直采</el-button>
             <el-button v-if="(row.production_status === '未生产' || !row.production_status) && !row.has_active_mo && selectedOrder?.status === '已审'" link type="warning" size="small" @click="handleOutsource(row)">转外发</el-button>
             <el-button v-if="!row.production_status || row.production_status === '未生产'" link type="primary" size="small" @click="openChangeDialog(row)">变更</el-button>
@@ -551,15 +550,6 @@ async function handleOutsource(row) {
   try {
     const res = await salesApi.orders.outsource(selectedOrder.value.id, row.id)
     ElMessage.success(res.message || '已转外发')
-    loadOrderDetail(selectedOrder.value.id)
-  } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
-}
-
-async function handleProduce(row) {
-  await ElMessageBox.confirm(`将「${row.product_name}」转生产（自产）？单据将进入「生产管理 → 生产订单」，在那里排产/完工。`, '提示', { type: 'info' })
-  try {
-    const res = await salesApi.orders.reProduce(selectedOrder.value.id, row.id)
-    ElMessage.success(res.message || '已转生产')
     loadOrderDetail(selectedOrder.value.id)
   } catch (e) { ElMessage.error(e.response?.data?.detail || '操作失败') }
 }

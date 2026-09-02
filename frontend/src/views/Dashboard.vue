@@ -264,7 +264,6 @@ const msgs = ref([])
 const unreadTotal = ref(0)
 const MSG_DOC_ROUTES = {
   so_order: '/sales/orders',
-  mo_production: '/production/orders',
   ar_account: '/sales/ar',
   ap_account: '/purchase/ap',
 }

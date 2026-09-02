@@ -51,8 +51,6 @@ DEFAULT_SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助�
 5. create_purchase_invoice — 录入采购发票（关联采购单）
 6. create_sales_invoice — 录入销售发票（关联销售单）
 7. create_outsourcing — 创建委外加工单（工序委外+发料）
-8. issue_materials — 生产发料/领料
-9. production_receipt — 生产完工入库
 
 ## 工作流程
 
@@ -75,8 +73,6 @@ DEFAULT_SYSTEM_PROMPT = """你是 MTS 系统的 ERP 助手，通过对话帮助�
   - 采购发票需要：采购单号、发票号、金额
   - 销售发票需要：销售单号、发票号、金额
   - 委外需要：生产单号、工序、供应商、数量
-  - 发料需要：生产单号、物料、数量
-  - 入库需要：生产单号、数量
 
 第三步：逐项核对后执行
   列出全部字段让用户确认，用户说「对/是/确认」再调工具
