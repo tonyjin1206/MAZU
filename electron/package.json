@@ -16,7 +16,10 @@
     "mac": {
       "category": "public.app-category.business",
       "icon": "icon.icns",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "hardenedRuntime": false
     },
     "win": {
@@ -24,7 +27,9 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         "portable"
       ],
@@ -38,14 +43,25 @@
     },
     "linux": {
       "icon": "icon.png",
-      "target": ["AppImage", "deb"],
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Office"
     },
     "dmg": {
       "title": "MTS安装器",
       "contents": [
-        { "x": 130, "y": 220 },
-        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
       ]
     },
     "files": [
@@ -58,19 +74,21 @@
       {
         "from": "../backend/run_dist",
         "to": "backend",
-        "filter": ["**/*"]
-      },
-      {
-        "from": "../backend/frontend_dist",
-        "to": "backend/frontend_dist",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asar": true,
-    "asarUnpack": ["backend/**"]
+    "asarUnpack": [
+      "backend/**"
+    ]
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
   }
 }

@@ -1,4 +1,7 @@
 const { app, BrowserWindow, dialog } = require('electron')
+
+// 用户数据目录使用 ~/Library/Application Support/MTS（而非包名）
+app.setName('MTS')
 const path = require('path')
 const { spawn } = require('child_process')
 const http = require('http')
@@ -38,11 +41,7 @@ function startBackend() {
   }
 
   backendProcess.stderr.on('data', (data) => {
-    const msg = data.toString()
-    if (msg.includes('Application startup complete') || msg.includes('Uvicorn running')) {
-      createWindow()
-    }
-    console.log('[backend]', msg)
+    console.log('[backend]', data.toString())
   })
 
   backendProcess.stdout.on('data', (data) => {
@@ -66,7 +65,7 @@ function startBackend() {
   })
 }
 
-function waitForBackend(retries = 30) {
+function waitForBackend(retries = 60) {
   return new Promise((resolve, reject) => {
     const check = () => {
       http.get(`http://127.0.0.1:${PORT}/api/health`, (res) => {
@@ -120,16 +119,20 @@ app.whenReady().then(async () => {
   }
 })
 
-app.on('window-all-closed', () => {
+function killBackend() {
   if (backendProcess) {
-    if (IS_WIN) {
-      backendProcess.kill('SIGTERM')
-    } else {
-      backendProcess.kill()
-    }
+    try { backendProcess.kill() } catch (e) { /* already dead */ }
+    backendProcess = null
   }
+}
+
+app.on('window-all-closed', () => {
+  killBackend()
   app.quit()
 })
+
+// 兜底：无论哪条退出路径（Cmd+Q / 崩溃前正常退出）都清掉后端进程
+app.on('before-quit', killBackend)
 
 app.on('activate', () => {
   if (mainWindow === null) {

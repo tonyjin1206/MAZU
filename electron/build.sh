@@ -24,6 +24,8 @@ mkdir -p "$BACKEND_DIR/frontend_dist"
 cp -r "$PROJECT_DIR/frontend/dist/"* "$BACKEND_DIR/frontend_dist/"
 
 # Step 3: PyInstaller 打包后端
+# 注意：绝不打包 backend/data/（用户真实业务数据）；
+# 应用首次启动会在用户数据目录自动建库 + 种子数据（init_db + _seed_rbac）
 echo ""
 echo "[3/4] 打包后端..."
 cd "$BACKEND_DIR"
@@ -33,13 +35,12 @@ pyinstaller --onefile \
   --name server \
   --distpath run_dist \
   --add-data "frontend_dist:frontend_dist" \
-  --add-data "data:../data_template" \
   --hidden-import uvicorn.logging \
   --hidden-import uvicorn.loops.auto \
   --hidden-import uvicorn.protocols.http.auto \
   --hidden-import uvicorn.lifespan.on \
+  --hidden-import passlib.handlers.bcrypt \
   run.py
-# 去掉 .spec 文件
 rm -f server.spec
 
 # Step 4: Electron 打包

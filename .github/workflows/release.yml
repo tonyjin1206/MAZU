@@ -1,0 +1,139 @@
+name: Build Desktop Installers
+
+# 打包桌面版：Windows NSIS 安装包（MTS-Setup-x.y.z.exe）+ macOS DMG
+# 触发：打 tag v* 或手动 workflow_dispatch；产物在 Actions Artifacts 下载
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            electron/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy frontend dist into backend
+        shell: pwsh
+        run: |
+          if (Test-Path backend/frontend_dist) { Remove-Item -Recurse -Force backend/frontend_dist }
+          Copy-Item -Recurse frontend/dist backend/frontend_dist
+
+      - name: Setup backend venv
+        working-directory: backend
+        run: |
+          python -m venv venv
+          venv\Scripts\pip install --upgrade pip
+          venv\Scripts\pip install -r requirements.txt
+          venv\Scripts\pip install pyinstaller
+
+      - name: PyInstaller backend (onefile, no console)
+        working-directory: backend
+        run: venv\Scripts\python -m PyInstaller --noconfirm --distpath run_dist --workpath build_work server.spec
+
+      - name: Electron builder (NSIS setup + portable)
+        working-directory: electron
+        run: |
+          npm install
+          npx electron-builder --win
+
+      - name: Smoke test packaged backend
+        working-directory: backend
+        shell: pwsh
+        run: |
+          $env:PORT = "18788"
+          $env:ERP_DATA_DIR = "$env:RUNNER_TEMP\mts-data"
+          $p = Start-Process -FilePath "run_dist\server.exe" -PassThru -WindowStyle Hidden
+          $ok = $false
+          foreach ($i in 1..40) {
+            Start-Sleep -Seconds 1
+            try {
+              $r = Invoke-RestMethod -Uri "http://127.0.0.1:18788/api/health" -TimeoutSec 2
+              $ok = $true
+              break
+            } catch { }
+          }
+          Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "backend health check failed" }
+          Write-Host "backend smoke test OK: $r"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: |
+            electron/dist/*.exe
+            electron/dist/*.blockmap
+          if-no-files-found: error
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            electron/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Copy frontend dist into backend
+        run: |
+          rm -rf backend/frontend_dist
+          cp -R frontend/dist backend/frontend_dist
+
+      - name: Setup backend venv
+        working-directory: backend
+        run: |
+          python3 -m venv venv
+          venv/bin/pip install --upgrade pip
+          venv/bin/pip install -r requirements.txt
+          venv/bin/pip install pyinstaller
+
+      - name: PyInstaller backend (onefile)
+        working-directory: backend
+        run: venv/bin/python -m PyInstaller --noconfirm --distpath run_dist --workpath build_work server.spec
+
+      - name: Electron builder (dmg + zip)
+        working-directory: electron
+        run: |
+          npm install
+          npx electron-builder --mac
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-dmg
+          path: |
+            electron/dist/*.dmg
+            electron/dist/*-mac.zip
+          if-no-files-found: error

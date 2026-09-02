@@ -9,7 +9,6 @@ venv/
 *.egg-info/
 dist/
 build/
-*.spec
 
 # === Node ===
 node_modules/
@@ -29,7 +28,6 @@ backend/data/journal/
 backend/run_dist/
 backend/frontend_dist/
 backend/build/
-backend/server.spec
 backend/build/
 
 # === 环境变量 ===
@@ -74,3 +72,6 @@ docs/gen_product_doc.py
 .mimosa/
 .video_agent/
 e2e/.tmp_greenlet/
+
+# 桌面版打包产物
+electron/dist/
