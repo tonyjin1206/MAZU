@@ -2,9 +2,9 @@
 
 > **v2.8.0** | A Lightweight Trade Management Platform
 
-Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、生产、退税、库存等核心业务模块。
+Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆盖采购、销售、委外、退税、库存等核心业务模块。
 **支持 AI 智能助手（Matsu）自然语言对话式操作。**
-**销售订单审核后三路分流（三分支）：转直采 / 转外发 / 转生产-自产；生产模块 = 纯自产，委外统一归口转外发。**
+**销售订单审核后两路分流：转直采（买成品，唯一关联采购订单的路线）/ 转外发（委外加工，不关联采购——材料独立采购入库、领料出库时成本挂销售单）。生产管理已下线（2026-09）。**
 
 > 后端: FastAPI (端口 8788)
 > 前端: Vue 3 + Vite (端口 5173)
@@ -26,13 +26,13 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 ┌───────────────────────────▼────────────────────────────────────┐
 │                      后端 FastAPI (8788)                        │
 │  /api/auth  /api/foundation  /api/purchase  /api/sales         │
-│  /api/production(纯自产)  /api/outsource(委外)  /api/inventory  │
+│  /api/production(批次追溯)  /api/outsource(委外)  /api/inventory  │
 │  /api/tax-refund  /api/dashboard  /api/system  /api/chat       │
 └───────────────────────────┬────────────────────────────────────┘
                             │ SQLAlchemy ORM
 ┌───────────────────────────▼────────────────────────────────────┐
 │                     SQLite (backend/data/erp.db)               │
-│  基础档案/采购/销售(三分支)/生产(纯自产)/委外/库存/退税/系统/RBAC │
+│  基础档案/采购/销售(两分支)/委外/库存/退税/系统/RBAC（mo_* 历史保留）│
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -73,15 +73,15 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ## 二、采购管理 (`/api/purchase`)
 
-### 采购需求 (`/requisitions`，v2.5.0 外购直采流程)
+### 采购需求 (`/requisitions`，**已停造**：推式入口随生产管理下线，仅存列表/关闭/转采购接口读存量)
 | 路由 | 方法 | 说明 |
 |------|------|------|
 | `/requisitions` | GET | 列表（按状态/关键词筛选）|
 | `/requisitions/{id}` | GET | 详情 |
-| `/requisitions/{id}/close` | POST | 关闭（仅待处理）→ MO 回待采购可重推 |
+| `/requisitions/{id}/close` | POST | 关闭（仅待处理）|
 | `/requisitions/{id}/to-purchase` | POST | 转采购订单（采购填供应商/单价/税率，数量可改）|
 
-状态流程: 待处理 → 已转单 → 采购入库完成 → MO 已入库；待处理可关闭 → MO 回待采购
+状态流程: 待处理 → 已转单 / 已关闭（新需求不再产生）
 
 ### 采购订单 (`/orders`)
 | 路由 | 方法 | 说明 |
@@ -137,14 +137,14 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/orders` | GET/POST | 列表/创建 |
 | `/orders/{id}` | GET/PUT/DELETE | 详情/修改/删除（仅待审核可改/删）|
 | `/orders/{id}/approve` | POST | 审核（审核后明细行置「未生产」，**不再自动生成生产订单**，v2.8.0） |
-| `/orders/{id}/items/{item_id}/stock-in` | POST | **转直采**：推送至「销售订单转采购」，明细行→已通知入库 |
-| `/orders/{id}/items/{item_id}/outsource` | POST | **转外发**：生成委外订单草稿，明细行→已通知外发 |
-| `/orders/{id}/items/{item_id}/re-produce` | POST | **转生产-自产**：生成生产订单，明细行→生产中（三分支互斥，v2.8.0） |
+| `/orders/{id}/items/{item_id}/stock-in` | POST | **转直采（买成品）**：推送至「销售订单转采购」，明细行→已通知入库 |
+| `/orders/{id}/items/{item_id}/outsource` | POST | **转外发**：推送至「销售订单转委外」，明细行→已通知外发 |
+| `/orders/{id}/items/{item_id}/re-produce` | POST | **转生产**：后端端点保留（前端入口已随生产管理下线移除），生成生产订单，明细行→生产中 |
 | `/orders/{id}/items/{item_id}/claim-batch` / `unclaim-batch` | POST | 认领/解绑备货批次（场景2：货先进来，后期挂销售单） |
 | `/orders/{id}/items/{item_id}` | PUT | 变更明细行（改数量/单价/停售） |
 | `/order-items` | GET | 明细行列表（含生产状态筛选，独立视图） |
 
-> **三分支（v2.8.0）**：销售订单审核后，明细行按业务实际选一条路线——转直采=`采购链`、转外发=`委外(outsource)`、转生产(自产)=`生产订单`。三者互斥（一条明细行只能走其一）。
+> **两路分流（转直采 / 转外发，互斥）**：销售订单审核后，明细行按业务实际选一条路线——**只有转直采行关联采购订单**（按成品采购，无视 BOM）；转外发行**不关联采购订单**，材料由采购员独立填写采购订单入库，委外领料出库时成本挂销售单。转生产入口已随生产管理下线从界面移除（后端 re-produce 端点保留）。
 
 ### 销售发货 (`/deliveries`)
 | 路由 | 方法 | 说明 |
@@ -184,34 +184,16 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ---
 
-## 四、生产管理 (`/api/production`)
+## 四、生产管理 (`/api/production`) — **已下线（2026-09）**
 
-> **v2.8.0 去委外化**：生产模块 = **纯自产**。生产订单（`mo_production`）不含委外商/委外工序/委外发料/委外加工费；委外业务统一归口转外发（`/api/outsource`）路线。生产订单从销售明细「转生产（re-produce）」生成，无手工创建接口。
+> **2026-09 生产管理下线**：生产订单/生产工作台/生产详情/加工费发票的页面与 `/productions*`、`/workspace`、`/processing-invoices*` 端点已全部删除；`menu:production:orders/workspace/invoices/receipts` 权限码挂 `DEPRECATED_PERMS` 启动时清理。仅保留**批次追溯**两个端点（菜单挪入库存管理，路由 `/inventory/batch-trace`）。`mo_*` 数据表与模型**完整保留**（历史数据可追溯）；`sales.py` 转直采/转外发中的活跃生产订单拦截逻辑保留（历史 MO 仍有效拦截）；`re-produce` 端点保留但前端入口已移除。
 
-| 路由 | 方法 | 说明 |
+| 保留的路由 | 方法 | 说明 |
 |------|------|------|
-| `/productions` | GET | 生产订单列表（可按销售订单/明细行过滤）|
-| `/productions/{id}` | GET/PUT/DELETE | 生产订单详情/修改/删除 |
-| `/productions/{id}/set-type` | POST | 确认备货方式（自产/外购，v2.8.0 限此两者、去委外）|
-| `/productions/{id}/to-requisition` | POST | 外购型推采购需求（v2.5.0）|
-| `/productions/{id}/expand-bom` | POST | 展开 BOM 物料需求（自产）|
-| `/productions/{id}/materials` | PUT | 保存物料需求 |
-| `/productions/{id}/processes` | PUT | 保存工艺工序 |
-| `/productions/{id}/release` / `unrelease` | POST | 派产/反派产 |
-| `/productions/{id}/processes/{proc_id}/issue` | POST | 工序发料（自产领料 `material_issue_out`）|
-| `/productions/{id}/issues/{issue_id}/cancel` | POST | 取消发料 |
-| `/productions/{id}/processes/{proc_id}/finish` | POST | 工序完工 |
-| `/productions/{id}/processes/{proc_id}/revert` | POST | 工序反退 |
-| `/productions/{id}/receipt` | POST | 成品入库 |
-| `/productions/{id}/receipts/{receipt_id}/cancel` | POST | 取消入库 |
-| `/productions/{id}/close` / `unclose` | POST | 关闭/取消关闭 |
-| `/productions/{id}/transactions` / `receipts` / `issues` | GET | 成本流水/入库/发料记录 |
-| `/workspace` | GET | 生产工作台数据 |
-| `/processing-invoices` | GET/POST | 加工费发票列表/创建（恒无委外工序归属，v2.8.0）|
+| `/inventory/batch` | GET | 批次库存查询（perm: menu:production:batch / menu:inventory）|
+| `/inventory/trace` | GET | 批次追溯（按 batch_no 正反向追踪）|
 
-数据表: `ProductionOrder`（含 `production_type` 备货方式，v2.8.0 仅自产/外购）, `ProductionProcess`（无 `outsourcer_id`，v2.8.0）, `MaterialIssueItem`, `ProductionReceipt`, `ProcessingInvoice`
-
-备货方式（v2.5.0，v2.8.0 去委外）: MO 生成后状态=`待确认`，必须确认备货方式 → 自产=`待排产`（进工作台）｜外购=`待采购`（推采购需求 → 采购转单 → 入库联动）
+已下线端点（原 `/productions*` 列表/详情/备货方式/展开BOM/派产/发料/完工/完工入库/关闭、`/workspace`、`/processing-invoices*`）不再可用。
 
 ---
 
@@ -231,10 +213,10 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | `/sales-to-outsource/{item_id}/complete` / `uncomplete` | POST | 完成委外/取消完成 |
 | `/orders/from-sales` | POST | 从销售转外发生成委外订单 |
 | `/orders/from-sales-process` | POST | 从销售转外发按工序生成委外订单 |
-| `/claims` | GET/POST | 认领原料列表/创建（订单级，按仓库总数量 FIFO 扣批次）|
-| `/claims/{claim_id}` | DELETE | 删除认领 |
+| `/claims` | GET/POST | 领料列表/创建（订单级，按仓库总数量 FIFO 扣批次，出库流水挂销售单；原「认领原料」）|
+| `/claims/{claim_id}` | DELETE | 删除领料（材料退回原批次）|
 
-> **供料方式（`supply_type`）**：己方提供（需认领原料，认领量 ≥ 委外数量×BOM用量×(1+损耗%)）/ 包工包料（加工厂提供，不认领、不出库）。委外订单审核后仅末道工序生成成品待入库单（中间工序只记加工成本）。
+> **供料方式（`supply_type`）**：己方提供（需**领料**——领的是原料库库存，领料量按 委外数量×BOM用量×(1+损耗%)，出库流水挂销售单号归集成本；材料来自独立材料采购）/ 包工包料（加工厂提供，不领料、不出库）。委外订单审核后仅末道工序生成成品待入库单（中间工序只记加工成本）。委外路线**不关联采购订单**。
 
 ---
 
@@ -359,7 +341,7 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 - `frontend/src/composables/useBotChat.js` — 对话逻辑（悬浮组件 + 全屏页 BotChat.vue 共用）
 - `frontend/src/views/system/BotChat.vue` — 全屏聊天页（备用入口，路由保留）
 
-### 可用工具（13 个）
+### 可用工具（11 个）
 
 | 工具 | 函数 | 参数 | 所需权限 | 说明 |
 |------|------|------|----------|------|
@@ -374,8 +356,8 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 | create_payment | `_execute_create_payment` | supplier_name, amount, … | `menu:purchase:payments` | 付款单 + 自动核销应付 |
 | create_purchase_invoice | `_execute_create_purchase_invoice` | order_no, invoice_no, amount, … | `menu:purchase:invoices` | 录入采购发票 |
 | create_sales_invoice | `_execute_create_sales_invoice` | order_no, invoice_no, amount, … | `menu:sales:invoices` | 录入销售发票 |
-| issue_materials | `_execute_issue_materials` | production_order_no, material_name, quantity, … | `menu:production:orders` | 生产领料/发料 |
-| production_receipt | `_execute_production_receipt` | production_order_no, quantity, … | `menu:production:orders` | 生产完工入库 |
+
+> 原 `issue_materials`（生产领料/发料）、`production_receipt`（生产完工入库）两个工具已随生产管理下线删除（2026-09）。
 
 ### 权限体系（v2.3.0，A 方案：菜单权限即操作权限）
 - `TOOL_PERMS` 定义每个工具（或按 entity_type/order_type 子类型）所需菜单权限码
@@ -461,9 +443,10 @@ Python FastAPI + Vue 3 (Element Plus) + SQLite 的外贸企业 ERP 系统，覆�
 
 ### 成本流转
 ```
-物料采购 → 生产领用 → 加工费用 → 成品入库 → 销售出库 → 毛利分析
+材料采购 → 原料入库（零关联销售单）→ 委外领料出库（成本挂销售单）→ 成品入库 → 销售出库 → 毛利分析
+成品直采：采购订单（挂销售明细）→ 成品入库 → 销售出库 → 毛利分析
 ```
-全程自动核算，无需手工算账。入库时即计算单位成本 = (材料成本+加工费) / 数量。
+全程自动核算，无需手工算账。采购入库即按订单单价记批次成本；委外领料按批次 FIFO 成本出库并归集到销售单。
 
 ---
 
@@ -501,6 +484,14 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 ---
 
 ## 十五、版本变更记录
+
+### 2026-09-02 认领材料改造（Sales_Purchase → main 合并）
+- **转直采无视 BOM**：销售订单转采购只列「转直采」行，按成品数量×(1+损耗) 采购成品本身（`_so_row_requirements` 恒返回成品），不再按 BOM 展开材料行
+- **材料采购完全独立**：材料采购与原料入库零关联销售单（明细不挂 `sales_item_id`）；委外领料出库时才按 FIFO 挂销售单归集成本
+- **「认领原料」改「领料」**：委外模块文案与语义统一（机制不变：FIFO 扣原料库存 + 出库流水挂销售单）
+- **删生产管理**：前端删生产订单/工作台/详情/加工费发票 4 页面；后端 `production.py` 仅保留批次追溯端点；`schemas/production.py` 删除；`menu:production:orders/workspace/invoices/receipts` 挂 `DEPRECATED_PERMS`；销售订单页「转生产」入口与 AI 发料/完工入库工具删除；`mo_*` 表与模型保留
+- **批次追溯挪库存管理**：`views/production/BatchInventory.vue → views/inventory/`，新路由 `/inventory/batch-trace`
+- **测试对齐**：后端 221 用例（删 MO 状态机/生产收发存用例，重写转直采全流程用例）；e2e 冒烟页面清单更新；详见根目录 `CHANGES-20260901.md`
 
 ### v2.8.0 (2026-08-29)
 - **销售订单三路分流（三分支）**：订单审核后明细行独立走转直采/转外发/转生产-自产，三者互斥；审核不再自动生成生产订单
@@ -596,24 +587,25 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 
 ## 1. 业务模型（最重要，先懂这个）
 
-公司**无工厂**，但有多条业务线：
+公司**无工厂、无自产**（生产管理已于 2026-09 下线），业务线两类：
 
-1. **纯贸易**：买 A → 卖 A（采购产品直接转销售）→ **销售明细「转直采」**
-2. **委外加工**：买 ABC 材料 → 委托加工厂做成 D 产品 → 卖 D → **销售明细「转外发」**
-3. **自有生产**：车间自产 → **销售明细「转生产-自产」**
+1. **纯贸易（买成品）**：买成品 → 卖成品 → **销售明细「转直采」**——唯一关联采购订单的路线
+2. **委外加工**：单独采购材料入库 → 委托加工厂做成产品 → 卖产品 → **销售明细「转外发」**——不关联采购订单
 
-**v2.8.0 三分支**：销售订单明细行审核后独立走一条路线（互斥）：
+**两路分流（互斥）+ 材料独立采购**：
 ```
 销售订单明细行
- ├─ 点「转直采」(贸易型) → 采购管理 → 销售订单转采购页 → 生成采购订单（按 BOM 展开/按供应商拆单）→ 审核
- │    → 明细行「转成品库」→ 成品入库模块收货
- │    → 明细行「转原料库」→ 原料入库模块收货
- ├─ 点「转外发」(委外型) → 两条线同时走：
- │    ├─ 采购线: 销售订单转采购页（来源=转外发）→ 按 BOM 买原料 → 转原料库 → 原料入库收货
- │    └─ 委外线: 销售订单转委外页（工序卡片横向展开）→ 每道工序选加工商+加工单价+认领原料
- │         → 按工序拆多张委外订单（一工序一供应商）→ 审核 → 每张记加工费AP；只有末道工序生成成品待入库单
- │         → 成品入库模块收货（成品数量=产品数量）
- └─ 点「转生产」(自产型) → 生成生产订单（纯自产）→ 生产工作台 → 派产/发料/完工 → 成品入库
+ ├─ 点「转直采」(贸易型，买成品) → 采购管理 → 销售订单转采购页（只列转直采行）
+ │    → 生成采购订单（按成品数量×(1+损耗) 采购成品本身，无视 BOM/按供应商拆单）→ 审核
+ │    → 明细行「转成品库」→ 成品入库模块收货（成本=采购价，挂销售明细）
+ ├─ 点「转外发」(委外型) → 委外线单线走，不关联采购订单：
+ │    ├─ 材料先行：采购员单独填采购订单买材料 → 转原料库 → 原料入库收货（入库零关联销售单）
+ │    ├─ 销售订单转委外页（工序卡片横向展开）→ 每道工序选加工商+加工单价
+ │    │    → 按工序拆多张委外订单（一工序一供应商）→ 己方提供时先「领料」：
+ │    │      按成品数×BOM用量×(1+损耗) FIFO 扣原料库存、出库流水挂销售单号（成本在此刻挂到销售单）
+ │    │    → 审核 → 每张记加工费AP；只有末道工序生成成品待入库单
+ │    └─ 成品入库模块收货（成品数量=产品数量）
+ └─ （转生产入口已删除；后端 re-produce 端点保留但不再从界面触达）
 ```
 
 **发货（两步化）**：
@@ -622,7 +614,7 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 退货: 必须已有出库记录才能退（通知未出库不能退）
 ```
 
-**原料出库**：库存管理→原料出库页 = 手动出库(MU单号) + 转委外认领材料自动生成的出库记录(WO单号,来源=委外发料)
+**原料出库**：库存管理→原料出库页 = 手动出库(MU单号)；委外领料的出库记录在委外管理（`os_claim_material`，出库流水挂销售单号）
 
 ## 2. 核心铁律（全 ERP 强制）
 
@@ -630,12 +622,13 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 2. **状态颜色四档**（全 ERP 统一）：本环节完成=绿 / 进行中=橙 / 未开始=灰 / 终止=红。
 3. **数量是参考，完成是人工点**：采购/委外的"完成"由业务员手动点（完成采购/完成委外），可"取消完成"再追加。
 4. **损耗默认 10% 可改**：采购/委外数量上限 = 需求 × (1+损耗%)，超量拦截，要超就得改损耗比例。
-5. **一步一步来**：销售订单只负责"推送"（转直采/转外发/转生产），单据在各自页面生成，不跳步。
+5. **一步一步来**：销售订单只负责"推送"（转直采/转外发），单据在各自页面生成，不跳步。
+6. **材料与销售单的关联只在出库（领料）时建立**：材料采购与原料入库零关联销售单；委外领料出库那一刻，成本按 FIFO 挂到销售单归集。
 
 ## 3. 主流程状态机
 
 ### 销售订单明细行（production_status）
-未生产 → 已通知入库(显示"转直采") / 已通知外发(显示"转外发") / 生产中(自产) → 部分入库 → 已入库 / 已停售
+未生产 → 已通知入库(显示"转直采") / 已通知外发(显示"转外发") → 部分入库 → 已入库 / 已停售（「生产中/已生产」为历史存量状态）
 
 ### 转采购页状态（人工完成）
 - 未采购（灰）→ 部分采购（橙，可追加）→ 已转采购订单（绿，达上限 需求×1.1）
@@ -653,11 +646,11 @@ kill 后端进程 → rm backend/data/* → 重启后端 → 运行 init_all.py
 
 ## 4. 菜单结构
 
-- **采购管理**：销售订单转采购 → 采购订单 → 采购发票 → 应付账款 → 付款管理（采购需求菜单已删，路由重定向转采购）
-- **库存管理**：库存查询 → 收发存 → 成品入库 → 原料入库 → 原料出库 → 成品出库 → 盘点管理 → 批次追溯
-- **委外管理**：销售订单转委外 → 委外订单 → 加工费发票
-- **生产管理**：生产订单 → 生产工作台（v2.8.0 恢复，纯自产）
+- **采购管理**：销售订单转采购（仅直采买成品）→ 采购订单 → 采购发票 → 应付账款 → 付款管理
+- **库存管理**：库存查询 → 收发存 → 成品入库 → 原料入库 → 原料出库 → 成品出库 → 盘点管理 → 批次追溯（2026-09 从生产管理挪入）
+- **委外管理**：销售订单转委外 → 委外订单
 - **销售管理**：销售订单 → 销售发货 → 销售发票 → 报关管理 → 应收账款 → 收款管理
+- **生产管理**：菜单已删（2026-09 下线）
 
 ## 5. 技术栈与环境
 
